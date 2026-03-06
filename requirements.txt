@@ -17,6 +17,7 @@ ElexonDataPortal>=2.0.14
 scikit-learn>=1.3.0
 statsmodels>=0.14.0
 xgboost>=2.0.0
+cvxpy>=1.4.0
 
 # Configuration
 pyyaml>=6.0

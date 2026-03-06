@@ -82,6 +82,136 @@ def _efa_prices(apx_by_date: dict, date: pd.Timestamp, efa: int) -> pd.Series:
         slices.insert(0, prev.reindex(EFA_PERIODS[efa]["prev"]).dropna())
     return pd.concat(slices)
 
+def _build_arb_mw_by_period(arb_sched_map: dict) -> dict:
+    """
+    Expand an EFA-block arb allocation map to individual settlement periods.
+
+    Parameters
+    ----------
+    arb_sched_map : dict
+        {(date, efa): arb_mw} — output of the arb schedule computation.
+
+    Returns
+    -------
+    dict mapping (date, settlement_period) → arb_mw (float).
+    EFA 1's D-1 periods (47, 48) are correctly attributed to their calendar date.
+    """
+    result = {}
+    one_day = pd.Timedelta(days=1)
+    for (date, efa), mw in arb_sched_map.items():
+        for sp in EFA_PERIODS[efa]["curr"]:
+            result[(date, sp)] = mw
+        for sp in EFA_PERIODS[efa]["prev"]:
+            result[(date - one_day, sp)] = mw
+    return result
+
+
+def _run_mpc_dispatch(
+    all_periods: list,
+    actual_by_period: dict,
+    forecast_by_period: dict,
+    arb_mw_by_period: dict,
+    battery: "BatterySpec",
+    initial_soc_frac: float = 0.5,
+    horizon: int = 96,
+) -> tuple[list, list]:
+    """
+    Rolling MPC dispatch loop — re-solves the LP at every 30-min settlement period.
+
+    The LP plans over the next `horizon` periods and returns only the first
+    period's decision. The FR SoC band [FR_SOC_LOWER, FR_SOC_UPPER] is enforced
+    as a hard constraint on all H+1 SoC variables, forcing the battery to
+    pre-condition its SoC for future FR delivery obligations.
+
+    Dispatch decisions are executed unconditionally at actual prices. Per-period
+    revenue can be negative when forecast error causes an unfavourable trade —
+    this is the realistic operational outcome and is intentional.
+
+    Approximation: rolling horizon is not globally optimal. A single LP over the
+    full backtest period would be, but rolling MPC reflects real operational
+    constraints (decision made before future prices are known).
+
+    Parameters
+    ----------
+    all_periods : list of (date, sp) tuples
+        Chronologically ordered settlement periods to iterate over.
+    actual_by_period : dict
+        {(date, sp): actual_price £/MWh} — used for revenue settlement.
+    forecast_by_period : dict
+        {(date, sp): forecast_price £/MWh} — used for LP planning.
+        Equal to actual_by_period for the perfect-foresight strategy.
+        Missing periods default to 0.0 (LP treats them as zero-revenue).
+    arb_mw_by_period : dict
+        {(date, sp): arb_mw} — residual MW available after FR commitment.
+    battery : BatterySpec
+    initial_soc_frac : float
+        Starting SoC fraction (default 0.5 = 50%).
+    horizon : int
+        LP planning horizon in settlement periods (default 96 = 48 hours).
+
+    Returns
+    -------
+    arb_rows : list of dicts [{date, imbalance_revenue_gbp, cycling_cost_gbp}]
+    soc_trajectory : list of (date, sp, soc_frac) tuples
+    """
+    from src.optimisation.mpc import solve_mpc
+
+    n = len(all_periods)
+    actual_arr   = np.array([actual_by_period.get(p, np.nan)   for p in all_periods])
+    forecast_arr = np.array([forecast_by_period.get(p, np.nan) for p in all_periods])
+    arb_mw_arr   = np.array([arb_mw_by_period.get(p, 0.0)      for p in all_periods])
+
+    soc     = initial_soc_frac * battery.energy_mwh
+    soc_min = FR_SOC_LOWER * battery.energy_mwh
+    soc_max = FR_SOC_UPPER * battery.energy_mwh
+
+    arb_rows      = []
+    soc_trajectory = []
+
+    for i, (date, sp) in enumerate(all_periods):
+        soc_frac = soc / battery.energy_mwh
+
+        if np.isnan(actual_arr[i]):
+            soc_trajectory.append((date, sp, soc_frac))
+            continue
+
+        h_end = min(i + horizon, n)
+        fc  = np.where(np.isnan(forecast_arr[i:h_end]), 0.0, forecast_arr[i:h_end])
+        mw  = arb_mw_arr[i:h_end]
+
+        e_dis, e_chg = solve_mpc(
+            soc_current=soc,
+            price_forecast=fc,
+            arb_mw_schedule=mw,
+            soc_min=soc_min,
+            soc_max=soc_max,
+            energy_mwh=battery.energy_mwh,
+            efficiency_rt=battery.efficiency_rt,
+            cycling_cost_per_mwh=battery.cycling_cost_per_mwh,
+            horizon=len(fc),
+        )
+
+        if e_dis > 0 or e_chg > 0:
+            actual_p = actual_arr[i]
+            gross    = actual_p * e_dis - actual_p * e_chg
+            wear     = battery.cycling_cost_per_mwh * e_dis
+            soc      = float(np.clip(
+                soc - e_dis + e_chg * battery.efficiency_rt,
+                0, battery.energy_mwh,
+            ))
+            arb_rows.append({
+                "date":                  date,
+                "imbalance_revenue_gbp": gross,
+                "cycling_cost_gbp":      wear,
+                "mwh_cycled":            e_dis,
+            })
+            soc_frac = soc / battery.energy_mwh
+
+        soc_trajectory.append((date, sp, soc_frac))
+
+    return arb_rows, soc_trajectory
+
+
 SERVICE_LABELS = {
     "DCH": "DC High",
     "DCL": "DC Low",
@@ -234,7 +364,9 @@ def calc_imbalance_revenue(
     arb_energy_mwh: float = None,
     arb_schedule: "pd.Series | None" = None,
     initial_soc_frac: float = 0.5,
-) -> pd.DataFrame:
+    dispatch_method: str = "greedy",
+    horizon: int = 96,
+) -> tuple[pd.DataFrame, list]:
     """
     Monthly wholesale energy arbitrage revenue using an EFA-block dispatch model.
 
@@ -265,23 +397,35 @@ def calc_imbalance_revenue(
         When provided, energy capacity is computed per block as arb_mw_d × duration_h.
     initial_soc_frac : float
         Starting SoC as a fraction of energy_mwh (default 0.5 = 50%).
+    dispatch_method : str
+        "greedy" (default) — EFA-block greedy N-period selection.
+        "mpc" — rolling LP re-solved every settlement period; uses actual prices
+        as the LP forecast (perfect-foresight case).
+    horizon : int
+        MPC planning horizon in settlement periods (default 96 = 48 hours).
+        Ignored when dispatch_method="greedy".
 
     Returns
     -------
-    DataFrame with columns: [month (Period), imbalance_revenue_gbp (float), cycling_cost_gbp (float)]
-    imbalance_revenue_gbp is GROSS profit (before deducting cycling wear) so that
-    wear cost can be shown as a separate bar in the stacked chart.
+    (monthly_df, soc_trajectory) : tuple
+        monthly_df : DataFrame [month, imbalance_revenue_gbp, cycling_cost_gbp]
+            imbalance_revenue_gbp is GROSS profit before deducting cycling wear.
+            With MPC dispatch, per-period revenue can be negative (forecast error).
+        soc_trajectory : list of (date, sp, soc_frac) tuples — populated only
+            when dispatch_method="mpc", empty list otherwise.
     """
+    _empty = pd.DataFrame(columns=["month", "imbalance_revenue_gbp", "cycling_cost_gbp"])
+
     if arb_schedule is None:
         if arb_mw is None:
             arb_mw = battery.power_mw
         if arb_energy_mwh is None:
             arb_energy_mwh = battery.energy_mwh
         if arb_mw == 0 or arb_energy_mwh == 0:
-            return pd.DataFrame(columns=["month", "imbalance_revenue_gbp", "cycling_cost_gbp"])
+            return _empty, []
 
     if market_index.empty:
-        return pd.DataFrame(columns=["month", "imbalance_revenue_gbp", "cycling_cost_gbp"])
+        return _empty, []
 
     # Build a full apx_by_date lookup from the entire market_index (no date filter)
     # so that EFA 1's cross-day D-1 lookup succeeds on the first day of the period.
@@ -299,28 +443,76 @@ def calc_imbalance_revenue(
     # Determine the sorted set of dates to iterate over (user-selected range only)
     apx_filt = _filter_dates(apx_full.copy(), "settlementDate", start_date, end_date)
     if apx_filt.empty:
-        return pd.DataFrame(columns=["month", "imbalance_revenue_gbp", "cycling_cost_gbp"])
+        return _empty, []
     sorted_dates = sorted(apx_filt["settlementDate"].unique())
 
     n_periods = max(1, int(battery.duration_h * 2))
 
     # Build arb schedule map: {(date, efa): arb_mw} or {date: arb_mw} (legacy)
     use_efa_sched = False
+    arb_sched_map = {}
     if arb_schedule is not None:
         if isinstance(arb_schedule.index, pd.MultiIndex):
-            # New EFA-block MultiIndex schedule
             arb_sched_map = {
                 (pd.Timestamp(d).normalize(), int(e)): float(v)
                 for (d, e), v in arb_schedule.items()
             }
             use_efa_sched = True
         else:
-            # Legacy date-indexed schedule — same arb_mw applied to all blocks on a day
             arb_sched_map = {
                 pd.Timestamp(k).normalize(): float(v)
                 for k, v in arb_schedule.items()
             }
 
+    # ------------------------------------------------------------------
+    # MPC dispatch path
+    # ------------------------------------------------------------------
+    if dispatch_method == "mpc":
+        if not use_efa_sched:
+            # MPC requires per-(date, efa) schedule; build a uniform one if needed
+            flat_mw = arb_mw if arb_mw is not None else battery.power_mw
+            arb_sched_map = {
+                (date, efa): flat_mw
+                for date in sorted_dates
+                for efa in range(1, 7)
+            }
+
+        arb_mw_by_period = _build_arb_mw_by_period(arb_sched_map)
+        all_periods = [(date, sp) for date in sorted_dates for sp in range(1, 49)]
+        actual_by_period = {
+            (d, int(sp)): float(price)
+            for d, series in apx_by_date.items()
+            for sp, price in series.items()
+        }
+
+        rows, soc_traj = _run_mpc_dispatch(
+            all_periods=all_periods,
+            actual_by_period=actual_by_period,
+            forecast_by_period=actual_by_period,   # PF: actual prices as forecast
+            arb_mw_by_period=arb_mw_by_period,
+            battery=battery,
+            initial_soc_frac=initial_soc_frac,
+            horizon=horizon,
+        )
+
+        if not rows:
+            return _empty, soc_traj
+
+        daily = pd.DataFrame(rows)
+        daily["month"] = pd.to_datetime(daily["date"]).dt.to_period("M")
+        monthly_df = (
+            daily.groupby("month")
+            .agg(
+                imbalance_revenue_gbp=("imbalance_revenue_gbp", "sum"),
+                cycling_cost_gbp=("cycling_cost_gbp", "sum"),
+            )
+            .reset_index()
+        )
+        return monthly_df, soc_traj
+
+    # ------------------------------------------------------------------
+    # Greedy dispatch path (original)
+    # ------------------------------------------------------------------
     soc     = initial_soc_frac * battery.energy_mwh
     soc_min = FR_SOC_LOWER * battery.energy_mwh
     soc_max = FR_SOC_UPPER * battery.energy_mwh
@@ -359,7 +551,6 @@ def calc_imbalance_revenue(
             cycling_wear  = battery.cycling_cost_per_mwh * energy_out
 
             if gross_profit > cycling_wear:
-                # Execute: update SoC
                 soc = soc - energy_out + energy_in * battery.efficiency_rt
                 soc = float(np.clip(soc, 0, battery.energy_mwh))
                 rows.append({
@@ -367,10 +558,9 @@ def calc_imbalance_revenue(
                     "imbalance_revenue_gbp": gross_profit,
                     "cycling_cost_gbp":      cycling_wear,
                 })
-            # Not profitable: no dispatch, SoC unchanged
 
     if not rows:
-        return pd.DataFrame(columns=["month", "imbalance_revenue_gbp", "cycling_cost_gbp"])
+        return _empty, []
 
     daily = pd.DataFrame(rows)
     daily["month"] = pd.to_datetime(daily["date"]).dt.to_period("M")
@@ -382,7 +572,7 @@ def calc_imbalance_revenue(
             cycling_cost_gbp=("cycling_cost_gbp", "sum"),
         )
         .reset_index()
-    )
+    ), []
 
 
 # ---------------------------------------------------------------------------
@@ -398,6 +588,8 @@ def run_backtest(
     end_date=None,
     fr_mw: float = None,
     initial_soc_frac: float = 0.5,
+    dispatch_method: str = "greedy",
+    horizon: int = 96,
 ) -> dict:
     """
     Run the full revenue stack backtest.
@@ -419,12 +611,17 @@ def run_backtest(
         Falls back to full FR commitment if market_index is empty.
     initial_soc_frac : float
         Starting SoC as a fraction of battery.energy_mwh (default 0.5 = 50%).
+    dispatch_method : str
+        "greedy" (default) or "mpc". See calc_imbalance_revenue for details.
+    horizon : int
+        MPC planning horizon in settlement periods (default 96 = 48h).
 
     Returns
     -------
     dict with keys:
-      'monthly'  : wide-format DataFrame, one row per month, columns for each revenue stream
-      'summary'  : dict of aggregate stats (totals, annualised figures)
+      'monthly'        : wide-format DataFrame, one row per month
+      'summary'        : dict of aggregate stats
+      'soc_trajectory' : DataFrame [date, sp, soc_frac] when dispatch_method="mpc", else None
     """
     if services is None:
         services = ALL_SERVICES
@@ -476,17 +673,19 @@ def run_backtest(
 
     # --- Arbitrage ---
     if arb_sch is not None:
-        imb = calc_imbalance_revenue(
+        imb, soc_traj = calc_imbalance_revenue(
             market_index, battery, start_date, end_date,
             arb_schedule=arb_sch, initial_soc_frac=initial_soc_frac,
+            dispatch_method=dispatch_method, horizon=horizon,
         )
     else:
         arb_mw_fixed         = battery.power_mw - (fr_mw if fr_mw is not None else battery.power_mw)
         arb_energy_mwh_fixed = arb_mw_fixed * battery.duration_h
-        imb = calc_imbalance_revenue(
+        imb, soc_traj = calc_imbalance_revenue(
             market_index, battery, start_date, end_date,
             arb_mw=arb_mw_fixed, arb_energy_mwh=arb_energy_mwh_fixed,
             initial_soc_frac=initial_soc_frac,
+            dispatch_method=dispatch_method, horizon=horizon,
         )
     if not imb.empty:
         imb_wide = imb.set_index("month")
@@ -536,7 +735,11 @@ def run_backtest(
         "arb_mw":  avg_arb_mw,
     }
 
-    return {"monthly": monthly, "summary": summary}
+    soc_trajectory_df = (
+        pd.DataFrame(soc_traj, columns=["date", "sp", "soc_frac"])
+        if soc_traj else None
+    )
+    return {"monthly": monthly, "summary": summary, "soc_trajectory": soc_trajectory_df}
 
 
 # ---------------------------------------------------------------------------

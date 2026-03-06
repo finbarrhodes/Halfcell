@@ -387,6 +387,8 @@ def run_forecast_backtest(
     feature_df: pd.DataFrame = None,
     feature_cols: list = None,
     initial_soc_frac: float = 0.5,
+    dispatch_method: str = "greedy",
+    horizon: int = 96,
 ) -> dict:
     """
     Run a forecast-driven revenue backtest for either the 'naive' or 'ml' strategy.
@@ -413,12 +415,17 @@ def run_forecast_backtest(
     feature_df       : feature matrix from build_feature_matrix() (required for strategy="ml")
     feature_cols     : feature column list from train_forecast_model() (required for strategy="ml")
     initial_soc_frac : float — starting SoC as fraction of energy_mwh (default 0.5)
+    dispatch_method  : "greedy" (default) or "mpc". When "mpc", re-solves LP every
+                       30 minutes over a rolling horizon using forecast prices for
+                       planning and actual prices for revenue settlement.
+    horizon          : MPC planning horizon in settlement periods (default 96 = 48h).
 
     Returns
     -------
     dict with keys:
-      'monthly'  : wide-format DataFrame, same schema as revenue_stack.run_backtest()
-      'summary'  : dict of aggregate stats
+      'monthly'        : wide-format DataFrame, same schema as revenue_stack.run_backtest()
+      'summary'        : dict of aggregate stats
+      'soc_trajectory' : DataFrame [date, sp, soc_frac] when dispatch_method="mpc", else None
     """
     from src.analysis.revenue_stack import (
         calc_ancillary_revenue,
@@ -427,6 +434,8 @@ def run_forecast_backtest(
         FR_SOC_LOWER,
         FR_SOC_UPPER,
         _efa_prices,
+        _build_arb_mw_by_period,
+        _run_mpc_dispatch,
         ALL_SERVICES,
     )
     import numpy as np
@@ -486,48 +495,78 @@ def run_forecast_backtest(
     else:
         anc_wide = pd.DataFrame()
 
-    # --- Second pass: EFA-block dispatch with SoC tracking ---
-    n_periods = max(1, int(battery.duration_h * 2))
-    soc       = initial_soc_frac * battery.energy_mwh
-    soc_min   = FR_SOC_LOWER * battery.energy_mwh
-    soc_max   = FR_SOC_UPPER * battery.energy_mwh
-    arb_rows  = []
+    # --- Second pass: dispatch with SoC tracking ---
+    # Shared setup: actual prices flat lookup and period list
+    actual_by_period = {
+        (d, int(sp)): float(price)
+        for d, series in apx_by_date.items()
+        for sp, price in series.items()
+    }
+    all_periods = [(date, sp) for date in sorted_dates for sp in range(1, 49)]
 
-    for date in sorted_dates:
-        fp_day = forecast_prices_by_date.get(date)
-        if fp_day is None:
-            continue
-        # Build a forecast lookup dict with just this day (for _efa_prices)
-        # Forecast EFA 1 D-1 periods are absent — _efa_prices returns only available data
-        fp_by_date = {date: fp_day}
+    soc_traj = []
 
-        for efa in range(1, 7):
-            actual_efa   = _efa_prices(apx_by_date, date, efa)
-            forecast_efa = _efa_prices(fp_by_date, date, efa)
+    if dispatch_method == "mpc":
+        # Rolling MPC: re-solves LP every 30 min using forecast prices for planning,
+        # actual prices for settlement. Forecast EFA 1 D-1 periods are absent from
+        # forecast_by_period — LP treats them as zero-revenue (conservative).
+        arb_mw_by_period = _build_arb_mw_by_period(arb_sched_map)
+        forecast_by_period = {
+            (date, int(sp)): float(price)
+            for date, fp_series in forecast_prices_by_date.items()
+            for sp, price in fp_series.items()
+        }
+        arb_rows, soc_traj = _run_mpc_dispatch(
+            all_periods=all_periods,
+            actual_by_period=actual_by_period,
+            forecast_by_period=forecast_by_period,
+            arb_mw_by_period=arb_mw_by_period,
+            battery=battery,
+            initial_soc_frac=initial_soc_frac,
+            horizon=horizon,
+        )
 
-            arb_mw_d = arb_sched_map.get((date, efa), 0.0)
-            if arb_mw_d <= 0:
+    else:
+        # Greedy EFA-block dispatch (original)
+        n_periods = max(1, int(battery.duration_h * 2))
+        soc       = initial_soc_frac * battery.energy_mwh
+        soc_min   = FR_SOC_LOWER * battery.energy_mwh
+        soc_max   = FR_SOC_UPPER * battery.energy_mwh
+        arb_rows  = []
+
+        for date in sorted_dates:
+            fp_day = forecast_prices_by_date.get(date)
+            if fp_day is None:
                 continue
+            fp_by_date = {date: fp_day}
 
-            nominal_energy_out = arb_mw_d * battery.duration_h
-            energy_out = min(nominal_energy_out, max(0.0, soc - soc_min))
-            energy_in  = min(
-                energy_out / battery.efficiency_rt,
-                max(0.0, soc_max - soc),
-            )
-            if energy_out <= 0 or energy_in <= 0:
-                continue
+            for efa in range(1, 7):
+                actual_efa   = _efa_prices(apx_by_date, date, efa)
+                forecast_efa = _efa_prices(fp_by_date, date, efa)
 
-            result_d = _dispatch_day(
-                forecast_efa, actual_efa,
-                n_periods, energy_out, energy_in,
-                battery.cycling_cost_per_mwh,
-            )
-            if result_d:
-                soc = soc - result_d["mwh_cycled"] + result_d["mwh_cycled"] / battery.efficiency_rt
-                soc = float(np.clip(soc, 0, battery.energy_mwh))
-                result_d["date"] = date
-                arb_rows.append(result_d)
+                arb_mw_d = arb_sched_map.get((date, efa), 0.0)
+                if arb_mw_d <= 0:
+                    continue
+
+                nominal_energy_out = arb_mw_d * battery.duration_h
+                energy_out = min(nominal_energy_out, max(0.0, soc - soc_min))
+                energy_in  = min(
+                    energy_out / battery.efficiency_rt,
+                    max(0.0, soc_max - soc),
+                )
+                if energy_out <= 0 or energy_in <= 0:
+                    continue
+
+                result_d = _dispatch_day(
+                    forecast_efa, actual_efa,
+                    n_periods, energy_out, energy_in,
+                    battery.cycling_cost_per_mwh,
+                )
+                if result_d:
+                    soc = soc - result_d["mwh_cycled"] + result_d["mwh_cycled"] / battery.efficiency_rt
+                    soc = float(np.clip(soc, 0, battery.energy_mwh))
+                    result_d["date"] = date
+                    arb_rows.append(result_d)
 
     if arb_rows:
         daily_arb = pd.DataFrame(arb_rows)
@@ -548,7 +587,7 @@ def run_forecast_backtest(
     # --- Merge and compute monthly totals ---
     frames = [f for f in [anc_wide, imb_wide] if not f.empty]
     if not frames:
-        return {"monthly": pd.DataFrame(), "summary": {}}
+        return {"monthly": pd.DataFrame(), "summary": {}, "soc_trajectory": None}
 
     monthly = frames[0].join(frames[1:], how="outer").fillna(0).reset_index()
     monthly["month_dt"] = monthly["month"].dt.to_timestamp()
@@ -588,4 +627,8 @@ def run_forecast_backtest(
         "arb_mw":             avg_arb_mw,
     }
 
-    return {"monthly": monthly, "summary": summary}
+    soc_trajectory_df = (
+        pd.DataFrame(soc_traj, columns=["date", "sp", "soc_frac"])
+        if soc_traj else None
+    )
+    return {"monthly": monthly, "summary": summary, "soc_trajectory": soc_trajectory_df}
