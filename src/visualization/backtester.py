@@ -30,6 +30,7 @@ from src.analysis.price_forecast import (
     train_forecast_model,
     run_forecast_backtest,
     get_feature_importances,
+    compute_revenue_gap,
     DEFAULT_TEST_START,
 )
 
@@ -639,13 +640,18 @@ An LSTM was considered but is likely overkill given ~2 years of training data an
 be harder to explain. A naive lag model sets the zero-skill baseline.
 
 **Features used (all available at end of day D-1):**
-- Same-period lagged prices: price at the same settlement period 1, 2, and 7 days prior
+- Same-period lagged prices: price at the same settlement period 1, 2, 7, and 14 days prior
 - Previous-day price statistics: mean, standard deviation, max, and min across all 48 periods
+- 7-day rolling mean of daily average price (captures medium-term price level shifts)
 - Generation mix (daily, from D-1): total generation, renewable fraction, fossil fraction,
   and per-fuel breakdown (gas, wind, nuclear, hydro, etc.)
 - Cyclical temporal encodings: settlement period, day-of-week, and day-of-year encoded
   as sin/cos pairs to preserve circularity (e.g. period 48 and period 1 are adjacent)
-- Weekend flag
+- Weekend flag; UK bank holiday flag (holidays have Sunday-like price profiles)
+
+**Target transform:** a signed-log1p transform is applied to prices before fitting
+(`sign(y)·log1p(|y|)`) and inverted on predictions. This compresses the heavy-tailed
+price distribution so the model does not under-weight high-price periods during training.
 
 **Train/test split:** strict temporal split — training data ends before
 `{DEFAULT_TEST_START}` to prevent any look-ahead bias. The model never sees
@@ -664,6 +670,81 @@ dispatch quality on average but does not eliminate forecast error on individual 
             col_b.metric("Test RMSE (£/MWh)",  f"{_test_m['rmse']:.2f}",  help=f"n = {_test_m['n_samples']:,} periods (held-out, after {DEFAULT_TEST_START})")
             col_a.metric("Train MAE (£/MWh)",  f"{_train_m['mae']:.2f}")
             col_b.metric("Test MAE (£/MWh)",   f"{_test_m['mae']:.2f}")
+            col_a.metric(
+                "Train Spearman ρ", f"{_train_m['spearman']:.3f}",
+                help="Rank correlation of 48-period ordering vs actuals. Ordinal accuracy governs greedy dispatch quality.",
+            )
+            col_b.metric(
+                "Test Spearman ρ",  f"{_test_m['spearman']:.3f}",
+                help="Rank correlation of 48-period ordering vs actuals. Ordinal accuracy governs greedy dispatch quality.",
+            )
+            if "spike_rmse" in _test_m:
+                col_a.metric(
+                    "Train Spike-RMSE (£/MWh)", f"{_train_m.get('spike_rmse', '—')}",
+                    help="RMSE on top-decile price periods — where BESS arbitrage revenue is concentrated.",
+                )
+                col_b.metric(
+                    "Test Spike-RMSE (£/MWh)",  f"{_test_m['spike_rmse']}",
+                    help="RMSE on top-decile price periods — where BESS arbitrage revenue is concentrated.",
+                )
+
+            st.caption(
+                "**Interpretation:** MAE < 15 £/MWh is adequate for greedy dispatch; "
+                "MAE < 8 £/MWh is 'good' for MPC. "
+                "Spearman ρ > 0.8 indicates strong ordinal ranking accuracy. "
+                "Spike-RMSE reflects model quality on the high-price periods that drive arbitrage revenue."
+            )
+
+            # Revenue gap: fraction of the perfect-foresight improvement over naive
+            # that the ML forecast actually captures.
+            if include_imbalance:
+                with st.spinner("Computing revenue gap benchmarks (naive & perfect foresight)…"):
+                    _naive_ref = run_forecast_backtest(
+                        strategy="naive",
+                        market_index=mkt_index, auctions=auctions,
+                        battery=battery, services=selected_services,
+                        start_date=start_date, end_date=end_date,
+                        initial_soc_frac=initial_soc_pct / 100,
+                        dispatch_method="greedy",
+                    )
+                    _pf_ref = run_backtest(
+                        auctions, mkt_index, battery, selected_services,
+                        start_date, end_date,
+                        initial_soc_frac=initial_soc_pct / 100,
+                        dispatch_method="greedy",
+                    )
+                _ml_net    = result["summary"].get("total_net", 0)
+                _naive_net = _naive_ref["summary"].get("total_net", 0)
+                _pf_net    = _pf_ref["summary"].get("total_net", 0)
+                _gap       = compute_revenue_gap(_ml_net, _naive_net, _pf_net)
+
+                if _gap is not None:
+                    col_g1, col_g2, col_g3 = st.columns(3)
+                    col_g1.metric(
+                        "Naive net revenue",
+                        f"£{_naive_net:,.0f}",
+                        help="Zero-skill baseline: dispatch using yesterday's prices as forecast.",
+                    )
+                    col_g2.metric(
+                        "ML net revenue",
+                        f"£{_ml_net:,.0f}",
+                        delta=f"£{_ml_net - _naive_net:+,.0f} vs naive",
+                    )
+                    col_g3.metric(
+                        "Perfect foresight net",
+                        f"£{_pf_net:,.0f}",
+                        help="Upper bound: dispatch using actual prices known in advance.",
+                    )
+                    st.metric(
+                        "Revenue gap",
+                        f"{_gap:.1%}",
+                        help=(
+                            "Fraction of the theoretically capturable improvement over naive "
+                            "that the ML forecast actually delivers. "
+                            "gap = (ML − naive) / (perfect − naive). "
+                            "Literature benchmark: ML typically achieves 70–85% in normal markets."
+                        ),
+                    )
 
             importances = get_feature_importances(_model_exp, _feat_cols_exp).head(10)
             fig_imp = go.Figure(go.Bar(

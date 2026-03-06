@@ -27,6 +27,35 @@ import numpy as np
 import pandas as pd
 from dataclasses import dataclass
 
+
+# ---------------------------------------------------------------------------
+# Log-transform model wrapper
+# ---------------------------------------------------------------------------
+
+class _LogTransformModel:
+    """
+    Wraps a sklearn/xgboost/lightgbm estimator with a signed-log1p target
+    transform so that fit() and predict() both operate in price space.
+
+    Signed-log1p handles negative prices gracefully:
+        transform  : sign(y) * log1p(|y|)
+        inverse    : sign(p) * expm1(|p|)
+    """
+
+    def __init__(self, base_model):
+        self._model = base_model
+        self.feature_importances_: np.ndarray | None = None
+
+    def fit(self, X, y):
+        y_log = np.sign(y) * np.log1p(np.abs(y))
+        self._model.fit(X, y_log)
+        self.feature_importances_ = self._model.feature_importances_
+        return self
+
+    def predict(self, X):
+        pred_log = self._model.predict(X)
+        return np.sign(pred_log) * np.expm1(np.abs(pred_log))
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -83,7 +112,7 @@ def build_feature_matrix(
     # Shift by D days within each settlement period group so that day D's feature
     # is the price at that exact same period D days ago.
     apx = apx.sort_values(["settlementPeriod", "settlementDate"])
-    for lag_days in [1, 2, 7]:
+    for lag_days in [1, 2, 7, 14]:
         apx[f"apx_lag_{lag_days}d"] = (
             apx.groupby("settlementPeriod")["apx_price"]
             .shift(lag_days)
@@ -95,6 +124,11 @@ def build_feature_matrix(
         apx.groupby("settlementDate")["apx_price"]
         .agg(daily_mean="mean", daily_std="std", daily_max="max", daily_min="min")
         .reset_index()
+        .sort_values("settlementDate")
+    )
+    # 7-day rolling mean of daily averages (captures medium-term price level)
+    daily_stats["rolling_7d_mean"] = (
+        daily_stats["daily_mean"].rolling(7, min_periods=7).mean()
     )
     # Shift by 1 day so day D gets D-1's stats
     daily_stats_lag = daily_stats.copy()
@@ -104,6 +138,7 @@ def build_feature_matrix(
         "daily_std":  "prev_day_std",
         "daily_max":  "prev_day_max",
         "daily_min":  "prev_day_min",
+        # rolling_7d_mean column name unchanged
     })
     apx = apx.merge(daily_stats_lag, on="settlementDate", how="left")
 
@@ -167,8 +202,19 @@ def build_feature_matrix(
 
     apx["is_weekend"] = (dow >= 5).astype(int)
 
+    # --- UK bank holiday flag ---
+    # Price profiles on bank holidays closely resemble Sundays.
+    try:
+        import holidays as _holidays
+        _uk_hols = _holidays.country_holidays("GB", subdiv="ENG")
+        apx["is_bank_holiday"] = apx["settlementDate"].apply(
+            lambda d: int(d in _uk_hols)
+        )
+    except ImportError:
+        apx["is_bank_holiday"] = 0
+
     # --- Drop rows where any lag feature is missing ---
-    lag_cols = [c for c in apx.columns if "lag" in c or "prev_day" in c]
+    lag_cols = [c for c in apx.columns if "lag" in c or "prev_day" in c or c == "rolling_7d_mean"]
     apx = apx.dropna(subset=lag_cols).reset_index(drop=True)
 
     return apx
@@ -180,16 +226,17 @@ def build_feature_matrix(
 
 FEATURE_COLS = [
     # Same-period lags
-    "apx_lag_1d", "apx_lag_2d", "apx_lag_7d",
-    # Previous-day aggregate
+    "apx_lag_1d", "apx_lag_2d", "apx_lag_7d", "apx_lag_14d",
+    # Previous-day aggregate + medium-term rolling level
     "prev_day_mean", "prev_day_std", "prev_day_max", "prev_day_min",
+    "rolling_7d_mean",
     # Generation mix
     "gen_total", "gen_renewable_frac", "gen_fossil_frac",
     # Temporal
     "sp_sin", "sp_cos",
     "dow_sin", "dow_cos",
     "doy_sin", "doy_cos",
-    "is_weekend",
+    "is_weekend", "is_bank_holiday",
 ]
 
 # Include any individual fuel-group columns that were built (gas, wind, etc.)
@@ -198,7 +245,7 @@ FEATURE_COLS = [
 
 def train_forecast_model(
     feature_df: pd.DataFrame,
-    model_type: str = "rf",
+    model_type: str = "xgb",
     test_start: str = DEFAULT_TEST_START,
 ) -> tuple:
     """
@@ -219,6 +266,7 @@ def train_forecast_model(
       test_metrics  : dict {rmse, mae, n_samples}
     """
     from sklearn.metrics import mean_squared_error, mean_absolute_error
+    from scipy.stats import spearmanr
 
     # Resolve the full feature column list (base + any per-fuel gen columns present)
     gen_fuel_cols = sorted([
@@ -236,17 +284,44 @@ def train_forecast_model(
     X_test  = test[feature_cols].fillna(0)
     y_test  = test["apx_price"]
 
-    model = _build_model(model_type)
+    # Wrap with signed-log transform: fit/predict both operate in price space
+    model = _LogTransformModel(_build_model(model_type))
     model.fit(X_train, y_train)
 
-    def _metrics(X, y, label):
+    def _metrics(X, y):
         pred = model.predict(X)
-        rmse = float(np.sqrt(mean_squared_error(y, pred)))
-        mae  = float(mean_absolute_error(y, pred))
-        return {"rmse": round(rmse, 2), "mae": round(mae, 2), "n_samples": len(y)}
+        y_arr = np.asarray(y)
+        rmse = float(np.sqrt(mean_squared_error(y_arr, pred)))
+        mae  = float(mean_absolute_error(y_arr, pred))
 
-    train_metrics = _metrics(X_train, y_train, "train")
-    test_metrics  = _metrics(X_test,  y_test,  "test")
+        # Spearman rank correlation of the 48-period daily rankings
+        # (ordinal accuracy — directly governs greedy dispatch quality)
+        sp_result  = spearmanr(y_arr, pred)
+        sp_corr    = float(
+            sp_result.statistic if hasattr(sp_result, "statistic") else sp_result.correlation
+        )
+
+        # Spike RMSE: RMSE restricted to top-decile actual price periods
+        # (the periods that matter most for BESS arbitrage revenue)
+        threshold  = float(np.percentile(y_arr, 90))
+        spike_mask = y_arr >= threshold
+        spike_rmse = (
+            float(np.sqrt(mean_squared_error(y_arr[spike_mask], pred[spike_mask])))
+            if spike_mask.sum() >= 10 else None
+        )
+
+        m = {
+            "rmse":     round(rmse, 2),
+            "mae":      round(mae, 2),
+            "spearman": round(sp_corr, 3),
+            "n_samples": len(y_arr),
+        }
+        if spike_rmse is not None:
+            m["spike_rmse"] = round(spike_rmse, 2)
+        return m
+
+    train_metrics = _metrics(X_train, y_train)
+    test_metrics  = _metrics(X_test,  y_test)
 
     return model, feature_cols, train_metrics, test_metrics
 
@@ -255,8 +330,8 @@ def _build_model(model_type: str):
     if model_type == "rf":
         from sklearn.ensemble import RandomForestRegressor
         return RandomForestRegressor(
-            n_estimators=200,
-            max_features="sqrt",
+            n_estimators=300,
+            max_features=0.5,       # outperforms "sqrt" with correlated lag features
             min_samples_leaf=5,
             n_jobs=-1,
             random_state=42,
@@ -269,12 +344,28 @@ def _build_model(model_type: str):
             max_depth=6,
             subsample=0.8,
             colsample_bytree=0.8,
+            min_child_weight=3,     # reduces overfitting on ~20-month training set
+            reg_alpha=0.05,         # L1 regularisation
             n_jobs=-1,
             random_state=42,
             verbosity=0,
         )
+    elif model_type == "lgb":
+        from lightgbm import LGBMRegressor
+        return LGBMRegressor(
+            n_estimators=500,
+            learning_rate=0.03,
+            num_leaves=63,
+            min_child_samples=20,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            reg_alpha=0.05,
+            n_jobs=-1,
+            random_state=42,
+            verbose=-1,
+        )
     else:
-        raise ValueError(f"Unknown model_type '{model_type}'. Use 'rf' or 'xgb'.")
+        raise ValueError(f"Unknown model_type '{model_type}'. Use 'rf', 'xgb', or 'lgb'.")
 
 
 def get_feature_importances(model, feature_cols: list) -> pd.Series:
@@ -283,6 +374,28 @@ def get_feature_importances(model, feature_cols: list) -> pd.Series:
         pd.Series(model.feature_importances_, index=feature_cols)
         .sort_values(ascending=False)
     )
+
+
+def compute_revenue_gap(
+    ml_net: float,
+    naive_net: float,
+    perfect_net: float,
+) -> float | None:
+    """
+    Revenue gap: fraction of the theoretically capturable improvement over naive
+    that the ML forecast actually delivers.
+
+        gap = (ml_net - naive_net) / (perfect_net - naive_net)
+
+    A value of 1.0 means ML matches perfect foresight; 0.0 means ML is no better
+    than naive; negative means ML underperforms naive.
+
+    Returns None if the denominator is near-zero (no arbitrage headroom).
+    """
+    denom = perfect_net - naive_net
+    if abs(denom) < 1.0:
+        return None
+    return (ml_net - naive_net) / denom
 
 
 # ---------------------------------------------------------------------------
