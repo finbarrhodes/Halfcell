@@ -376,6 +376,14 @@ with tab_results:
 
     st.divider()
 
+    st.caption(
+        f"Charts below model a **{power_mw} MW / {power_mw * duration_h:.0f} MWh** asset "
+        f"using **{dispatch_strategy}** price signals and **{dispatch_method_label}** dispatch. "
+        "FR availability fees are earned on the FR-committed portion of capacity; wholesale "
+        "arbitrage is modelled on the remainder. Cycling wear cost is deducted from gross "
+        "revenue to arrive at the net figures shown in the header metrics above."
+    )
+
     # Monthly stacked bar — revenue by stream + cycling cost deduction
     if not monthly.empty:
         st.subheader("Monthly Revenue Stack")
@@ -418,6 +426,11 @@ with tab_results:
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
         )
         st.plotly_chart(fig, use_container_width=True)
+        st.caption(
+            "Each bar shows gross revenue by stream for that month (positive) and cycling "
+            "wear cost (negative, dark red). Net revenue is the algebraic sum of all segments. "
+            "Months with heavier arbitrage dispatch show larger cycling cost deductions."
+        )
 
     # SoC trajectory — only shown when MPC dispatch is selected
     soc_traj = result.get("soc_trajectory")
@@ -472,25 +485,43 @@ with tab_results:
     left, right = st.columns([2, 1])
 
     with left:
-        st.subheader("Cumulative Net Revenue")
+        st.subheader("Cumulative Revenue by Stream")
         monthly_sorted = monthly.sort_values("month_dt")
-        monthly_sorted["cumulative_net"] = monthly_sorted["net_revenue"].cumsum()
 
-        fig2 = go.Figure(go.Scatter(
-            x=monthly_sorted["month_dt"],
-            y=monthly_sorted["cumulative_net"] / 1_000,
-            mode="lines",
-            fill="tozeroy",
-            line=dict(color="#0D7680", width=2),
-            fillcolor="rgba(13,118,128,0.15)",
-        ))
+        stream_cols_cum = {
+            **{f"{s}_rev": s for s in ALL_SERVICES},
+            "imbalance_revenue_gbp": "Imbalance",
+        }
+
+        fig2 = go.Figure()
+        for col, label in stream_cols_cum.items():
+            if col not in monthly_sorted.columns:
+                continue
+            if monthly_sorted[col].sum() == 0:
+                continue
+            display_label = SERVICE_LABELS.get(label, label)
+            fig2.add_trace(go.Scatter(
+                x=monthly_sorted["month_dt"],
+                y=monthly_sorted[col].cumsum() / 1_000,
+                name=display_label,
+                mode="lines",
+                stackgroup="one",
+                line=dict(color=SERVICE_COLOURS.get(label, "#888"), width=0.5),
+            ))
+
         fig2.update_layout(
             height=380,
             template="plotly_white", paper_bgcolor="#FFF1E5", plot_bgcolor="#FFF1E5",
-            yaxis_title="£k",
+            yaxis_title="£k (cumulative)",
             xaxis_title="Month",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
         )
         st.plotly_chart(fig2, use_container_width=True)
+        st.caption(
+            "Cumulative gross revenue by income stream. The height of each coloured band "
+            "shows how much that stream contributed over the backtest period. "
+            "Cycling wear cost is shown separately in the monthly bar chart above."
+        )
 
     with right:
         st.subheader("Revenue Breakdown")
