@@ -27,19 +27,24 @@ except st.errors.StreamlitAPIException:
 st.title("BESS Analytics Tools")
 st.markdown(
 
-    "Hello - my name is Finbar Rhodes and I have a passion for the energy transition and am particularly " \
+    "Hello - my name is Finbar Rhodes. I have a passion for the energy transition and am particularly " \
     "interested in flexibility and grid-scale energy storage. This role, particularly in the UK, has" \
     "increasingly been filled by battery energy storage systems (BESS). The combination of improving battery" \
     "technology, cheaper components, and the growing need for flexiblity assets in a grid increasingly " \
-    "reliant on renewable energy sources leaves BESS with a bright future in the energy transition. \n\n " \
-    "This is a personal coding project I have undertaken to dive into the clean tech and grid-scale" \
-    "battery landscape in the UK in hopes to not just learn through doing but to result in some useful " \
-    "insights. I have tried to focus on how BESS sites make their mark in the changing energy grid: " \
-    "availablity for frequency response services and arbitrage activity. I have a *Market Overview* "
-    "section that shows how different market conditions have evolved over time as well as a "
-    "*Forecasting & Dispatch* model that applies ML price forecasting and MPC optimisation to "
-    "the day-ahead planning layer of BESS operations. The data powering "
-    "this tool is sourced from the **Elexon Insights Solution API** and **NESO Data Portal**."\
+    "reliant on renewable energy sources leaves BESS with a bright future in the energy transition. " \
+    "Batteries are playing a major role in the energy transition, in ways that go beyond the scope of this, "
+    "project and if you're interested, [here](https://climate.benjames.io/batteries/) is a great guide I used.\n\n " \
+    "This is a personal coding project I have undertaken to dive into the UK clean tech and grid-scale" \
+    "battery landscape in hopes to not just learn-through-doing but to provide in some useful " \
+    "insights. With a background in data science, statistics, and economics, I have tried to bring my " \
+    "analytical skills and machine learning experience to showcase how impactful this technology is " \
+    "and how it is making its mark in our grid. I have focused on two key verticals for BESS sites: " \
+    "frequency response services and arbitrage activity, which I go into more detail about below. " \
+    "I have a *Market Overview* section that shows how different market conditions have evolved over "\
+    "time as well as a *Forecasting & Dispatch* model that applies ML price forecasting and Model "
+    "Predctive Control (MPC) optimisation to the day-ahead planning layer of BESS operations. "\
+    "The data powering this tool is sourced from the **Elexon Insights Solution API** "\
+    "and **NESO Data Portal**, with methodology based on well-established literature."\
 )
 
 st.divider()
