@@ -549,6 +549,7 @@ def run_forecast_backtest(
         _efa_prices,
         _build_arb_mw_by_period,
         _run_mpc_dispatch,
+        _build_result,
         ALL_SERVICES,
     )
     import numpy as np
@@ -697,51 +698,5 @@ def run_forecast_backtest(
     else:
         imb_wide = pd.DataFrame()
 
-    # --- Merge and compute monthly totals ---
-    frames = [f for f in [anc_wide, imb_wide] if not f.empty]
-    if not frames:
-        return {"monthly": pd.DataFrame(), "summary": {}, "soc_trajectory": None}
-
-    monthly = frames[0].join(frames[1:], how="outer").fillna(0).reset_index()
-    monthly["month_dt"] = monthly["month"].dt.to_timestamp()
-
-    rev_cols  = [c for c in monthly.columns if c.endswith("_rev") or c == "imbalance_revenue_gbp"]
-    cost_cols = [c for c in monthly.columns if c == "cycling_cost_gbp"]
-
-    for col in rev_cols + cost_cols:
-        monthly[col] = monthly[col] * battery.availability_factor
-    if "mwh_cycled" in monthly.columns:
-        monthly["mwh_cycled"] = monthly["mwh_cycled"] * battery.availability_factor
-
-    monthly["gross_revenue"] = monthly[rev_cols].sum(axis=1)
-    monthly["cycling_cost"]  = monthly[cost_cols].sum(axis=1) if cost_cols else 0.0
-    monthly["net_revenue"]   = monthly["gross_revenue"] - monthly["cycling_cost"]
-
-    years            = len(monthly) / 12
-    net_total        = monthly["net_revenue"].sum()
-    total_mwh_cycled = monthly["mwh_cycled"].sum() if "mwh_cycled" in monthly.columns else 0.0
-
-    breakdown = {}
-    for col in rev_cols:
-        label = col.replace("_rev", "") if col.endswith("_rev") else "Imbalance"
-        breakdown[label] = round(monthly[col].sum(), 0)
-
-    summary = {
-        "total_gross":        round(monthly["gross_revenue"].sum(), 0),
-        "total_cycling_cost": round(monthly["cycling_cost"].sum(), 0),
-        "total_net":          round(net_total, 0),
-        "total_mwh_cycled":   round(total_mwh_cycled, 1),
-        "years_covered":      round(years, 2),
-        "annualised_net":     round(net_total / years, 0) if years > 0 else 0,
-        "annualised_per_mw":  round(net_total / years / battery.power_mw, 0) if years > 0 and battery.power_mw > 0 else 0,
-        "breakdown":          breakdown,
-        "top_service":        max(breakdown, key=breakdown.get) if breakdown else "N/A",
-        "fr_mw":              avg_fr_mw,
-        "arb_mw":             avg_arb_mw,
-    }
-
-    soc_trajectory_df = (
-        pd.DataFrame(soc_traj, columns=["date", "sp", "soc_frac"])
-        if soc_traj else None
-    )
-    return {"monthly": monthly, "summary": summary, "soc_trajectory": soc_trajectory_df}
+    # --- Merge streams, apply availability factor, compute summary ---
+    return _build_result(anc_wide, imb_wide, battery, avg_fr_mw, avg_arb_mw, soc_traj)

@@ -266,6 +266,75 @@ def _filter_dates(df: pd.DataFrame, date_col: str, start_date, end_date) -> pd.D
     return df
 
 
+def _build_result(
+    anc_wide: pd.DataFrame,
+    imb_wide: pd.DataFrame,
+    battery: "BatterySpec",
+    avg_fr_mw: float,
+    avg_arb_mw: float,
+    soc_traj: list,
+) -> dict:
+    """
+    Merge ancillary and arbitrage monthly streams, apply availability factor,
+    compute net revenue columns, and return the standard result dict.
+
+    Shared by run_backtest() and run_forecast_backtest() to eliminate duplicate
+    logic. Handles the optional mwh_cycled column produced by MPC dispatch.
+
+    Returns {"monthly": DataFrame, "summary": dict, "soc_trajectory": DataFrame | None}.
+    """
+    frames = [f for f in [anc_wide, imb_wide] if not f.empty]
+    if not frames:
+        return {"monthly": pd.DataFrame(), "summary": {}, "soc_trajectory": None}
+
+    monthly = frames[0].join(frames[1:], how="outer").fillna(0).reset_index()
+    monthly["month_dt"] = monthly["month"].dt.to_timestamp()
+
+    rev_cols  = [c for c in monthly.columns if c.endswith("_rev") or c == "imbalance_revenue_gbp"]
+    cost_cols = [c for c in monthly.columns if c == "cycling_cost_gbp"]
+
+    # Apply availability factor to every revenue stream and cycling cost proportionally.
+    # This models the fraction of committed periods/days where the asset is actually
+    # available — accounting for planned maintenance, unplanned faults, and curtailment.
+    for col in rev_cols + cost_cols:
+        monthly[col] = monthly[col] * battery.availability_factor
+    if "mwh_cycled" in monthly.columns:
+        monthly["mwh_cycled"] = monthly["mwh_cycled"] * battery.availability_factor
+
+    monthly["gross_revenue"] = monthly[rev_cols].sum(axis=1)
+    monthly["cycling_cost"]  = monthly[cost_cols].sum(axis=1) if cost_cols else 0.0
+    monthly["net_revenue"]   = monthly["gross_revenue"] - monthly["cycling_cost"]
+
+    years     = len(monthly) / 12
+    net_total = monthly["net_revenue"].sum()
+
+    breakdown = {}
+    for col in rev_cols:
+        label = col.replace("_rev", "") if col.endswith("_rev") else "Imbalance"
+        breakdown[label] = round(monthly[col].sum(), 0)
+
+    summary = {
+        "total_gross":        round(monthly["gross_revenue"].sum(), 0),
+        "total_cycling_cost": round(monthly["cycling_cost"].sum(), 0),
+        "total_net":          round(net_total, 0),
+        "years_covered":      round(years, 2),
+        "annualised_net":     round(net_total / years, 0) if years > 0 else 0,
+        "annualised_per_mw":  round(net_total / years / battery.power_mw, 0) if years > 0 and battery.power_mw > 0 else 0,
+        "breakdown":          breakdown,
+        "top_service":        max(breakdown, key=breakdown.get) if breakdown else "N/A",
+        "fr_mw":              avg_fr_mw,
+        "arb_mw":             avg_arb_mw,
+    }
+    if "mwh_cycled" in monthly.columns:
+        summary["total_mwh_cycled"] = round(monthly["mwh_cycled"].sum(), 1)
+
+    soc_trajectory_df = (
+        pd.DataFrame(soc_traj, columns=["date", "sp", "soc_frac"])
+        if soc_traj else None
+    )
+    return {"monthly": monthly, "summary": summary, "soc_trajectory": soc_trajectory_df}
+
+
 # ---------------------------------------------------------------------------
 # Stream 1 — Ancillary service availability revenue
 # ---------------------------------------------------------------------------
@@ -605,7 +674,7 @@ def run_backtest(
     end_date      : inclusive end date (str or datetime)
     fr_mw         : float, optional
         MW committed to FR availability services for the entire period. When
-        provided, a fixed split is applied — used internally by find_optimal_split.
+        provided, a fixed split is applied — used by sensitivity_table and similar callers.
         When omitted (default), a per-EFA-block dynamic allocation is computed using
         the confirmed FR clearing price vs a perfect-foresight shadow arb estimate.
         Falls back to full FR commitment if market_index is empty.
@@ -628,7 +697,7 @@ def run_backtest(
 
     # --- Resolve FR/arbitrage split ---
     if fr_mw is not None:
-        # Fixed allocation — used by find_optimal_split and sensitivity_table
+        # Fixed allocation — used by sensitivity_table and similar callers
         fr_mw     = float(np.clip(fr_mw, 0, battery.power_mw))
         fr_sch    = None
         arb_sch   = None
@@ -692,54 +761,8 @@ def run_backtest(
     else:
         imb_wide = pd.DataFrame()
 
-    # --- Merge streams ---
-    frames = [f for f in [anc_wide, imb_wide] if not f.empty]
-    if not frames:
-        return {"monthly": pd.DataFrame(), "summary": {}}
-
-    monthly = frames[0].join(frames[1:], how="outer").fillna(0).reset_index()
-    monthly["month_dt"] = monthly["month"].dt.to_timestamp()
-
-    rev_cols  = [c for c in monthly.columns if c.endswith("_rev") or c == "imbalance_revenue_gbp"]
-    cost_cols = [c for c in monthly.columns if c == "cycling_cost_gbp"]
-
-    # Apply availability factor to every revenue stream and cycling cost proportionally.
-    # This models the fraction of committed periods/days where the asset is actually
-    # available — accounting for planned maintenance, unplanned faults, and curtailment.
-    for col in rev_cols + cost_cols:
-        monthly[col] = monthly[col] * battery.availability_factor
-
-    monthly["gross_revenue"]  = monthly[rev_cols].sum(axis=1)
-    monthly["cycling_cost"]   = monthly[cost_cols].sum(axis=1) if cost_cols else 0.0
-    monthly["net_revenue"]    = monthly["gross_revenue"] - monthly["cycling_cost"]
-
-    # --- Summary stats ---
-    years     = len(monthly) / 12
-    net_total = monthly["net_revenue"].sum()
-
-    breakdown = {}
-    for col in rev_cols:
-        label = col.replace("_rev", "") if col.endswith("_rev") else "Imbalance"
-        breakdown[label] = round(monthly[col].sum(), 0)
-
-    summary = {
-        "total_gross":        round(monthly["gross_revenue"].sum(), 0),
-        "total_cycling_cost": round(monthly["cycling_cost"].sum(), 0),
-        "total_net":          round(net_total, 0),
-        "years_covered":      round(years, 2),
-        "annualised_net":     round(net_total / years, 0) if years > 0 else 0,
-        "annualised_per_mw":  round(net_total / years / battery.power_mw, 0) if years > 0 and battery.power_mw > 0 else 0,
-        "breakdown":          breakdown,
-        "top_service":        max(breakdown, key=breakdown.get) if breakdown else "N/A",
-        "fr_mw":   avg_fr_mw,
-        "arb_mw":  avg_arb_mw,
-    }
-
-    soc_trajectory_df = (
-        pd.DataFrame(soc_traj, columns=["date", "sp", "soc_frac"])
-        if soc_traj else None
-    )
-    return {"monthly": monthly, "summary": summary, "soc_trajectory": soc_trajectory_df}
+    # --- Merge streams, apply availability factor, compute summary ---
+    return _build_result(anc_wide, imb_wide, battery, avg_fr_mw, avg_arb_mw, soc_traj)
 
 
 # ---------------------------------------------------------------------------
@@ -786,68 +809,6 @@ def sensitivity_table(
         })
 
     return pd.DataFrame(rows)
-
-
-# ---------------------------------------------------------------------------
-# Optimal FR/arbitrage split finder
-# ---------------------------------------------------------------------------
-
-def find_optimal_split(
-    auctions: pd.DataFrame,
-    market_index: pd.DataFrame,
-    battery: BatterySpec,
-    services: list = None,
-    start_date=None,
-    end_date=None,
-    n_steps: int = 40,
-) -> tuple:
-    """
-    Sweep fr_mw from 0 to battery.power_mw across n_steps evenly-spaced values
-    and return the revenue-maximising split alongside the full trade-off curve.
-
-    Parameters
-    ----------
-    n_steps : int
-        Number of fr_mw values to evaluate (default 40). More steps give a
-        smoother curve but take proportionally longer to compute.
-
-    Returns
-    -------
-    (optimal_fr_mw, trade_off_df) where:
-      optimal_fr_mw  : float — fr_mw that maximises total net revenue
-      trade_off_df   : DataFrame with columns [fr_mw, arb_mw, total_net_gbp, annualised_per_mw]
-    """
-    if services is None:
-        services = ALL_SERVICES
-
-    step = battery.power_mw / n_steps
-    fr_values = np.arange(0, battery.power_mw + step * 0.5, step)
-    fr_values = np.clip(fr_values, 0, battery.power_mw)
-
-    rows = []
-    for fr in fr_values:
-        result = run_backtest(
-            auctions, market_index, battery, services,
-            start_date=start_date, end_date=end_date,
-            fr_mw=fr,
-        )
-        s = result["summary"]
-        rows.append({
-            "fr_mw":             round(fr, 2),
-            "arb_mw":            round(battery.power_mw - fr, 2),
-            "total_net_gbp":     s.get("total_net", 0),
-            "annualised_per_mw": s.get("annualised_per_mw", 0),
-        })
-
-    trade_off_df = pd.DataFrame(rows)
-
-    if trade_off_df.empty:
-        return battery.power_mw, trade_off_df
-
-    best_idx = trade_off_df["total_net_gbp"].idxmax()
-    optimal_fr_mw = float(trade_off_df.loc[best_idx, "fr_mw"])
-
-    return optimal_fr_mw, trade_off_df
 
 
 # ---------------------------------------------------------------------------
