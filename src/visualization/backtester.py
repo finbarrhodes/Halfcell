@@ -38,7 +38,7 @@ from src.analysis.revenue_stack import (
 # ---------------------------------------------------------------------------
 try:
     st.set_page_config(
-        page_title="BESS Revenue Backtester",
+        page_title="Forecasting & Dispatch Model",
         page_icon="🔋",
         layout="wide",
     )
@@ -335,11 +335,35 @@ if _soc_raw is not None and not _soc_raw.empty:
 # Header
 # ---------------------------------------------------------------------------
 
-st.title("BESS Revenue Backtester")
+st.title("Day-Ahead Forecasting & Dispatch Model")
 st.markdown(
-    f"Modelling a **{power_mw} MW / {power_mw * FIXED_BATTERY.duration_h:.0f} MWh** battery "
+    "Grid-scale batteries earn revenue by participating in multiple markets simultaneously. "
+    "This model focuses on the **day-ahead decision layer**: given yesterday's auction results "
+    "and market price data, how should a BESS operator allocate capacity between frequency "
+    "response commitment and spot arbitrage — and how much does the quality of the price "
+    "forecast actually affect the outcome?"
+)
+st.markdown(
+    "The modelling framework has three components: a **per-EFA-block FR/arbitrage capacity "
+    "allocator** that compares confirmed auction clearing prices against a forecast-based "
+    "shadow arbitrage value; an **MPC dispatch engine** (rolling 48-hour LP) that plans "
+    "charge/discharge at half-hourly resolution while enforcing FR SoC constraints as hard "
+    "bounds; and a **price forecasting pipeline** that benchmarks three strategies — naive "
+    "D-1 baseline, Random Forest, and perfect foresight ceiling — against each other."
+)
+st.info(
+    "**Scope note:** this model covers the day-ahead planning layer only. "
+    "Intraday re-optimisation, Balancing Mechanism participation, and real-time dispatch "
+    "are not modelled — these require operational settlement data not available publicly "
+    "and are the primary reason figures here will differ from industry estimates. "
+    "The focus is on the forecasting and optimisation methodology rather than "
+    "comprehensive revenue capture.",
+    icon="ℹ️",
+)
+st.caption(
+    f"Asset: **{power_mw} MW / {power_mw * FIXED_BATTERY.duration_h:.0f} MWh** "
     f"({FIXED_BATTERY.duration_h:.0f}h duration, {FIXED_BATTERY.efficiency_rt*100:.0f}% "
-    f"round-trip efficiency) from **{start_date}** to **{end_date}**."
+    f"round-trip efficiency) — **{start_date}** to **{end_date}**."
 )
 
 # ---------------------------------------------------------------------------

@@ -36,9 +36,9 @@ st.markdown(
     "battery landscape in the UK in hopes to not just learn through doing but to result in some useful " \
     "insights. I have tried to focus on how BESS sites make their mark in the changing energy grid: " \
     "availablity for frequency response services and arbitrage activity. I have a *Market Overview* "
-    "capacity section that shows how different market conditions have evolved over time as well as a "
-    "*Revenue Backtesting* tool to explore a BESS sites performance (revenue generation, cycling) "
-    "using naive, perfect foresight, and machine learning-based dispatch strategies. The data powering "
+    "section that shows how different market conditions have evolved over time as well as a "
+    "*Forecasting & Dispatch* model that applies ML price forecasting and MPC optimisation to "
+    "the day-ahead planning layer of BESS operations. The data powering "
     "this tool is sourced from the **Elexon Insights Solution API** and **NESO Data Portal**."\
 )
 
@@ -118,14 +118,14 @@ with col1:
     st.page_link("src/visualization/dashboard.py", label="Market Overview →")
 
 with col2:
-    st.markdown("**Revenue Backtester**")
+    st.markdown("**Forecasting & Dispatch Model**")
     st.markdown(
-        "Model the combined FR availability and wholesale arbitrage revenue stack "
-        "for a configurable BESS asset. Compare Perfect Foresight, Naive, and ML "
-        "dispatch strategies, and run sensitivity analysis across a range of "
-        "battery sizes."
+        "A day-ahead modelling framework for FR/arbitrage capacity allocation and "
+        "MPC dispatch. Benchmarks three price forecasting strategies — naive D-1 "
+        "baseline, Random Forest, and perfect foresight ceiling — to isolate how "
+        "much forecast quality affects operational outcomes."
     )
-    st.page_link("src/visualization/backtester.py", label="Revenue Backtester →")
+    st.page_link("src/visualization/backtester.py", label="Forecasting & Dispatch →")
 
 with col3:
     st.markdown("**Methodology & Data**")
