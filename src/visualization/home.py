@@ -60,12 +60,12 @@ st.markdown(
 
     | Revenue route | How it works |
     |---|---|
-    | **Frequency response** (Dynamic Services) | Paid a £/MW/h availability fee to hold discharge or charge headroom; activated automatically when grid frequency deviates from 50 Hz |
-    | **Wholesale arbitrage** | Charge during low-price periods (high wind, low demand); discharge during high-price periods |
-    | **Balancing Mechanism (BM)** | Dispatched by NESO in real time as a BM unit to correct short-term supply/demand imbalance |
-    | **Capacity Market** | Annual availability payment for committing to providing energy capacity during periods of system stress |
+    | **Frequency response** (Dynamic Services) | Paid a £/MWh availability fee to hold discharge or charge headroom; activated when grid frequency deviates from 50 Hz by even a fraction of a percentage. |
+    | **Wholesale arbitrage** | Trading on the wholesale market where batteries charge during low-price periods (high wind, low demand) and discharge during high-price periods |
+    | **Balancing Mechanism (BM)** | Dispatched by NESO in real time via bids/auctions to correct short-term supply/demand imbalance |
+    | **Capacity Market** | Longer-term availability payments for committing to providing energy capacity during periods of system stress |
 
-    **Why this tool focuses on Dynamic Services and wholesale prices:**
+    **Why this tool focuses on Dynamic Services and wholesale activity:**
     Dynamic services (DC, DM, DR) dominated the GB BESS revenue stack from roughly 2021 through
     early 2023 — at times accounting for over 70% of total asset revenue, with some assets
     earning ~£156k/MW/year at the 2022 peak
