@@ -1,0 +1,148 @@
+{
+  "pf_mpc": {
+    "computed_at": "2026-03-09T12:24:56.119719+00:00",
+    "git_sha": "4931b4ca3d241c4e6aa6e7d3d21ff3c19859f596",
+    "data_mtimes": {
+      "auctions.parquet": 1772814485.7174647,
+      "generation_daily.parquet": 1772814487.263137,
+      "market_index.parquet": 1772814486.2730398,
+      "system_prices.parquet": 1772814486.3264604
+    },
+    "params": {
+      "power_mw": 50.0,
+      "duration_h": 2.0,
+      "efficiency_rt": 0.9,
+      "cycling_cost_per_mwh": 3.0,
+      "availability_factor": 0.95,
+      "initial_soc": 0.5,
+      "dispatch_method": "mpc",
+      "horizon": 96,
+      "start_date": "2023-01-01",
+      "end_date": "2026-02-19"
+    },
+    "summary": {
+      "total_gross": 31082788.0,
+      "total_cycling_cost": 98717.0,
+      "total_net": 30984071.0,
+      "years_covered": 3.17,
+      "annualised_net": 9784443.0,
+      "annualised_per_mw": 195689.0,
+      "breakdown": {
+        "DCH": 2950877.0,
+        "DCL": 3504143.0,
+        "DMH": 2416854.0,
+        "DML": 5760577.0,
+        "DRH": 1293570.0,
+        "DRL": 13259697.0,
+        "Imbalance": 1897071.0
+      },
+      "top_service": "DRL",
+      "fr_mw": 46.3029494787308,
+      "arb_mw": 3.6970505212691975
+    }
+  },
+  "naive_mpc": {
+    "computed_at": "2026-03-09T12:29:32.601198+00:00",
+    "git_sha": "4931b4ca3d241c4e6aa6e7d3d21ff3c19859f596",
+    "data_mtimes": {
+      "auctions.parquet": 1772814485.7174647,
+      "generation_daily.parquet": 1772814487.263137,
+      "market_index.parquet": 1772814486.2730398,
+      "system_prices.parquet": 1772814486.3264604
+    },
+    "params": {
+      "power_mw": 50.0,
+      "duration_h": 2.0,
+      "efficiency_rt": 0.9,
+      "cycling_cost_per_mwh": 3.0,
+      "availability_factor": 0.95,
+      "initial_soc": 0.5,
+      "dispatch_method": "mpc",
+      "horizon": 96,
+      "start_date": "2023-01-01",
+      "end_date": "2026-02-19"
+    },
+    "summary": {
+      "total_gross": 29733597.0,
+      "total_cycling_cost": 84702.0,
+      "total_net": 29648895.0,
+      "total_mwh_cycled": 28233.9,
+      "years_covered": 3.17,
+      "annualised_net": 9362809.0,
+      "annualised_per_mw": 187256.0,
+      "breakdown": {
+        "DCH": 2965681.0,
+        "DCL": 3513355.0,
+        "DMH": 2432466.0,
+        "DML": 5750255.0,
+        "DRH": 1313164.0,
+        "DRL": 13239091.0,
+        "Imbalance": 519586.0
+      },
+      "top_service": "DRL",
+      "fr_mw": 46.222880142207686,
+      "arb_mw": 3.7771198577923144
+    }
+  },
+  "ml_mpc": {
+    "computed_at": "2026-03-09T12:34:45.970610+00:00",
+    "git_sha": "4931b4ca3d241c4e6aa6e7d3d21ff3c19859f596",
+    "data_mtimes": {
+      "auctions.parquet": 1772814485.7174647,
+      "generation_daily.parquet": 1772814487.263137,
+      "market_index.parquet": 1772814486.2730398,
+      "system_prices.parquet": 1772814486.3264604
+    },
+    "params": {
+      "power_mw": 50.0,
+      "duration_h": 2.0,
+      "efficiency_rt": 0.9,
+      "cycling_cost_per_mwh": 3.0,
+      "availability_factor": 0.95,
+      "initial_soc": 0.5,
+      "dispatch_method": "mpc",
+      "horizon": 96,
+      "start_date": "2023-01-01",
+      "end_date": "2026-02-19",
+      "ml_model_type": "rf",
+      "test_start": "2025-03-01"
+    },
+    "summary": {
+      "total_gross": 31010377.0,
+      "total_cycling_cost": 64129.0,
+      "total_net": 30946248.0,
+      "total_mwh_cycled": 21376.4,
+      "years_covered": 3.17,
+      "annualised_net": 9772499.0,
+      "annualised_per_mw": 195450.0,
+      "breakdown": {
+        "DCH": 3068143.0,
+        "DCL": 3622443.0,
+        "DMH": 2518125.0,
+        "DML": 5901375.0,
+        "DRH": 1362743.0,
+        "DRL": 13594599.0,
+        "Imbalance": 942948.0
+      },
+      "top_service": "DRL",
+      "fr_mw": 47.52952677151934,
+      "arb_mw": 2.4704732284806568
+    },
+    "model_metrics": {
+      "train": {
+        "rmse": 16.03,
+        "mae": 7.23,
+        "spearman": 0.983,
+        "n_samples": 83401,
+        "spike_rmse": 41.17
+      },
+      "test": {
+        "rmse": 30.67,
+        "mae": 23.01,
+        "spearman": 0.549,
+        "n_samples": 13152,
+        "spike_rmse": 46.17
+      }
+    }
+  }
+}
