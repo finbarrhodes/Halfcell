@@ -1,37 +1,36 @@
 """
-BESS Revenue Backtester
-==============================
-Launched as a page via app.py (st.navigation).
+BESS Revenue Backtester — Viewer
+==================================
+Pure viewer: all heavy computation is done offline via scripts/precompute_cache.py.
+
 Can still be run standalone for local development:
     streamlit run src/visualization/backtester.py
 """
 
+import json
 import sys
 from pathlib import Path
 
 # Ensure src/ is on the path when launched standalone from any working directory
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-import plotly.express as px
+import streamlit as st
 
-from src.analysis.revenue_stack import (
-    BatterySpec,
-    run_backtest,
-    sensitivity_table,
-    ALL_SERVICES,
-    SERVICE_LABELS,
-    SERVICE_COLOURS,
-)
 from src.analysis.price_forecast import (
-    build_feature_matrix,
-    train_forecast_model,
-    run_forecast_backtest,
-    get_feature_importances,
-    compute_revenue_gap,
     DEFAULT_TEST_START,
+    build_feature_matrix,
+    compute_revenue_gap,
+    get_feature_importances,
+    train_forecast_model,
+)
+from src.analysis.revenue_stack import (
+    ALL_SERVICES,
+    SERVICE_COLOURS,
+    SERVICE_LABELS,
+    BatterySpec,
+    sensitivity_table,
 )
 
 # ---------------------------------------------------------------------------
@@ -47,91 +46,187 @@ except st.errors.StreamlitAPIException:
     pass  # already set by app.py
 
 PROCESSED = Path(__file__).parent.parent.parent / "data" / "processed"
+CACHE_DIR = Path(__file__).parent.parent.parent / "data" / "cache"
+
+# Fixed battery configuration (all parameters documented in methodology expander below)
+FIXED_BATTERY = BatterySpec(
+    power_mw=50.0,
+    duration_h=2.0,
+    efficiency_rt=0.90,
+    cycling_cost_per_mwh=3.0,
+    availability_factor=0.95,
+)
+BASE_POWER_MW = 50.0  # all cache figures are at this MW rating
+
+# Map sidebar radio label → cache file key
+STRATEGY_KEYS = {
+    "Perfect Foresight": "pf_mpc",
+    "Naive (D-1 prices)": "naive_mpc",
+    "ML Model": "ml_mpc",
+}
 
 
 # ---------------------------------------------------------------------------
-# Data loading
+# Cache loading
+# ---------------------------------------------------------------------------
+
+@st.cache_data
+def load_monthly(strategy_key: str) -> pd.DataFrame | None:
+    p = CACHE_DIR / f"{strategy_key}.parquet"
+    if not p.exists():
+        return None
+    df = pd.read_parquet(p)
+    df["month_dt"] = pd.to_datetime(df["month_dt"])
+    return df
+
+
+@st.cache_data
+def load_soc(strategy_key: str) -> pd.DataFrame | None:
+    p = CACHE_DIR / f"soc_{strategy_key}.parquet"
+    if not p.exists():
+        return None
+    return pd.read_parquet(p)
+
+
+@st.cache_data
+def load_manifest() -> dict:
+    p = CACHE_DIR / "manifest.json"
+    if not p.exists():
+        return {}
+    with open(p) as f:
+        return json.load(f)
+
+
+# ---------------------------------------------------------------------------
+# Source data (used only for the Sensitivity tab)
 # ---------------------------------------------------------------------------
 
 @st.cache_data
 def load_auctions() -> pd.DataFrame:
     p = PROCESSED / "auctions.parquet"
-    if not p.exists():
-        return pd.DataFrame()
-    return pd.read_parquet(p)
+    return pd.read_parquet(p) if p.exists() else pd.DataFrame()
 
 
 @st.cache_data
 def load_market_index() -> pd.DataFrame:
     p = PROCESSED / "market_index.parquet"
-    if not p.exists():
-        return pd.DataFrame()
-    return pd.read_parquet(p)
+    return pd.read_parquet(p) if p.exists() else pd.DataFrame()
 
 
 @st.cache_data
 def load_generation_daily() -> pd.DataFrame:
     p = PROCESSED / "generation_daily.parquet"
-    if not p.exists():
-        return pd.DataFrame()
-    return pd.read_parquet(p)
+    return pd.read_parquet(p) if p.exists() else pd.DataFrame()
 
 
-auctions    = load_auctions()
-mkt_index   = load_market_index()
-gen_daily   = load_generation_daily()
+@st.cache_resource
+def load_forecast_model(model_type: str = "rf"):
+    """Train and cache the ML model for feature importance display (not for backtesting)."""
+    feature_df = build_feature_matrix(load_market_index(), load_generation_daily())
+    model, feature_cols, train_metrics, test_metrics = train_forecast_model(
+        feature_df, model_type=model_type, test_start=DEFAULT_TEST_START
+    )
+    return model, feature_cols, train_metrics, test_metrics
+
 
 # ---------------------------------------------------------------------------
-# Sidebar — parameters
+# Post-filtering & summary helpers
+# ---------------------------------------------------------------------------
+
+def _apply_filters(
+    monthly: pd.DataFrame,
+    start_date,
+    end_date,
+    selected_services: list,
+    power_mw: float,
+) -> pd.DataFrame:
+    """Filter cached monthly data by date and services, then scale to display power."""
+    df = monthly.copy()
+
+    # Date filter (inclusive month-level bounds)
+    start_ts = pd.Timestamp(start_date).to_period("M").to_timestamp()
+    end_ts   = pd.Timestamp(end_date).to_period("M").to_timestamp("M")
+    df = df[(df["month_dt"] >= start_ts) & (df["month_dt"] <= end_ts)]
+
+    # Service filter — zero out excluded services
+    excluded = [s for s in ALL_SERVICES if s not in selected_services]
+    for s in excluded:
+        col = f"{s}_rev"
+        if col in df.columns:
+            df[col] = 0.0
+
+    # Power scaling (all cache figures are at BASE_POWER_MW = 50 MW)
+    scale     = power_mw / BASE_POWER_MW
+    rev_cols  = [f"{s}_rev" for s in ALL_SERVICES]
+    rev_cols += ["imbalance_revenue_gbp", "cycling_cost_gbp"]
+    for col in rev_cols:
+        if col in df.columns:
+            df[col] = df[col] * scale
+
+    return df
+
+
+def _recompute_summary(monthly: pd.DataFrame, power_mw: float) -> dict:
+    """Derive headline metrics from a (possibly filtered + scaled) monthly DataFrame."""
+    if monthly.empty:
+        return {}
+
+    svc_totals = {s: monthly[f"{s}_rev"].sum() for s in ALL_SERVICES if f"{s}_rev" in monthly.columns}
+    imb_rev    = monthly["imbalance_revenue_gbp"].sum() if "imbalance_revenue_gbp" in monthly.columns else 0.0
+    cycling    = monthly["cycling_cost_gbp"].sum()      if "cycling_cost_gbp" in monthly.columns else 0.0
+
+    total_gross = sum(svc_totals.values()) + imb_rev
+    total_net   = total_gross - cycling
+
+    months_n      = len(monthly)
+    years_covered = months_n / 12
+    ann_net       = total_net   / years_covered if years_covered > 0 else 0.0
+    ann_per_mw    = ann_net     / power_mw      if power_mw > 0 else 0.0
+
+    breakdown = {**svc_totals, "Imbalance": imb_rev}
+    breakdown = {k: v for k, v in breakdown.items() if v > 0}
+    top_service = max(breakdown, key=breakdown.get) if breakdown else ""
+
+    return {
+        "total_gross":      round(total_gross, 0),
+        "total_cycling_cost": round(cycling, 0),
+        "total_net":        round(total_net, 0),
+        "years_covered":    round(years_covered, 2),
+        "annualised_net":   round(ann_net, 0),
+        "annualised_per_mw": round(ann_per_mw, 0),
+        "breakdown":        breakdown,
+        "top_service":      top_service,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Cache presence check
+# ---------------------------------------------------------------------------
+
+manifest = load_manifest()
+_missing = [k for k in STRATEGY_KEYS.values() if not (CACHE_DIR / f"{k}.parquet").exists()]
+
+if _missing:
+    st.error(
+        "Pre-computed results not found — run `scripts/precompute_cache.py` to generate them.\n\n"
+        f"Missing files: {', '.join(f'data/cache/{k}.parquet' for k in _missing)}"
+    )
+    st.stop()
+
+
+# ---------------------------------------------------------------------------
+# Sidebar — viewer controls only (no recompute triggered)
 # ---------------------------------------------------------------------------
 
 st.sidebar.title("Battery Parameters")
 
-power_mw = st.sidebar.slider("Power (MW)", min_value=1, max_value=500, value=50, step=1)
-
-duration_h = st.sidebar.select_slider(
-    "Duration (hours)",
-    options=[0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0],
-    value=2.0,
-)
-
-efficiency_pct = st.sidebar.slider(
-    "Round-trip efficiency (%)", min_value=80, max_value=98, value=90, step=1
-)
-
-cycling_cost = st.sidebar.number_input(
-    "Cycling wear cost (£/MWh)",
-    min_value=0.0,
-    max_value=20.0,
-    value=3.0,
-    step=0.5,
-    help="Cost per MWh of usable energy cycled — accounts for battery degradation.",
-)
-
-availability_pct = st.sidebar.slider(
-    "Availability factor (%)",
-    min_value=80,
-    max_value=100,
-    value=95,
-    step=1,
+power_mw = st.sidebar.slider(
+    "Power (MW)",
+    min_value=1, max_value=500, value=50, step=1,
     help=(
-        "Fraction of periods the asset is available. 95% reflects the minimum threshold "
-        "specified in NESO's DC and EAC service agreements, and is consistent with observed "
-        "GB BESS fleet availability (Modo Energy, 'GB Battery Storage Report', 2024)."
-    ),
-)
-
-initial_soc_pct = st.sidebar.slider(
-    "Initial SoC (%)",
-    min_value=10,
-    max_value=90,
-    value=50,
-    step=5,
-    help=(
-        "Battery state-of-charge at the start of the backtest period. "
-        "SoC is tracked continuously across EFA blocks and days thereafter. "
-        "The battery must remain within 10–90% to maintain headroom for "
-        "simultaneous DC High (discharge) and DC Low (charge) delivery."
+        "Display scaling only — scales all revenue figures linearly. "
+        "The underlying backtest uses a fixed 50 MW / 100 MWh asset; "
+        "all revenue streams are proportional to power, so scaling is exact."
     ),
 )
 
@@ -150,178 +245,91 @@ include_imbalance = st.sidebar.checkbox("Include imbalance arbitrage", value=Tru
 st.sidebar.divider()
 st.sidebar.subheader("Date Range")
 
-# Determine available overlap between auction and market index data
-if not auctions.empty and not mkt_index.empty:
-    data_start = max(auctions["EFA Date"].min(), mkt_index["settlementDate"].min()).date()
-    data_end   = min(auctions["EFA Date"].max(), mkt_index["settlementDate"].max()).date()
-else:
-    import datetime
-    data_start = datetime.date(2023, 7, 1)
-    data_end   = datetime.date(2026, 2, 19)
+# Determine bounds from manifest (full cache range)
+_manifest_start = None
+_manifest_end   = None
+for k in STRATEGY_KEYS.values():
+    if k in manifest:
+        p = manifest[k].get("params", {})
+        s = p.get("start_date"); e = p.get("end_date")
+        if s and (_manifest_start is None or s < _manifest_start):
+            _manifest_start = s
+        if e and (_manifest_end is None or e > _manifest_end):
+            _manifest_end = e
+
+import datetime as _dt
+_fallback_start = _dt.date(2023, 7, 1)
+_fallback_end   = _dt.date(2026, 2, 19)
+data_start = _dt.date.fromisoformat(_manifest_start) if _manifest_start else _fallback_start
+data_end   = _dt.date.fromisoformat(_manifest_end)   if _manifest_end   else _fallback_end
 
 date_range = st.sidebar.date_input(
-    "Backtest period",
+    "Date range (post-filter on cached data)",
     value=(data_start, data_end),
     min_value=data_start,
     max_value=data_end,
 )
-
 start_date = date_range[0] if len(date_range) == 2 else data_start
 end_date   = date_range[1] if len(date_range) == 2 else data_end
 
 st.sidebar.divider()
-st.sidebar.subheader("Dispatch Strategy")
+st.sidebar.subheader("Strategy")
 
 dispatch_strategy = st.sidebar.radio(
     "Price signal used for arbitrage scheduling",
-    options=["Perfect Foresight", "Naive (D-1 prices)", "ML Model"],
+    options=list(STRATEGY_KEYS.keys()),
     index=0,
     help=(
-        "**Perfect Foresight**: schedules dispatch using actual day-D prices — "
-        "the revenue ceiling, not achievable in practice.\n\n"
-        "**Naive**: uses yesterday's prices as the forecast for today — "
-        "a zero-skill baseline.\n\n"
-        "**ML Model**: trains on historical features (lagged prices, generation mix, "
-        "seasonality) and forecasts day-D prices to drive dispatch."
+        "**Perfect Foresight**: revenue ceiling — dispatches using actual day-D prices.\n\n"
+        "**Naive**: zero-skill floor — uses yesterday's prices as today's forecast.\n\n"
+        "**ML Model**: realistic best case — Random Forest trained on lagged prices, "
+        "generation mix, and seasonality features."
     ),
 )
+cache_key = STRATEGY_KEYS[dispatch_strategy]
 
-ml_model_type = "rf"
-if dispatch_strategy == "ML Model":
-    ml_model_type = st.sidebar.selectbox(
-        "Model",
-        options=["rf", "xgb"],
-        format_func=lambda x: "Random Forest" if x == "rf" else "XGBoost",
-        index=0,
-    )
-
-st.sidebar.divider()
-st.sidebar.subheader("Dispatch Method")
-
-dispatch_method_label = st.sidebar.radio(
-    "Optimisation approach",
-    options=["Greedy", "MPC (rolling horizon)"],
-    index=0,
-    help=(
-        "**Greedy**: at each EFA block, picks the N cheapest periods to charge "
-        "and N most expensive to discharge independently. Fast, no look-ahead.\n\n"
-        "**MPC**: re-solves a linear programme every 30 minutes over a rolling horizon. "
-        "The FR SoC band [10–90%] is enforced as a hard constraint at all future periods, "
-        "forcing the battery to pre-condition its state of charge for upcoming FR delivery "
-        "obligations. Slower to compute — expect 1–3 minutes for a full backtest."
-    ),
-)
-use_mpc = dispatch_method_label == "MPC (rolling horizon)"
-
-if use_mpc:
-    horizon_periods = st.sidebar.select_slider(
-        "MPC horizon",
-        options=[48, 72, 96],
-        value=96,
-        format_func=lambda x: f"{x} periods ({x // 2}h)",
-        help="Number of 30-min settlement periods the LP plans over. Longer horizons "
-             "allow better SoC pre-conditioning but increase solve time linearly.",
-    )
-else:
-    horizon_periods = 96  # unused when greedy
-
-dm_arg = "mpc" if use_mpc else "greedy"
-
-
-@st.cache_resource
-def load_forecast_model(model_type: str):
-    """Train and cache the ML price forecast model. Runs once per deployment."""
-    feature_df = build_feature_matrix(load_market_index(), load_generation_daily())
-    model, feature_cols, train_metrics, test_metrics = train_forecast_model(
-        feature_df, model_type=model_type, test_start=DEFAULT_TEST_START
-    )
-    return model, feature_df, feature_cols, train_metrics, test_metrics
+# Show cache vintage in sidebar
+if cache_key in manifest:
+    _ts = manifest[cache_key].get("computed_at", "")
+    if _ts:
+        try:
+            _computed = _dt.datetime.fromisoformat(_ts).strftime("%Y-%m-%d %H:%M UTC")
+        except ValueError:
+            _computed = _ts
+        st.sidebar.caption(f"Cache computed: {_computed}")
 
 
 # ---------------------------------------------------------------------------
-# Run backtest
+# Load and filter cached data for the selected strategy
 # ---------------------------------------------------------------------------
 
-battery = BatterySpec(
-    power_mw=power_mw,
-    duration_h=duration_h,
-    efficiency_rt=efficiency_pct / 100,
-    cycling_cost_per_mwh=cycling_cost,
-    availability_factor=availability_pct / 100,
-)
-
-mi_input = mkt_index if include_imbalance else pd.DataFrame()
-
-if auctions.empty:
-    st.error("No auction data found. Run scripts/prepare_data.py first.")
+_monthly_raw = load_monthly(cache_key)
+if _monthly_raw is None:
+    st.error(
+        f"Cache file `data/cache/{cache_key}.parquet` not found. "
+        "Run `scripts/precompute_cache.py` to generate it."
+    )
     st.stop()
 
+monthly = _apply_filters(_monthly_raw, start_date, end_date, selected_services, power_mw)
+if not include_imbalance and "imbalance_revenue_gbp" in monthly.columns:
+    monthly["imbalance_revenue_gbp"] = 0.0
+    if "cycling_cost_gbp" in monthly.columns:
+        monthly["cycling_cost_gbp"] = 0.0  # no arbitrage → no cycling cost
 
-# Run the primary backtest for the selected strategy
-if dispatch_strategy == "Perfect Foresight":
-    result = run_backtest(
-        auctions, mi_input, battery, selected_services, start_date, end_date,
-        initial_soc_frac=initial_soc_pct / 100,
-        dispatch_method=dm_arg, horizon=horizon_periods,
-    )
-    # Add total_mwh_cycled to summary for the comparison chart
-    if result["monthly"] is not None and not result["monthly"].empty:
-        mwh_cycled = float(
-            (result["monthly"]["cycling_cost_gbp"] / battery.cycling_cost_per_mwh).sum()
-            if "cycling_cost_gbp" in result["monthly"].columns and battery.cycling_cost_per_mwh > 0
-            else 0.0
-        )
-        result["summary"]["total_mwh_cycled"] = round(mwh_cycled, 1)
+summary = _recompute_summary(monthly, power_mw)
 
-elif dispatch_strategy == "Naive (D-1 prices)":
-    if not include_imbalance:
-        result = run_backtest(
-            auctions, pd.DataFrame(), battery, selected_services, start_date, end_date,
-            initial_soc_frac=initial_soc_pct / 100,
-            dispatch_method=dm_arg, horizon=horizon_periods,
-        )
-        result["summary"]["total_mwh_cycled"] = 0.0
-    else:
-        result = run_forecast_backtest(
-            strategy="naive",
-            market_index=mkt_index,
-            auctions=auctions,
-            battery=battery,
-            services=selected_services,
-            start_date=start_date,
-            end_date=end_date,
-            initial_soc_frac=initial_soc_pct / 100,
-            dispatch_method=dm_arg, horizon=horizon_periods,
-        )
+# SoC trajectory (filtered by date, scaled by power — positions are fractional so no MW scaling)
+_soc_raw = load_soc(cache_key)
+soc_traj = None
+if _soc_raw is not None and not _soc_raw.empty:
+    _soc = _soc_raw.copy()
+    _soc["date"] = pd.to_datetime(_soc["date"])
+    soc_traj = _soc[
+        (_soc["date"] >= pd.Timestamp(start_date)) &
+        (_soc["date"] <= pd.Timestamp(end_date))
+    ]
 
-else:  # ML Model
-    if not include_imbalance:
-        result = run_backtest(
-            auctions, pd.DataFrame(), battery, selected_services, start_date, end_date,
-            initial_soc_frac=initial_soc_pct / 100,
-            dispatch_method=dm_arg, horizon=horizon_periods,
-        )
-        result["summary"]["total_mwh_cycled"] = 0.0
-    else:
-        with st.spinner("Training forecast model… (cached after first run)"):
-            _model, _feature_df, _feature_cols, _train_m, _test_m = load_forecast_model(ml_model_type)
-        result = run_forecast_backtest(
-            strategy="ml",
-            market_index=mkt_index,
-            auctions=auctions,
-            battery=battery,
-            services=selected_services,
-            start_date=start_date,
-            end_date=end_date,
-            model=_model,
-            feature_df=_feature_df,
-            feature_cols=_feature_cols,
-            initial_soc_frac=initial_soc_pct / 100,
-            dispatch_method=dm_arg, horizon=horizon_periods,
-        )
-
-monthly = result["monthly"]
-summary = result["summary"]
 
 # ---------------------------------------------------------------------------
 # Header
@@ -329,9 +337,9 @@ summary = result["summary"]
 
 st.title("BESS Revenue Backtester")
 st.markdown(
-    f"Modelling a **{power_mw} MW / {power_mw * duration_h:.0f} MWh** battery "
-    f"({duration_h}h duration, {efficiency_pct}% round-trip efficiency) "
-    f"from **{start_date}** to **{end_date}**."
+    f"Modelling a **{power_mw} MW / {power_mw * FIXED_BATTERY.duration_h:.0f} MWh** battery "
+    f"({FIXED_BATTERY.duration_h:.0f}h duration, {FIXED_BATTERY.efficiency_rt*100:.0f}% "
+    f"round-trip efficiency) from **{start_date}** to **{end_date}**."
 )
 
 # ---------------------------------------------------------------------------
@@ -342,43 +350,39 @@ tab_results, tab_strategy, tab_sensitivity = st.tabs(
     ["Results", "Strategy Comparison", "Sensitivity"]
 )
 
+
 # ---------------------------------------------------------------------------
 # Tab: Results
 # ---------------------------------------------------------------------------
 
 with tab_results:
-    if summary:
-        c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric(
-            "Total Net Revenue",
-            f"£{summary['total_net'] / 1_000:,.0f}k",
-        )
-        c2.metric(
-            "Annualised Net Revenue",
-            f"£{summary['annualised_net'] / 1_000:,.0f}k / yr",
-        )
-        c3.metric(
-            "Revenue per MW",
-            f"£{summary['annualised_per_mw'] / 1_000:,.1f}k / MW / yr",
-        )
-        c4.metric(
-            "Top Revenue Stream",
-            SERVICE_LABELS.get(summary.get("top_service", ""), summary.get("top_service", "N/A")),
-        )
-        c5.metric(
-            "Avg Capacity Split",
-            f"{summary.get('fr_mw', 0):.0f} MW FR / {summary.get('arb_mw', 0):.0f} MW arb",
-            help="Average daily FR/arb allocation over the backtest period.",
-        )
-    else:
-        st.warning("No results — check that services are selected and data covers the chosen period.")
+    if not summary:
+        st.warning("No results for the selected date range / services.")
         st.stop()
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric(
+        "Total Net Revenue",
+        f"£{summary['total_net'] / 1_000:,.0f}k",
+    )
+    c2.metric(
+        "Annualised Net Revenue",
+        f"£{summary['annualised_net'] / 1_000:,.0f}k / yr",
+    )
+    c3.metric(
+        "Revenue per MW",
+        f"£{summary['annualised_per_mw'] / 1_000:,.1f}k / MW / yr",
+    )
+    c4.metric(
+        "Top Revenue Stream",
+        SERVICE_LABELS.get(summary.get("top_service", ""), summary.get("top_service", "N/A")),
+    )
 
     st.divider()
 
     st.caption(
-        f"Charts below model a **{power_mw} MW / {power_mw * duration_h:.0f} MWh** asset "
-        f"using **{dispatch_strategy}** price signals and **{dispatch_method_label}** dispatch. "
+        f"Charts below model a **{power_mw} MW / {power_mw * FIXED_BATTERY.duration_h:.0f} MWh** asset "
+        f"using **{dispatch_strategy}** price signals and MPC (rolling horizon, 48h) dispatch. "
         "FR availability fees are earned on the FR-committed portion of capacity; wholesale "
         "arbitrage is modelled on the remainder. Cycling wear cost is deducted from gross "
         "revenue to arrive at the net figures shown in the header metrics above."
@@ -388,17 +392,14 @@ with tab_results:
     if not monthly.empty:
         st.subheader("Monthly Revenue Stack")
 
-        fig = go.Figure()
-
         stream_cols = {
             **{f"{s}_rev": s for s in ALL_SERVICES},
             "imbalance_revenue_gbp": "Imbalance",
         }
 
+        fig = go.Figure()
         for col, label in stream_cols.items():
-            if col not in monthly.columns:
-                continue
-            if monthly[col].sum() == 0:
+            if col not in monthly.columns or monthly[col].sum() == 0:
                 continue
             display_label = SERVICE_LABELS.get(label, label)
             fig.add_trace(go.Bar(
@@ -432,9 +433,8 @@ with tab_results:
             "Months with heavier arbitrage dispatch show larger cycling cost deductions."
         )
 
-    # SoC trajectory — only shown when MPC dispatch is selected
-    soc_traj = result.get("soc_trajectory")
-    if use_mpc and soc_traj is not None and not soc_traj.empty:
+    # SoC trajectory
+    if soc_traj is not None and not soc_traj.empty:
         st.subheader("SoC Trajectory (MPC)")
         soc_plot = soc_traj.copy()
         soc_plot["timestamp"] = (
@@ -443,13 +443,11 @@ with tab_results:
         )
 
         fig_soc = go.Figure()
-        # FR band shading
         fig_soc.add_hrect(
             y0=0.10, y1=0.90,
             fillcolor="rgba(13,118,128,0.08)",
             line_width=0,
         )
-        # SoC line
         fig_soc.add_trace(go.Scatter(
             x=soc_plot["timestamp"],
             y=soc_plot["soc_frac"],
@@ -457,7 +455,6 @@ with tab_results:
             line=dict(color="#C9400A", width=1.2),
             name="SoC",
         ))
-        # Band boundaries
         fig_soc.add_hline(
             y=0.10, line_dash="dash", line_color="#0D7680", line_width=1,
             annotation_text="10%", annotation_position="right",
@@ -488,22 +485,17 @@ with tab_results:
         st.subheader("Cumulative Revenue by Stream")
         monthly_sorted = monthly.sort_values("month_dt")
 
-        stream_cols_cum = {
+        fig2 = go.Figure()
+        for col, label in {
             **{f"{s}_rev": s for s in ALL_SERVICES},
             "imbalance_revenue_gbp": "Imbalance",
-        }
-
-        fig2 = go.Figure()
-        for col, label in stream_cols_cum.items():
-            if col not in monthly_sorted.columns:
+        }.items():
+            if col not in monthly_sorted.columns or monthly_sorted[col].sum() == 0:
                 continue
-            if monthly_sorted[col].sum() == 0:
-                continue
-            display_label = SERVICE_LABELS.get(label, label)
             fig2.add_trace(go.Scatter(
                 x=monthly_sorted["month_dt"],
                 y=monthly_sorted[col].cumsum() / 1_000,
-                name=display_label,
+                name=SERVICE_LABELS.get(label, label),
                 mode="lines",
                 stackgroup="one",
                 line=dict(color=SERVICE_COLOURS.get(label, "#888"), width=0.5),
@@ -519,17 +511,16 @@ with tab_results:
         st.plotly_chart(fig2, use_container_width=True)
         st.caption(
             "Cumulative gross revenue by income stream. The height of each coloured band "
-            "shows how much that stream contributed over the backtest period. "
-            "Cycling wear cost is shown separately in the monthly bar chart above."
+            "shows how much that stream contributed over the backtest period."
         )
 
     with right:
         st.subheader("Revenue Breakdown")
         bd = summary.get("breakdown", {})
         if bd:
-            labels = [SERVICE_LABELS.get(k, k) for k in bd.keys()]
-            values = list(bd.values())
-            colours = [SERVICE_COLOURS.get(k, "#888") for k in bd.keys()]
+            labels  = [SERVICE_LABELS.get(k, k) for k in bd]
+            values  = list(bd.values())
+            colours = [SERVICE_COLOURS.get(k, "#888") for k in bd]
 
             fig3 = go.Figure(go.Pie(
                 labels=labels,
@@ -539,8 +530,30 @@ with tab_results:
                 textinfo="label+percent",
                 hovertemplate="%{label}: £%{value:,.0f}<extra></extra>",
             ))
-            fig3.update_layout(height=380, showlegend=False, margin=dict(t=20, b=20), paper_bgcolor="#FFF1E5")
+            fig3.update_layout(
+                height=380, showlegend=False,
+                margin=dict(t=20, b=20),
+                paper_bgcolor="#FFF1E5",
+            )
             st.plotly_chart(fig3, use_container_width=True)
+
+    # Methodology expander
+    with st.expander("Methodology — fixed battery parameters"):
+        st.markdown(f"""
+All backtests use a fixed **50 MW / 100 MWh** (2h) representative GB BESS asset.
+Revenue figures are scaled linearly to the display power ({power_mw} MW) via the sidebar.
+
+| Parameter | Value | Rationale |
+|-----------|-------|-----------|
+| Power | 50 MW | Median representative GB BESS site |
+| Duration | 2h | Most common duration in GB BESS fleet |
+| Round-trip efficiency | 90% | Industry standard for modern Li-ion (NESO / Modo Energy fleet data) |
+| Availability factor | 95% | Minimum threshold in DC/EAC service agreements; consistent with observed GB fleet |
+| Initial SoC | 50% | Neutral midpoint; SoC tracked continuously across all blocks and days thereafter |
+| Cycling wear cost | £3/MWh | Mid-range estimate consistent with published Li-ion degradation literature |
+| Dispatch engine | MPC (48h rolling LP) | Re-solves a linear programme every 30 minutes; enforces FR SoC band [10–90%] as hard constraint, forcing correct pre-conditioning |
+        """)
+
 
 # ---------------------------------------------------------------------------
 # Tab: Strategy Comparison
@@ -548,122 +561,128 @@ with tab_results:
 
 with tab_strategy:
     st.caption(
-        "Compares **Greedy** and **MPC** dispatch for the currently selected price signal. "
-        "Identical battery parameters, date range, and services — only the dispatch method differs. "
-        "A strategy to the upper-left earns more revenue while consuming less cycle life."
+        "Compares **Perfect Foresight** (revenue ceiling), **Naive D-1** (zero-skill floor), "
+        "and **ML Model** (realistic best case) — all using identical MPC dispatch and "
+        "the fixed 50 MW / 2h battery.  Date range and services filters apply."
     )
 
-    if include_imbalance and not mkt_index.empty:
-        model_label = "Random Forest" if ml_model_type == "rf" else "XGBoost"
+    # Load and filter all three cached results
+    _all = {}
+    _missing_strats = []
+    for label, key in STRATEGY_KEYS.items():
+        _m = load_monthly(key)
+        if _m is None:
+            _missing_strats.append(key)
+            continue
+        _filtered = _apply_filters(_m, start_date, end_date, selected_services, power_mw)
+        if not include_imbalance and "imbalance_revenue_gbp" in _filtered.columns:
+            _filtered["imbalance_revenue_gbp"] = 0.0
+            if "cycling_cost_gbp" in _filtered.columns:
+                _filtered["cycling_cost_gbp"] = 0.0
+        _all[label] = _recompute_summary(_filtered, power_mw)
 
-        # Load ML model before the comparison spinner (cached, fast after first run)
-        if dispatch_strategy == "ML Model":
-            with st.spinner("Training ML model for comparison… (cached after first run)"):
-                _cmp_model, _cmp_feat_df, _cmp_feat_cols, _, _ = load_forecast_model(ml_model_type)
+    if _missing_strats:
+        st.warning(
+            f"Some cache files are missing ({', '.join(_missing_strats)}). "
+            "Run `scripts/precompute_cache.py` to regenerate."
+        )
+    elif _all:
+        pf_net    = _all["Perfect Foresight"].get("total_net", 0)
+        naive_net = _all["Naive (D-1 prices)"].get("total_net", 0)
+        ml_net    = _all["ML Model"].get("total_net", 0)
 
-        with st.spinner("Computing dispatch comparison (Greedy + MPC — MPC may take 1–3 min)…"):
-            if dispatch_strategy == "Perfect Foresight":
-                greedy_cmp = run_backtest(
-                    auctions, mi_input, battery, selected_services, start_date, end_date,
-                    initial_soc_frac=initial_soc_pct / 100, dispatch_method="greedy",
-                )
-                mpc_cmp = run_backtest(
-                    auctions, mi_input, battery, selected_services, start_date, end_date,
-                    initial_soc_frac=initial_soc_pct / 100,
-                    dispatch_method="mpc", horizon=horizon_periods,
-                )
-            elif dispatch_strategy == "Naive (D-1 prices)":
-                greedy_cmp = run_forecast_backtest(
-                    strategy="naive", market_index=mkt_index, auctions=auctions,
-                    battery=battery, services=selected_services,
-                    start_date=start_date, end_date=end_date,
-                    initial_soc_frac=initial_soc_pct / 100, dispatch_method="greedy",
-                )
-                mpc_cmp = run_forecast_backtest(
-                    strategy="naive", market_index=mkt_index, auctions=auctions,
-                    battery=battery, services=selected_services,
-                    start_date=start_date, end_date=end_date,
-                    initial_soc_frac=initial_soc_pct / 100,
-                    dispatch_method="mpc", horizon=horizon_periods,
-                )
-            else:  # ML Model
-                greedy_cmp = run_forecast_backtest(
-                    strategy="ml", market_index=mkt_index, auctions=auctions,
-                    battery=battery, services=selected_services,
-                    start_date=start_date, end_date=end_date,
-                    model=_cmp_model, feature_df=_cmp_feat_df, feature_cols=_cmp_feat_cols,
-                    initial_soc_frac=initial_soc_pct / 100, dispatch_method="greedy",
-                )
-                mpc_cmp = run_forecast_backtest(
-                    strategy="ml", market_index=mkt_index, auctions=auctions,
-                    battery=battery, services=selected_services,
-                    start_date=start_date, end_date=end_date,
-                    model=_cmp_model, feature_df=_cmp_feat_df, feature_cols=_cmp_feat_cols,
-                    initial_soc_frac=initial_soc_pct / 100,
-                    dispatch_method="mpc", horizon=horizon_periods,
-                )
+        # Revenue gap
+        gap = compute_revenue_gap(ml_net, naive_net, pf_net)
 
-        greedy_net = greedy_cmp["summary"].get("total_net", 0) / 1_000
-        mpc_net    = mpc_cmp["summary"].get("total_net",    0) / 1_000
+        # Bar chart: annualised per MW for each strategy
+        strat_labels = ["Naive\n(D-1 prices)", "ML Model\n(Random Forest)", "Perfect Foresight"]
+        strat_vals   = [
+            _all["Naive (D-1 prices)"].get("annualised_per_mw", 0) / 1_000,
+            _all["ML Model"].get("annualised_per_mw", 0) / 1_000,
+            _all["Perfect Foresight"].get("annualised_per_mw", 0) / 1_000,
+        ]
+        strat_colours = ["#C9400A", "#0D7680", "#4E8A3C"]
 
-        def _mwh(r):
-            m = r.get("monthly")
-            if m is None or m.empty or "cycling_cost_gbp" not in m.columns:
-                return 0.0
-            return float((m["cycling_cost_gbp"] / battery.cycling_cost_per_mwh).sum()) if battery.cycling_cost_per_mwh > 0 else 0.0
-
-        greedy_mwh    = _mwh(greedy_cmp)
-        mpc_mwh       = _mwh(mpc_cmp)
-        mpc_vs_greedy = round(mpc_net / greedy_net * 100, 1) if greedy_net > 0 else 0.0
-
-        comparison_df = pd.DataFrame([
-            {"Method": "Greedy",        "Net Revenue (£k)": greedy_net, "MWh Cycled": round(greedy_mwh, 0), "vs Greedy": "—"},
-            {"Method": "MPC (rolling)", "Net Revenue (£k)": mpc_net,    "MWh Cycled": round(mpc_mwh,    0), "vs Greedy": f"{mpc_vs_greedy:.1f}%"},
-        ])
-
-        fig_cmp = go.Figure()
-        cmp_colours = {"Greedy": "#4E8A3C", "MPC (rolling)": "#0D7680"}
-        for _, row in comparison_df.iterrows():
-            fig_cmp.add_trace(go.Scatter(
-                x=[row["MWh Cycled"]],
-                y=[row["Net Revenue (£k)"]],
-                mode="markers+text",
-                name=row["Method"],
-                text=[row["Method"]],
-                textposition="top center",
-                marker=dict(size=16, color=cmp_colours.get(row["Method"], "#888")),
-            ))
-
+        fig_cmp = go.Figure(go.Bar(
+            x=strat_labels,
+            y=strat_vals,
+            marker_color=strat_colours,
+            text=[f"£{v:,.1f}k" for v in strat_vals],
+            textposition="outside",
+        ))
         fig_cmp.update_layout(
-            height=360,
+            height=380,
             template="plotly_white", paper_bgcolor="#FFF1E5", plot_bgcolor="#FFF1E5",
-            xaxis_title="Total MWh Cycled",
-            yaxis_title="Total Net Revenue (£k)",
+            yaxis_title="Annualised net revenue (£k / MW / yr)",
+            xaxis_title=None,
             showlegend=False,
-            margin=dict(t=30, b=40),
+            margin=dict(t=40, b=40),
+            yaxis=dict(rangemode="tozero"),
         )
         st.plotly_chart(fig_cmp, use_container_width=True)
 
+        # Summary table
+        cmp_rows = []
+        for label in ["Naive (D-1 prices)", "ML Model", "Perfect Foresight"]:
+            s = _all[label]
+            cmp_rows.append({
+                "Strategy":                label,
+                "Total Net Rev (£k)":      round(s["total_net"]        / 1_000, 1),
+                "Ann. Net Rev (£k/yr)":    round(s["annualised_net"]   / 1_000, 1),
+                "Rev / MW (£k/MW/yr)":     round(s["annualised_per_mw"] / 1_000, 1),
+            })
+        cmp_df = pd.DataFrame(cmp_rows)
         st.dataframe(
-            comparison_df.style.format({"Net Revenue (£k)": "{:,.1f}", "MWh Cycled": "{:,.0f}"}),
+            cmp_df.style.format({
+                "Total Net Rev (£k)":   "{:,.1f}",
+                "Ann. Net Rev (£k/yr)": "{:,.1f}",
+                "Rev / MW (£k/MW/yr)":  "{:,.1f}",
+            }),
             hide_index=True,
             use_container_width=True,
         )
+
+        if gap is not None:
+            col_g1, col_g2, col_g3, col_g4 = st.columns(4)
+            col_g1.metric(
+                "Naive net revenue",
+                f"£{naive_net / 1_000:,.0f}k",
+                help="Zero-skill baseline — dispatch using yesterday's prices as forecast.",
+            )
+            col_g2.metric(
+                "ML net revenue",
+                f"£{ml_net / 1_000:,.0f}k",
+                delta=f"£{(ml_net - naive_net) / 1_000:+,.0f}k vs naive",
+            )
+            col_g3.metric(
+                "Perfect Foresight net",
+                f"£{pf_net / 1_000:,.0f}k",
+                help="Upper bound — dispatch using actual prices known in advance.",
+            )
+            col_g4.metric(
+                "Revenue gap",
+                f"{gap:.1%}",
+                help=(
+                    "Fraction of the theoretically capturable improvement over naive "
+                    "that the ML forecast actually delivers. "
+                    "gap = (ML − naive) / (perfect − naive). "
+                    "Literature benchmark: ML typically achieves 70–85% in normal markets."
+                ),
+            )
         st.caption(
-            f"Price signal: **{dispatch_strategy}**. "
-            "**vs Greedy** = MPC net revenue ÷ Greedy net revenue for this price signal. "
-            "Comparison isolates the effect of dispatch method holding forecast signal fixed."
+            "All three strategies use identical MPC dispatch with the fixed 50 MW / 2h battery. "
+            "The chart isolates the value of forecast quality: Naive sets the zero-skill floor, "
+            "Perfect Foresight the ceiling, and ML captures a realistic fraction of the gap."
         )
 
-        # ML model detail — shown when ML strategy is selected
-        if dispatch_strategy == "ML Model":
-            st.divider()
-            st.subheader(f"ML Model Detail — {model_label}")
-            st.markdown(f"""
-The ML strategy uses a **{model_label}** regressor to predict the 48 half-hourly APXMIDP
+    # ML model detail
+    st.divider()
+    st.subheader("ML Model Detail — Random Forest")
+    st.markdown(f"""
+The ML strategy uses a **Random Forest** regressor to predict the 48 half-hourly APXMIDP
 prices for day D using features available at the end of day D-1.
 
-*Why {model_label}?* Tree-based ensemble methods are well suited to this problem: the
+*Why Random Forest?* Tree-based ensemble methods are well suited to this problem: the
 feature set is tabular (lagged prices, generation mix ratios, temporal encodings) rather
 than raw sequences; they require no feature scaling; they are robust on datasets of this
 size (~30,000 training rows); and they provide interpretable feature importances.
@@ -691,110 +710,57 @@ future prices during training.
 **Known limitations:** tree-based models cannot extrapolate beyond the price ranges seen
 during training; electricity price forecasting is inherently noisy; and the model improves
 dispatch quality on average but does not eliminate forecast error on individual days.
-            """)
+    """)
 
-            with st.spinner("Loading model metrics…"):
-                _model_exp, _, _feat_cols_exp, _train_m, _test_m = load_forecast_model(ml_model_type)
+    with st.spinner("Loading model metrics… (cached after first load)"):
+        _model, _feat_cols, _train_m, _test_m = load_forecast_model("rf")
 
-            col_a, col_b = st.columns(2)
-            col_a.metric("Train RMSE (£/MWh)", f"{_train_m['rmse']:.2f}", help=f"n = {_train_m['n_samples']:,} periods")
-            col_b.metric("Test RMSE (£/MWh)",  f"{_test_m['rmse']:.2f}",  help=f"n = {_test_m['n_samples']:,} periods (held-out, after {DEFAULT_TEST_START})")
-            col_a.metric("Train MAE (£/MWh)",  f"{_train_m['mae']:.2f}")
-            col_b.metric("Test MAE (£/MWh)",   f"{_test_m['mae']:.2f}")
-            col_a.metric(
-                "Train Spearman ρ", f"{_train_m['spearman']:.3f}",
-                help="Rank correlation of 48-period ordering vs actuals. Ordinal accuracy governs greedy dispatch quality.",
-            )
-            col_b.metric(
-                "Test Spearman ρ",  f"{_test_m['spearman']:.3f}",
-                help="Rank correlation of 48-period ordering vs actuals. Ordinal accuracy governs greedy dispatch quality.",
-            )
-            if "spike_rmse" in _test_m:
-                col_a.metric(
-                    "Train Spike-RMSE (£/MWh)", f"{_train_m.get('spike_rmse', '—')}",
-                    help="RMSE on top-decile price periods — where BESS arbitrage revenue is concentrated.",
-                )
-                col_b.metric(
-                    "Test Spike-RMSE (£/MWh)",  f"{_test_m['spike_rmse']}",
-                    help="RMSE on top-decile price periods — where BESS arbitrage revenue is concentrated.",
-                )
+    col_a, col_b = st.columns(2)
+    col_a.metric("Train RMSE (£/MWh)", f"{_train_m['rmse']:.2f}", help=f"n = {_train_m['n_samples']:,} periods")
+    col_b.metric("Test RMSE (£/MWh)",  f"{_test_m['rmse']:.2f}",  help=f"n = {_test_m['n_samples']:,} periods (held-out, after {DEFAULT_TEST_START})")
+    col_a.metric("Train MAE (£/MWh)",  f"{_train_m['mae']:.2f}")
+    col_b.metric("Test MAE (£/MWh)",   f"{_test_m['mae']:.2f}")
+    col_a.metric(
+        "Train Spearman ρ", f"{_train_m['spearman']:.3f}",
+        help="Rank correlation — ordinal accuracy governs MPC dispatch quality.",
+    )
+    col_b.metric(
+        "Test Spearman ρ",  f"{_test_m['spearman']:.3f}",
+        help="Rank correlation — ordinal accuracy governs MPC dispatch quality.",
+    )
+    if "spike_rmse" in _test_m:
+        col_a.metric(
+            "Train Spike-RMSE (£/MWh)", f"{_train_m.get('spike_rmse', '—')}",
+            help="RMSE on top-decile price periods — where BESS arbitrage revenue is concentrated.",
+        )
+        col_b.metric(
+            "Test Spike-RMSE (£/MWh)",  f"{_test_m['spike_rmse']}",
+            help="RMSE on top-decile price periods — where BESS arbitrage revenue is concentrated.",
+        )
 
-            st.caption(
-                "**Interpretation:** MAE < 15 £/MWh is adequate for greedy dispatch; "
-                "MAE < 8 £/MWh is 'good' for MPC. "
-                "Spearman ρ > 0.8 indicates strong ordinal ranking accuracy. "
-                "Spike-RMSE reflects model quality on the high-price periods that drive arbitrage revenue."
-            )
+    st.caption(
+        "**Interpretation:** MAE < 15 £/MWh is adequate for MPC dispatch; "
+        "MAE < 8 £/MWh is 'good'. "
+        "Spearman ρ > 0.8 indicates strong ordinal ranking accuracy. "
+        "Spike-RMSE reflects model quality on the high-price periods that drive arbitrage revenue."
+    )
 
-            # Revenue gap: fraction of the perfect-foresight improvement over naive
-            # that the ML forecast actually captures.
-            if include_imbalance:
-                with st.spinner("Computing revenue gap benchmarks (naive & perfect foresight)…"):
-                    _naive_ref = run_forecast_backtest(
-                        strategy="naive",
-                        market_index=mkt_index, auctions=auctions,
-                        battery=battery, services=selected_services,
-                        start_date=start_date, end_date=end_date,
-                        initial_soc_frac=initial_soc_pct / 100,
-                        dispatch_method="greedy",
-                    )
-                    _pf_ref = run_backtest(
-                        auctions, mkt_index, battery, selected_services,
-                        start_date, end_date,
-                        initial_soc_frac=initial_soc_pct / 100,
-                        dispatch_method="greedy",
-                    )
-                _ml_net    = result["summary"].get("total_net", 0)
-                _naive_net = _naive_ref["summary"].get("total_net", 0)
-                _pf_net    = _pf_ref["summary"].get("total_net", 0)
-                _gap       = compute_revenue_gap(_ml_net, _naive_net, _pf_net)
+    importances = get_feature_importances(_model, _feat_cols).head(10)
+    fig_imp = go.Figure(go.Bar(
+        x=importances.values[::-1],
+        y=importances.index[::-1],
+        orientation="h",
+        marker_color="#0D7680",
+    ))
+    fig_imp.update_layout(
+        height=320,
+        template="plotly_white", paper_bgcolor="#FFF1E5", plot_bgcolor="#FFF1E5",
+        title="Top 10 feature importances",
+        xaxis_title="Importance",
+        margin=dict(t=40, l=160),
+    )
+    st.plotly_chart(fig_imp, use_container_width=True)
 
-                if _gap is not None:
-                    col_g1, col_g2, col_g3 = st.columns(3)
-                    col_g1.metric(
-                        "Naive net revenue",
-                        f"£{_naive_net:,.0f}",
-                        help="Zero-skill baseline: dispatch using yesterday's prices as forecast.",
-                    )
-                    col_g2.metric(
-                        "ML net revenue",
-                        f"£{_ml_net:,.0f}",
-                        delta=f"£{_ml_net - _naive_net:+,.0f} vs naive",
-                    )
-                    col_g3.metric(
-                        "Perfect foresight net",
-                        f"£{_pf_net:,.0f}",
-                        help="Upper bound: dispatch using actual prices known in advance.",
-                    )
-                    st.metric(
-                        "Revenue gap",
-                        f"{_gap:.1%}",
-                        help=(
-                            "Fraction of the theoretically capturable improvement over naive "
-                            "that the ML forecast actually delivers. "
-                            "gap = (ML − naive) / (perfect − naive). "
-                            "Literature benchmark: ML typically achieves 70–85% in normal markets."
-                        ),
-                    )
-
-            importances = get_feature_importances(_model_exp, _feat_cols_exp).head(10)
-            fig_imp = go.Figure(go.Bar(
-                x=importances.values[::-1],
-                y=importances.index[::-1],
-                orientation="h",
-                marker_color="#0D7680",
-            ))
-            fig_imp.update_layout(
-                height=320,
-                template="plotly_white", paper_bgcolor="#FFF1E5", plot_bgcolor="#FFF1E5",
-                title="Top 10 feature importances",
-                xaxis_title="Importance",
-                margin=dict(t=40, l=160),
-            )
-            st.plotly_chart(fig_imp, use_container_width=True)
-
-    else:
-        st.info("Enable 'Include imbalance arbitrage' to see the dispatch comparison.")
 
 # ---------------------------------------------------------------------------
 # Tab: Sensitivity
@@ -802,24 +768,33 @@ dispatch quality on average but does not eliminate forecast error on individual 
 
 with tab_sensitivity:
     st.subheader("Sensitivity: Revenue by Battery Size")
-    st.caption("Other parameters held constant at sidebar values.")
-
-    sens_df = sensitivity_table(
-        auctions,
-        mi_input,
-        battery,
-        power_range=[5, 10, 25, 50, 100, 200],
-        start_date=start_date,
-        end_date=end_date,
+    st.caption(
+        "Fixed battery parameters (efficiency 90%, availability 95%, cycling cost £3/MWh) "
+        "with greedy dispatch. Duration fixed at 2h. Power range only."
     )
 
-    st.dataframe(
-        sens_df.style.format({
-            "Energy (MWh)":             "{:.0f}",
-            "Total Net Revenue (£k)":   "{:,.1f}",
-            "Ann. Net Revenue (£k/yr)": "{:,.1f}",
-            "Revenue / MW (£k/MW/yr)":  "{:,.1f}",
-        }),
-        use_container_width=True,
-        hide_index=True,
-    )
+    auctions_s  = load_auctions()
+    mkt_index_s = load_market_index()
+
+    if auctions_s.empty:
+        st.info("Auction data not available — run `scripts/prepare_data.py` first.")
+    else:
+        sens_df = sensitivity_table(
+            auctions_s,
+            mkt_index_s,
+            FIXED_BATTERY,
+            power_range=[5, 10, 25, 50, 100, 200],
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+        st.dataframe(
+            sens_df.style.format({
+                "Energy (MWh)":             "{:.0f}",
+                "Total Net Revenue (£k)":   "{:,.1f}",
+                "Ann. Net Revenue (£k/yr)": "{:,.1f}",
+                "Revenue / MW (£k/MW/yr)":  "{:,.1f}",
+            }),
+            use_container_width=True,
+            hide_index=True,
+        )

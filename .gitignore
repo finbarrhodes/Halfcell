@@ -54,10 +54,15 @@ data/processed/*.pkl
 # Keep directory structure
 !data/raw/.gitkeep
 !data/processed/.gitkeep
+!data/cache/.gitkeep
 
 # Processed Parquet files ARE committed — pre-aggregated and small (~1.5 MB total).
 # Required for Streamlit Community Cloud (no access to local raw CSVs at runtime).
 !data/processed/*.parquet
+
+# Cache Parquet files ARE committed — pre-computed backtest results (~50–100 KB each).
+# Ensures Streamlit Cloud has results available with zero compute at deploy time.
+# Re-generate with: python scripts/precompute_cache.py
 
 # Reports
 reports/*.html
