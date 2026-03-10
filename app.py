@@ -21,6 +21,10 @@ st.set_page_config(
 st.sidebar.markdown(
     """
     <style>
+    a {
+        color: #C9400A !important;
+        text-decoration: underline !important;
+    }
     .sidebar-footer {
         position: fixed;
         bottom: 1.5rem;
@@ -29,11 +33,11 @@ st.sidebar.markdown(
         width: 16rem;
     }
     .sidebar-footer a {
-        color: #C9400A;
-        text-decoration: none;
+        color: #C9400A !important;
+        text-decoration: none !important;
     }
     .sidebar-footer a:hover {
-        text-decoration: underline;
+        text-decoration: underline !important;
     }
     </style>
     <div class="sidebar-footer">
