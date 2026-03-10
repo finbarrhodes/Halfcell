@@ -27,6 +27,9 @@ except st.errors.StreamlitAPIException:
 
 PROCESSED = Path(__file__).parent.parent.parent / "data" / "processed"
 
+# Consistent colour map for DC / DR / DM across all spread plots
+MARKET_COLORS = {"DC": "#0D7680", "DR": "#C9400A", "DM": "#4E8A3C"}
+
 # EFA block timings (each block = 4 hours; EFA 1 spans midnight)
 EFA_BLOCKS = {
     1: "23:00 – 03:00",
@@ -191,15 +194,40 @@ with sub_auction:
             rolling_parts.append(grp.reset_index())
         rolling_df = pd.concat(rolling_parts)
 
+        # Order legend by mean rolling average descending so highest-value service appears first
+        service_order = (
+            rolling_df.groupby("Service")["Rolling Avg (£/MW/h)"].mean()
+            .sort_values(ascending=False)
+            .index.tolist()
+        )
         fig = px.line(
             rolling_df,
             x="EFA Date",
             y="Rolling Avg (£/MW/h)",
             color="Service",
             labels={"EFA Date": "Date"},
+            category_orders={"Service": service_order},
         )
         fig.update_layout(height=450, template="plotly_white", paper_bgcolor="#FFF1E5", plot_bgcolor="#FFF1E5")
         st.plotly_chart(fig, use_container_width=True)
+        with st.expander("Key takeaways — Clearing Price Trends"):
+            st.markdown(
+                """
+                - **2022 peak then sharp compression.** DCH clearing prices peaked at £15–20/MW/h
+                  in 2022 as NESO expanded DC procurement ahead of renewable growth. From late 2022
+                  a rapid wave of new GB BESS capacity entered the frequency response markets,
+                  outpacing NESO's procurement volumes and driving prices steeply lower across all
+                  services — a trend that is clearly visible in the chart.
+                - **Discharge (High) services generally clear above charge (Low) services.**
+                  Fleet-wide charge headroom tends to be more available than discharge headroom —
+                  particularly during high-wind periods — so the Low-side auctions typically clear
+                  at lower prices.
+                - **DRH and DRL behave differently from DC and DM.** DR's sustained 60-minute
+                  delivery requirement couples the two sides operationally, which is why the DRL
+                  spread sometimes inverts relative to DCL and DML (explored further in the
+                  H vs L Spread tab).
+                """
+            )
 
         left, right = st.columns(2)
 
@@ -214,6 +242,12 @@ with sub_auction:
             )
             fig.update_layout(height=400, template="plotly_white", paper_bgcolor="#FFF1E5", plot_bgcolor="#FFF1E5", showlegend=False)
             st.plotly_chart(fig, use_container_width=True)
+            st.caption(
+                "DCH shows the widest spread of outcomes, reflecting its role as the primary "
+                "fast-discharge service and its early-market dominance at elevated prices. "
+                "Low-side services (DCL, DRL, DML) cluster at lower prices as charge headroom "
+                "has generally been more plentiful than discharge headroom across the fleet."
+            )
 
         with right:
             st.subheader("Price by EFA Block")
@@ -239,6 +273,12 @@ with sub_auction:
             )
             fig.update_layout(height=400, template="plotly_white", paper_bgcolor="#FFF1E5", plot_bgcolor="#FFF1E5")
             st.plotly_chart(fig, use_container_width=True)
+            st.caption(
+                "Evening blocks (EFA 5 and 6: 15:00–23:00) tend to attract higher premia as "
+                "demand peaks and wind output often eases. The overnight block (EFA 1) is "
+                "typically cheapest to procure, reflecting lower system demand and more available "
+                "response headroom from assets running light overnight."
+            )
 
         st.subheader("Summary Statistics")
         stats = (
@@ -252,7 +292,29 @@ with sub_auction:
             )
             .round(2)
         )
-        st.dataframe(stats, use_container_width=True)
+        st.dataframe(
+            stats,
+            use_container_width=True,
+            column_config={
+                "avg_price": st.column_config.ProgressColumn(
+                    "Avg Price (£/MW/h)", format="£%.2f",
+                    min_value=0, max_value=float(stats["avg_price"].max()),
+                ),
+                "median_price": st.column_config.ProgressColumn(
+                    "Median (£/MW/h)", format="£%.2f",
+                    min_value=0, max_value=float(stats["avg_price"].max()),
+                ),
+                "max_price": st.column_config.ProgressColumn(
+                    "Max (£/MW/h)", format="£%.2f",
+                    min_value=0, max_value=float(stats["max_price"].max()),
+                ),
+                "avg_volume": st.column_config.ProgressColumn(
+                    "Avg Cleared Volume (MW)", format="%.1f MW",
+                    min_value=0, max_value=float(stats["avg_volume"].max()),
+                ),
+                "records": st.column_config.NumberColumn("Records"),
+            },
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -273,13 +335,6 @@ with sub_spread:
             scarcer (H > L). Negative = charge capacity scarcer (L > H).
             """
         )
-
-        with st.expander("EFA Block Timings"):
-            efa_df = pd.DataFrame(
-                [(k, v) for k, v in EFA_BLOCKS.items()],
-                columns=["EFA Block", "Time Window (local clock)"],
-            )
-            st.dataframe(efa_df, hide_index=True, use_container_width=True)
 
         # Build a wide table: one row per (EFA Date, EFA block), columns H and L per market
         PAIRS = [("DC", "DCH", "DCL"), ("DR", "DRH", "DRL"), ("DM", "DMH", "DML")]
@@ -314,6 +369,7 @@ with sub_spread:
                 x="EFA Date",
                 y="Spread",
                 color="Market",
+                color_discrete_map=MARKET_COLORS,
                 labels={"Spread": "£/MW/h", "EFA Date": "Date"},
             )
             fig.add_hline(y=0, line_dash="dash", line_color="grey", opacity=0.5)
@@ -341,14 +397,17 @@ with sub_spread:
                     "rule. See NESO's "
                     "[Dynamic Response Services Provider Guidance](https://www.neso.energy/document/276606/download) "
                     "for the formal terms.)*\n\n"
-                    "With mid-SoC as the operational target, periods of strong renewable output "
-                    "push the fleet's aggregate SoC above that midpoint. This has two "
-                    "reinforcing effects on the DRL auction: (1) **less charge headroom is "
-                    "physically available** across the fleet, reducing total DRL supply; and "
-                    "(2) **operators require higher compensation** to take on further charge "
-                    "when already near-full, because doing so forecloses future discharge "
-                    "opportunities. Both effects drive DRL clearing prices above DRH — "
-                    "inverting the typical spread."
+                    "The practical consequence is that DRL — the charge-side service — ends up "
+                    "structurally scarcer than DRH. The most intuitive way to think about it: "
+                    "during periods of high renewable output, batteries providing DR tend to "
+                    "fill up. A nearly-full battery simply has less room to absorb more energy, "
+                    "so fewer assets across the fleet can realistically offer DRL at any given "
+                    "time. On top of that, operators are cautious about committing the little "
+                    "remaining charge headroom they do have — accepting more charge now could "
+                    "leave them unable to discharge when the grid needs it later. With DRL supply "
+                    "squeezed from both sides and operators needing more compensation to provide "
+                    "it, DRL clearing prices are regularly pushed above DRH — flipping the "
+                    "spread negative."
                 )
 
             # ---- Chart 2: spread distribution per market ----
@@ -361,6 +420,7 @@ with sub_spread:
                     x="Market",
                     y="Spread",
                     color="Market",
+                    color_discrete_map=MARKET_COLORS,
                     labels={"Spread": "£/MW/h"},
                     points="outliers",
                 )
@@ -380,6 +440,7 @@ with sub_spread:
                     x="EFA",
                     y="Spread",
                     color="Market",
+                    color_discrete_map=MARKET_COLORS,
                     barmode="group",
                     labels={"Spread": "Avg £/MW/h", "EFA": "EFA Block"},
                 )
@@ -391,6 +452,17 @@ with sub_spread:
                 )
                 fig.update_layout(height=400, template="plotly_white", paper_bgcolor="#FFF1E5", plot_bgcolor="#FFF1E5")
                 st.plotly_chart(fig, use_container_width=True)
+
+            st.markdown(
+                "DC shows the widest range of spread outcomes — its higher median reflects the "
+                "relative scarcity of fast-discharge capacity, while the tail of outliers "
+                "captures periods when that scarcity was acute. DR sits firmly in negative "
+                "territory across both charts, confirming the structural inversion described "
+                "above. DM occupies the middle ground, broadly positive but with a narrower "
+                "spread than DC. In the EFA block view, evening blocks (EFA 5–6: 15:00–23:00) "
+                "tend to show the most pronounced spreads as demand peaks and the balance "
+                "between available charge and discharge headroom is at its tightest."
+            )
 
             # ---- Chart 3: heatmap — EFA block × month ----
             st.subheader("H − L Spread Heatmap: EFA Block × Month")
@@ -416,6 +488,12 @@ with sub_spread:
             )
             fig.update_layout(height=420, template="plotly_white", paper_bgcolor="#FFF1E5", plot_bgcolor="#FFF1E5")
             st.plotly_chart(fig, use_container_width=True)
+            st.caption(
+                "Each cell shows the average H − L spread for that market, EFA block, and "
+                "calendar month. Red = discharge capacity was scarcer than charge (H > L); "
+                "blue = charge capacity was scarcer (L > H). Use the selector above to switch "
+                "between DC, DR, and DM. Gaps indicate months with no auction data."
+            )
 
             # ---- Summary table ----
             st.subheader("Summary Statistics")
@@ -432,16 +510,27 @@ with sub_spread:
                 .round(2)
             )
             summary.columns = ["Mean £/MW/h", "Median", "Std Dev", "Min", "Max", "% Days H > L"]
-            st.dataframe(summary, use_container_width=True)
+            st.dataframe(
+                summary,
+                use_container_width=True,
+                column_config={
+                    "Std Dev": st.column_config.ProgressColumn(
+                        "Std Dev", format="£%.2f",
+                        min_value=0, max_value=float(summary["Std Dev"].max()),
+                    ),
+                    "% Days H > L": st.column_config.ProgressColumn(
+                        "% Days H > L", format="%.1f%%",
+                        min_value=0, max_value=100,
+                    ),
+                },
+            )
 
 
 # ---------------------------------------------------------------------------
 # Outer Tab 2: Grid & Settlement Prices → sub-tabs
 # ---------------------------------------------------------------------------
 with outer_grid:
-    sub_system, sub_gen, sub_cross = st.tabs(
-        ["System Prices", "Generation Mix", "Price Correlation"]
-    )
+    sub_system, sub_gen = st.tabs(["System Prices", "Generation Mix"])
 
 # ---------------------------------------------------------------------------
 # Sub-tab 2a: System Prices
@@ -494,73 +583,74 @@ with sub_system:
         )
         st.plotly_chart(fig, use_container_width=True)
 
-        left, right = st.columns(2)
-
-        with left:
-            st.subheader("Intraday SSP Profile (by Settlement Period)")
-            st.caption(
-                "Each settlement period is 30 minutes. Period 1 = 00:00–00:30, "
-                "Period 48 = 23:30–00:00. Evening periods (~34–42, 17:00–21:00) "
-                "typically reflect peak-demand price uplift."
-            )
-            sp_profile = (
-                sys_prices.groupby("settlementPeriod")["systemSellPrice"]
-                .agg(["mean", "median"])
-                .reset_index()
-            )
-            fig = go.Figure()
-            fig.add_trace(
-                go.Scatter(
-                    x=sp_profile["settlementPeriod"],
-                    y=sp_profile["mean"],
-                    name="Mean",
-                    mode="lines+markers",
+        if not auctions.empty:
+            with st.expander("SSP vs DC High Clearing Price — correlation analysis"):
+                st.markdown(
+                    "These two prices come from different markets — imbalance settlement "
+                    "(real-time) vs contracted frequency response (day-ahead) — but may "
+                    "co-move if they share common drivers. Tight supply margins, for example, "
+                    "could simultaneously push up energy prices and increase willingness to pay "
+                    "for frequency response capacity. A low correlation suggests DCH prices are "
+                    "driven primarily by the frequency response fleet's own supply/demand "
+                    "dynamics, independent of wholesale energy conditions."
                 )
-            )
-            fig.add_trace(
-                go.Scatter(
-                    x=sp_profile["settlementPeriod"],
-                    y=sp_profile["median"],
-                    name="Median",
-                    line=dict(dash="dash"),
+                daily_sys = (
+                    sys_prices.groupby("settlementDate")["systemSellPrice"]
+                    .mean()
+                    .reset_index()
                 )
-            )
-            fig.update_layout(
-                height=400,
-                template="plotly_white", paper_bgcolor="#FFF1E5", plot_bgcolor="#FFF1E5",
-                xaxis_title="Settlement Period",
-                yaxis_title="£/MWh",
-            )
-            st.plotly_chart(fig, use_container_width=True)
-
-        with right:
-            st.subheader("Daily SBP − SSP Imbalance Spread")
-            st.caption(
-                "A widening spread signals higher system stress — the ESO needed expensive "
-                "balancing actions to correct imbalance. Near-zero spread indicates the system "
-                "was broadly balanced on that day. Persistent spikes often follow large "
-                "unexpected generation or demand changes (e.g. storm events, plant trips)."
-            )
-            daily_sp["imbalance_spread"] = daily_sp["avg_sbp"] - daily_sp["avg_ssp"]
-            fig = go.Figure()
-            fig.add_trace(
-                go.Scatter(
-                    x=daily_sp["settlementDate"],
-                    y=daily_sp["imbalance_spread"],
-                    name="SBP − SSP",
-                    line=dict(color="#4E8A3C"),
-                    fill="tozeroy",
-                    fillcolor="rgba(78,138,60,0.12)",
+                daily_sys.columns = ["date", "avg_system_price"]
+                dc_high = auctions[auctions["Service"] == "DCH"]
+                daily_dc = (
+                    dc_high.groupby("EFA Date")["Clearing Price"].mean().reset_index()
                 )
-            )
-            fig.add_hline(y=0, line_dash="dash", line_color="grey", opacity=0.5)
-            fig.update_layout(
-                height=400,
-                template="plotly_white", paper_bgcolor="#FFF1E5", plot_bgcolor="#FFF1E5",
-                yaxis_title="£/MWh",
-                xaxis_title="Date",
-            )
-            st.plotly_chart(fig, use_container_width=True)
+                daily_dc.columns = ["date", "avg_dc_clearing_price"]
+                merged = pd.merge(daily_sys, daily_dc, on="date", how="inner")
+                if merged.empty:
+                    st.info("No overlapping dates between system prices and DC auctions.")
+                else:
+                    corr = merged[["avg_system_price", "avg_dc_clearing_price"]].corr().iloc[0, 1]
+                    st.metric("Pearson Correlation (SSP vs DCH)", f"{corr:.3f}")
+                    if abs(corr) < 0.3:
+                        st.caption(
+                            "Low correlation — DCH prices appear to be driven primarily by "
+                            "frequency response supply/demand dynamics rather than wholesale "
+                            "energy price levels."
+                        )
+                    elif corr > 0.5:
+                        st.caption(
+                            "Moderate-to-strong correlation — common market drivers may be at "
+                            "work, such as tight supply conditions lifting both energy and "
+                            "frequency response prices simultaneously."
+                        )
+                    fig = make_subplots(specs=[[{"secondary_y": True}]])
+                    fig.add_trace(
+                        go.Scatter(
+                            x=merged["date"],
+                            y=merged["avg_system_price"],
+                            name="Avg SSP",
+                            line=dict(color="#C9400A"),
+                        ),
+                        secondary_y=False,
+                    )
+                    fig.add_trace(
+                        go.Scatter(
+                            x=merged["date"],
+                            y=merged["avg_dc_clearing_price"],
+                            name="Avg DC High",
+                            line=dict(color="#0D7680"),
+                        ),
+                        secondary_y=True,
+                    )
+                    fig.update_yaxes(title_text="System Price (£/MWh)", secondary_y=False)
+                    fig.update_yaxes(title_text="DC Clearing (£/MW/h)", secondary_y=True)
+                    fig.update_layout(
+                        height=450,
+                        template="plotly_white",
+                        paper_bgcolor="#FFF1E5",
+                        plot_bgcolor="#FFF1E5",
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
 
 
 # ---------------------------------------------------------------------------
@@ -589,18 +679,18 @@ with sub_gen:
         )
         gen_pivot.index = pd.DatetimeIndex(gen_pivot.index)
 
-        st.subheader("Weekly Average Generation by Fuel Group")
+        st.subheader("14-Day Rolling Average Generation by Fuel Group")
         st.caption(
-            "Daily generation totals are resampled to weekly averages so that individual "
-            "fuel group trends can be read without day-to-day noise. Each line represents "
-            "one fuel group; the legend can be used to isolate specific sources."
+            "Daily generation totals are smoothed with a 14-day rolling mean to remove "
+            "day-to-day noise while still resolving seasonal swings within a month. "
+            "Each line represents one fuel group; click items in the legend to isolate sources."
         )
 
-        gen_weekly = gen_pivot.resample("W").mean()
-        col_order = gen_weekly.sum().sort_values(ascending=False).index
-        gen_weekly = gen_weekly[col_order]
+        gen_smooth = gen_pivot.rolling(14, min_periods=7).mean()
+        col_order = gen_smooth.sum().sort_values(ascending=False).index
+        gen_smooth = gen_smooth[col_order]
 
-        melted_weekly = gen_weekly.reset_index().melt(
+        melted_weekly = gen_smooth.reset_index().melt(
             id_vars="settlementDate",
             var_name="Fuel Group",
             value_name="Avg Generation (MW)",
@@ -610,98 +700,55 @@ with sub_gen:
             x="settlementDate",
             y="Avg Generation (MW)",
             color="Fuel Group",
-            labels={"settlementDate": "Week ending"},
+            labels={"settlementDate": "Date"},
         )
         fig.update_layout(height=500, template="plotly_white", paper_bgcolor="#FFF1E5", plot_bgcolor="#FFF1E5")
         st.plotly_chart(fig, use_container_width=True)
 
-        st.subheader("Average Share by Fuel Group")
+        left, right = st.columns(2)
+
         fuel_share = gen_pivot.mean()
         fuel_share = fuel_share[fuel_share > 0].sort_values(ascending=False)
-        fig = px.pie(values=fuel_share.values, names=fuel_share.index)
-        fig.update_layout(height=450, paper_bgcolor="#FFF1E5")
-        st.plotly_chart(fig, use_container_width=True)
 
-
-# ---------------------------------------------------------------------------
-# Sub-tab 2c: Price Correlation
-# ---------------------------------------------------------------------------
-with sub_cross:
-    if sys_prices.empty or auctions.empty:
-        st.warning("Need both system price and auction data for cross-source analysis.")
-    else:
-        st.markdown(
-            """
-            **System Sell Price (SSP)** reflects real-time grid stress: a high SSP means the
-            system was short and had to procure expensive balancing energy. **DC High (DCH)**
-            clearing prices reflect what the market pays for fast-discharge frequency response
-            contracted a day ahead.
-
-            These prices come from different markets — imbalance settlement (real-time) vs.
-            contracted frequency response (day-ahead) — but may co-move if they share common
-            drivers. For example, tight supply margins could simultaneously push up energy
-            prices and increase willingness to pay for frequency response insurance.
-            A low correlation, on the other hand, suggests DCH prices are driven mainly by the
-            frequency response fleet's own supply/demand dynamics, independent of wholesale
-            energy conditions.
-            """
-        )
-
-        st.subheader("System Price vs DC High Clearing Price")
-
-        daily_sys = (
-            sys_prices.groupby("settlementDate")["systemSellPrice"]
-            .mean()
-            .reset_index()
-        )
-        daily_sys.columns = ["date", "avg_system_price"]
-
-        dc_high = auctions[auctions["Service"] == "DCH"]
-        daily_dc = (
-            dc_high.groupby("EFA Date")["Clearing Price"].mean().reset_index()
-        )
-        daily_dc.columns = ["date", "avg_dc_clearing_price"]
-
-        merged = pd.merge(daily_sys, daily_dc, on="date", how="inner")
-
-        if merged.empty:
-            st.info("No overlapping dates between system prices and DC auctions.")
-        else:
-            corr = merged[["avg_system_price", "avg_dc_clearing_price"]].corr().iloc[0, 1]
-            st.metric("Pearson Correlation (SSP vs DCH)", f"{corr:.3f}")
-
-            if abs(corr) < 0.3:
-                st.caption(
-                    "Low correlation — DCH prices appear to be driven primarily by frequency "
-                    "response supply/demand dynamics rather than wholesale energy price levels."
-                )
-            elif corr > 0.5:
-                st.caption(
-                    "Moderate-to-strong correlation — common market drivers may be at work, "
-                    "such as tight supply conditions lifting both energy and frequency response "
-                    "prices simultaneously."
-                )
-
-            fig = make_subplots(specs=[[{"secondary_y": True}]])
-            fig.add_trace(
-                go.Scatter(
-                    x=merged["date"],
-                    y=merged["avg_system_price"],
-                    name="Avg SSP",
-                    line=dict(color="#C9400A"),
-                ),
-                secondary_y=False,
-            )
-            fig.add_trace(
-                go.Scatter(
-                    x=merged["date"],
-                    y=merged["avg_dc_clearing_price"],
-                    name="Avg DC High",
-                    line=dict(color="#0D7680"),
-                ),
-                secondary_y=True,
-            )
-            fig.update_yaxes(title_text="System Price (£/MWh)", secondary_y=False)
-            fig.update_yaxes(title_text="DC Clearing (£/MW/h)", secondary_y=True)
-            fig.update_layout(height=500, template="plotly_white", paper_bgcolor="#FFF1E5", plot_bgcolor="#FFF1E5")
+        with left:
+            st.subheader("Average Share by Fuel Group")
+            fig = px.pie(values=fuel_share.values, names=fuel_share.index)
+            fig.update_layout(height=420, paper_bgcolor="#FFF1E5")
             st.plotly_chart(fig, use_container_width=True)
+
+        with right:
+            st.subheader("Clean vs Fossil vs Other")
+            # Map Elexon fuel groups to three high-level buckets
+            CLEAN = {"WIND", "SOLAR", "HYDRO", "BIOMASS", "NPSHYD"}
+            FOSSIL = {"CCGT", "COAL", "OCGT", "OIL"}
+            bucket_map = {
+                g: "Renewables" if g.upper() in CLEAN
+                else "Fossil Fuels" if g.upper() in FOSSIL
+                else "Other (nuclear, imports, storage)"
+                for g in fuel_share.index
+            }
+            bucketed = fuel_share.groupby(bucket_map).sum()
+            BUCKET_COLORS = {
+                "Renewables": "#4E8A3C",
+                "Fossil Fuels": "#C9400A",
+                "Other (nuclear, imports, storage)": "#8B8B8B",
+            }
+            fig = px.pie(
+                values=bucketed.values,
+                names=bucketed.index,
+                color=bucketed.index,
+                color_discrete_map=BUCKET_COLORS,
+            )
+            fig.update_layout(height=420, paper_bgcolor="#FFF1E5")
+            st.plotly_chart(fig, use_container_width=True)
+
+        st.caption(
+            "The simplified breakdown groups wind, solar, hydro, and biomass as renewables; "
+            "gas (CCGT/OCGT), coal, and oil as fossil fuels; and nuclear, pumped storage, "
+            "and interconnector imports as 'Other'. The long-run trend in the line chart above "
+            "shows renewables growing their share over the data period as coal and gas generation "
+            "step down — a shift that directly increases the variability in system frequency "
+            "and, with it, the value of fast-response assets like BESS."
+        )
+
+

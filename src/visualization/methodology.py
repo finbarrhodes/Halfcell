@@ -13,7 +13,7 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 try:
     st.set_page_config(
-        page_title="Methodology & Data — UK BESS",
+        page_title="Methodology & Data — GB BESS",
         page_icon="⚡",
         layout="wide",
     )
@@ -187,7 +187,10 @@ st.markdown(
   financial proxy for this physical degradation: more aggressive dispatch earns more
   revenue in the short run but consumes cycle life faster, reducing the asset's useful
   life and residual value. This is why the revenue/cycling tradeoff chart is the core
-  output of the strategy comparison, not revenue alone.
+  output of the strategy comparison, not revenue alone. For a rigorous treatment of
+  cycle-based degradation cost formulation, see
+  [Xu et al. (2018)](https://arxiv.org/abs/1703.07968) and
+  [González Castaño et al. (2021)](https://doi.org/10.1016/j.ijepes.2021.107358).
 """
 )
 
@@ -200,15 +203,19 @@ st.divider()
 st.header("ML price forecast model")
 st.markdown(
     """
-The ML strategy uses a **tree-based ensemble model (Random Forest or XGBoost)** to predict
-the 48 half-hourly APXMIDP prices for day D using features available at the end of day D-1.
+The ML strategy uses a **Random Forest regressor** to predict the 48 half-hourly APXMIDP
+prices for day D using features available at the end of day D-1.
 
-*Why tree-based ensembles?* The feature set is tabular (lagged prices, generation mix
-ratios, temporal encodings) rather than raw sequences; they require no feature scaling;
-they are robust on datasets of this size (~30,000 training rows); and they provide
-interpretable feature importances. An LSTM was considered but is likely overkill given
-~2 years of training data and would be harder to explain. A naive lag model sets the
-zero-skill baseline.
+*Why Random Forest?* The feature set is tabular (lagged prices, generation mix ratios,
+temporal encodings) rather than raw sequences; they require no feature scaling; they are
+robust on datasets of this size; and they provide interpretable feature importances. This
+choice is consistent with the electricity price forecasting literature, which finds that
+tree-based methods perform competitively against deep learning approaches on short-horizon
+day-ahead forecasting tasks, particularly when training data is limited
+([Lago et al., 2021](https://doi.org/10.1016/j.apenergy.2021.116983);
+[Weron, 2014](https://doi.org/10.1016/j.ijforecast.2014.08.008)). An LSTM was considered
+but is likely overkill given the training data size and would be harder to explain. A
+naive D-1 lag model sets the zero-skill baseline.
 
 **Features used (all available at end of day D-1):**
 - Same-period lagged prices: price at the same settlement period 1, 2, and 7 days prior
@@ -240,11 +247,15 @@ st.divider()
 st.header("Known limitations")
 st.markdown(
     """
-- Intraday / day-ahead market trading (DA price data not yet integrated)
+**Not yet modelled:**
+- Intraday / day-ahead market trading (APXMIDP used as a proxy; DA auction data not yet integrated)
 - Balancing Mechanism (BM) direct trading
 - Real-time dispatch constraints or grid connection limits
-- Half-hourly SoC simulation within the FR headroom band (a full LP/MIP would track
-  SoC state continuously and co-optimise FR headroom and arbitrage dispatch)
+- Half-hourly SoC simulation within the FR headroom band — a full LP/MIP formulation
+  would track SoC state continuously and co-optimise FR headroom and arbitrage dispatch
+  simultaneously. For LP-based joint co-optimisation approaches see
+  [Swierczynski et al. (2021)](https://doi.org/10.3390/en14248365) and
+  [Bai et al. (2024)](https://doi.org/10.1016/j.esm.2024.100442).
 
 **Battery degradation (not yet modelled):**
 In practice, a BESS asset degrades over its operational life through two primary
@@ -279,5 +290,60 @@ st.markdown(
 | APXMIDP market index price | [Elexon Insights Solution API](https://developer.data.elexon.co.uk/) | Jul 2023 – present |
 | System buy/sell prices (SBP/SSP) | [Elexon Insights Solution API](https://developer.data.elexon.co.uk/) | Jul 2023 – present |
 | Generation by fuel type (daily) | [Elexon Insights Solution API](https://developer.data.elexon.co.uk/) | Jul 2023 – present |
+"""
+)
+
+st.divider()
+
+# ---------------------------------------------------------------------------
+# Literature & References
+# ---------------------------------------------------------------------------
+
+st.header("Literature & References")
+st.markdown(
+    """
+**Electricity price forecasting**
+
+- Lago, J., Marcjasz, G., De Schutter, B., & Weron, R. (2021). Forecasting day-ahead
+  electricity prices: A review of state-of-the-art algorithms, best practices and an
+  open-access benchmark. *Applied Energy*, 293, 116983.
+  [doi:10.1016/j.apenergy.2021.116983](https://doi.org/10.1016/j.apenergy.2021.116983)
+
+- Weron, R. (2014). Electricity price forecasting: A review of the fundamental and
+  econometric approaches. *International Journal of Forecasting*, 30(4), 1030–1081.
+  [doi:10.1016/j.ijforecast.2014.08.008](https://doi.org/10.1016/j.ijforecast.2014.08.008)
+
+**BESS dispatch optimisation & co-optimisation**
+
+- Swierczynski, M., Teodorescu, R., Rasmussen, C. N., Rodriguez, P., & Vikelgaard, H.
+  (2021). Co-Optimizing Battery Storage for Energy Arbitrage and Frequency Regulation in
+  the GB Market. *Energies*, 14(24), 8365.
+  [doi:10.3390/en14248365](https://doi.org/10.3390/en14248365)
+
+- Bai, X., et al. (2024). Smart optimization in battery energy storage systems: An overview.
+  *Energy Storage Materials*.
+  [doi:10.1016/j.esm.2024.100442](https://doi.org/10.1016/j.esm.2024.100442)
+
+- Gonzalez Castano, C., Verdugo, F., Candelo-Becerra, J. E., & Restrepo, C. (2021).
+  Novel battery degradation cost formulation for optimal scheduling of distributed energy
+  storage systems. *International Journal of Electrical Power & Energy Systems*, 127, 106596.
+  [doi:10.1016/j.ijepes.2021.107358](https://doi.org/10.1016/j.ijepes.2021.107358)
+
+**Battery degradation modelling**
+
+- Xu, B., Oudalov, A., Ulbig, A., Andersson, G., & Kirschen, D. S. (2018). Modeling of
+  lithium-ion battery degradation for cell life assessment. *IEEE Transactions on Smart
+  Grid*, 9(2), 1131–1140. Preprint: [arXiv:1703.07968](https://arxiv.org/abs/1703.07968)
+
+- Reniers, J. M., Mulder, G., & Howey, D. A. (2021). Economic MPC of Li-ion battery
+  cyclic aging via online rainflow analysis. *Journal of Energy Storage*.
+  [doi:10.1002/est2.228](https://doi.org/10.1002/est2.228)
+
+**GB BESS market context**
+
+- Modo Energy. (2024). *GB Battery Storage Report*. [modoenergy.com](https://modoenergy.com/research/future-of-battery-energy-storage-buildout-in-great-britain)
+
+- Timera Energy. (2023). Battery investors confront revenue shift in 2023.
+  [timera-energy.com](https://timera-energy.com/blog/battery-investors-confront-revenue-shift-in-2023/)
 """
 )

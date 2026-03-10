@@ -14,8 +14,14 @@ sys.path.insert(0, str(Path(__file__).parent))
 import streamlit as st
 
 st.set_page_config(
-    page_title="UK BESS Market Analysis",
+    page_title="GB BESS Market Analysis",
     layout="wide",
+)
+
+st.sidebar.image("bess-banner.png", use_container_width=True)
+st.sidebar.markdown(
+    "[![GitHub](https://img.shields.io/badge/GitHub-finbarrhodes-181717?logo=github)](https://github.com/finbarrhodes) "
+    "[![LinkedIn](https://img.shields.io/badge/LinkedIn-Finbar%20Rhodes-0A66C2?logo=linkedin)](https://www.linkedin.com/in/finbar-rhodes-637650210/)"
 )
 
 pages = [

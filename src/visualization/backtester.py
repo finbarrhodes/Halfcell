@@ -30,7 +30,6 @@ from src.analysis.revenue_stack import (
     SERVICE_COLOURS,
     SERVICE_LABELS,
     BatterySpec,
-    sensitivity_table,
 )
 
 # ---------------------------------------------------------------------------
@@ -197,6 +196,13 @@ def _recompute_summary(monthly: pd.DataFrame, power_mw: float) -> dict:
         "breakdown":        breakdown,
         "top_service":      top_service,
     }
+
+
+def _fmt_gbp(value: float) -> str:
+    """Format a GBP value as £M or £k based on magnitude."""
+    if abs(value) >= 1_000_000:
+        return f"£{value / 1_000_000:,.2f}M"
+    return f"£{value / 1_000:,.0f}k"
 
 
 # ---------------------------------------------------------------------------
@@ -367,6 +373,102 @@ st.caption(
 )
 
 # ---------------------------------------------------------------------------
+# Model walkthrough expanders
+# ---------------------------------------------------------------------------
+
+with st.expander("How a BESS earns revenue — market context"):
+    st.markdown(
+        """
+        A grid-scale battery earns money by stacking income from multiple markets
+        simultaneously. This model covers the two most significant revenue routes for
+        GB BESS in the period covered by the data:
+
+        **Frequency response (FR) — contracted availability income**
+        NESO runs daily auctions for capacity that must activate (charge or discharge)
+        within seconds whenever the grid frequency deviates from 50 Hz. Winning bidders
+        earn a **£/MW/h availability fee** for each 4-hour EFA block they commit, paid
+        regardless of whether they are physically called. This is predictable, contracted
+        income — but it comes with a constraint: FR-committed MW must maintain charge and
+        discharge headroom throughout the block to honour the contract.
+
+        **Wholesale arbitrage — opportunistic trading income**
+        Separately, the battery can trade on the half-hourly wholesale market — charging
+        when prices are low (typically high wind, low demand) and discharging when prices
+        are high. The profit is the price spread, minus the round-trip efficiency loss.
+
+        **The core tension**
+        MW committed to FR cannot simultaneously be traded freely. More FR commitment
+        means more stable, predictable income; more arbitrage allocation means more
+        opportunity but more exposure to price forecast error. The right balance for each
+        EFA block depends on that block's confirmed auction clearing price and your
+        forecast of the day's wholesale price trajectory.
+        """
+    )
+
+with st.expander("The two-stage dispatch model — capacity allocation & MPC"):
+    st.markdown(
+        """
+        The model solves the day-ahead planning problem in two sequential stages:
+
+        **Stage 1 — EFA-block capacity allocation (run once per block, day-ahead)**
+
+        For each of the six EFA blocks, the model compares the confirmed FR clearing price
+        for that block (from yesterday's auction result) against a *shadow arbitrage value*
+        — an estimate of what that MW of headroom would earn in the wholesale market over
+        the same 4-hour window, derived from the price forecast. If the FR clearing price
+        exceeds the shadow value, that block is committed to FR. Otherwise, the capacity
+        is reserved for arbitrage.
+
+        **Stage 2 — MPC dispatch (re-solved every 30 minutes)**
+
+        Given the FR/arbitrage split, a linear programme (LP) optimises charge and discharge
+        at half-hourly resolution over a rolling 48-hour horizon. At each solve:
+
+        | Component | Detail |
+        |---|---|
+        | **Objective** | Maximise Σ (discharge − charge) × price × Δt − λ × (discharge + charge) × Δt, where λ is the cycling wear cost |
+        | **SoC continuity** | SoC[t+1] = SoC[t] − discharge[t]·Δt + charge[t]·η·Δt |
+        | **FR feasibility band** | At all future periods inside an FR-committed block, SoC must stay within [10%, 90%] — a hard constraint |
+        | **Power limits** | Charge and discharge bounded by the MW allocated to arbitrage for each block |
+
+        Only the first period's solution is executed; the LP re-solves at the next half-hour
+        with updated SoC and prices. This rolling structure forces the model to **pre-condition**
+        today's dispatch — for example, charging to reach the FR band floor before a block
+        where discharge headroom is needed tomorrow.
+        """
+    )
+
+with st.expander("Price forecasting strategies — what each one represents"):
+    st.markdown(
+        """
+        Three price signal strategies are benchmarked, running the same MPC dispatch engine
+        on the same battery asset. The goal is to isolate how much the *quality of the price
+        forecast* — not the dispatch engine — affects operational revenue.
+
+        | Strategy | Price signal | What it represents |
+        |---|---|---|
+        | **Perfect Foresight** | Actual day-D wholesale prices | Theoretical revenue ceiling — achievable only with advance knowledge of the future |
+        | **Naive\\*** | Yesterday's prices (day D-1) | Zero-skill floor — the simplest possible baseline; any real model must beat this |
+        | **ML Model** | Random Forest forecast | Realistic best case using features available at end of day D-1 |
+
+        The forecast affects both stages: a better price forecast improves the shadow
+        arbitrage value estimate in Stage 1 (leading to better FR/arbitrage splits) and
+        directly improves MPC dispatch quality in Stage 2.
+
+        The **revenue gap** metric quantifies how much of the theoretically capturable
+        improvement the ML model actually delivers:
+
+            gap = (ML revenue − Naive revenue) / (Perfect Foresight revenue − Naive revenue)
+
+        A gap of 1.0 means the ML model matches perfect foresight. Published literature
+        suggests well-tuned ML models typically achieve 70–85% in normal markets.
+
+        *\\* Naive: yesterday's half-hourly prices are used as today's forecast.
+        The D-1 assumption — the simplest non-trivial baseline.*
+        """
+    )
+
+# ---------------------------------------------------------------------------
 # Content tabs
 # ---------------------------------------------------------------------------
 
@@ -387,11 +489,11 @@ with tab_results:
     c1, c2, c3, c4 = st.columns(4)
     c1.metric(
         "Total Net Revenue",
-        f"£{summary['total_net'] / 1_000:,.0f}k",
+        _fmt_gbp(summary["total_net"]),
     )
     c2.metric(
         "Annualised Net Revenue",
-        f"£{summary['annualised_net'] / 1_000:,.0f}k / yr",
+        f"{_fmt_gbp(summary['annualised_net'])} / yr",
     )
     c3.metric(
         "Revenue per MW",
@@ -457,49 +559,72 @@ with tab_results:
             "Months with heavier arbitrage dispatch show larger cycling cost deductions."
         )
 
-    # SoC trajectory
+    # Average-week SoC profile
     if soc_traj is not None and not soc_traj.empty:
-        st.subheader("SoC Trajectory (MPC)")
+        st.subheader("Average Weekly SoC Profile (MPC)")
         soc_plot = soc_traj.copy()
-        soc_plot["timestamp"] = (
-            pd.to_datetime(soc_plot["date"])
-            + pd.to_timedelta((soc_plot["sp"] - 1) * 30, unit="min")
+        soc_plot["date"] = pd.to_datetime(soc_plot["date"])
+        soc_plot["dow"] = soc_plot["date"].dt.dayofweek  # 0 = Mon, 6 = Sun
+        soc_plot["period_in_week"] = soc_plot["dow"] * 48 + (soc_plot["sp"] - 1)
+
+        avg_soc = (
+            soc_plot.groupby("period_in_week")["soc_frac"]
+            .agg(["mean", "std"])
+            .reset_index()
         )
+        avg_soc["upper"] = (avg_soc["mean"] + avg_soc["std"]).clip(0, 1)
+        avg_soc["lower"] = (avg_soc["mean"] - avg_soc["std"]).clip(0, 1)
+
+        DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
         fig_soc = go.Figure()
-        fig_soc.add_hrect(
-            y0=0.10, y1=0.90,
-            fillcolor="rgba(13,118,128,0.08)",
-            line_width=0,
-        )
+        # ±1 std dev band
         fig_soc.add_trace(go.Scatter(
-            x=soc_plot["timestamp"],
-            y=soc_plot["soc_frac"],
-            mode="lines",
-            line=dict(color="#C9400A", width=1.2),
-            name="SoC",
+            x=list(avg_soc["period_in_week"]) + list(avg_soc["period_in_week"])[::-1],
+            y=list(avg_soc["upper"]) + list(avg_soc["lower"])[::-1],
+            fill="toself",
+            fillcolor="rgba(201,64,10,0.12)",
+            line=dict(width=0),
+            name="±1 std dev",
         ))
-        fig_soc.add_hline(
-            y=0.10, line_dash="dash", line_color="#0D7680", line_width=1,
-            annotation_text="10%", annotation_position="right",
-        )
-        fig_soc.add_hline(
-            y=0.90, line_dash="dash", line_color="#0D7680", line_width=1,
-            annotation_text="90%", annotation_position="right",
-        )
+        # Mean SoC line
+        fig_soc.add_trace(go.Scatter(
+            x=avg_soc["period_in_week"],
+            y=avg_soc["mean"],
+            mode="lines",
+            line=dict(color="#C9400A", width=2),
+            name="Mean SoC",
+        ))
+        # FR feasibility band
+        fig_soc.add_hrect(y0=0.10, y1=0.90, fillcolor="rgba(13,118,128,0.08)", line_width=0)
+        fig_soc.add_hline(y=0.10, line_dash="dash", line_color="#0D7680", line_width=1,
+                          annotation_text="10%", annotation_position="right")
+        fig_soc.add_hline(y=0.90, line_dash="dash", line_color="#0D7680", line_width=1,
+                          annotation_text="90%", annotation_position="right")
+        # Day-of-week dividers
+        for d in range(1, 7):
+            fig_soc.add_vline(x=d * 48, line_dash="dot", line_color="grey", opacity=0.3)
         fig_soc.update_layout(
-            height=280,
+            height=320,
             template="plotly_white", paper_bgcolor="#FFF1E5", plot_bgcolor="#FFF1E5",
             yaxis=dict(title="SoC", tickformat=".0%", range=[0, 1]),
-            xaxis_title="Date",
-            showlegend=False,
+            xaxis=dict(
+                title="Day of week",
+                tickmode="array",
+                tickvals=[d * 48 for d in range(7)],
+                ticktext=DAY_LABELS,
+            ),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
             margin=dict(t=10, b=40, r=60),
         )
         st.plotly_chart(fig_soc, use_container_width=True)
         st.caption(
-            "MPC state-of-charge trajectory across the backtest. The shaded region marks the "
-            "FR feasibility band [10–90%] — enforced as a hard constraint at every future "
-            "period in the rolling LP horizon."
+            "Mean state-of-charge at each 30-minute slot across the backtest, folded onto an "
+            "average week (Mon–Sun). The shaded orange band shows ±1 standard deviation "
+            "across all weeks in the backtest period. The teal band marks the FR feasibility "
+            "constraint [10–90%] enforced as a hard bound in the MPC rolling LP — the "
+            "pre-conditioning behaviour driven by tomorrow's FR obligations is visible in the "
+            "shape of the weekly pattern."
         )
 
     # Cumulative revenue | Revenue breakdown pie
@@ -584,11 +709,16 @@ Revenue figures are scaled linearly to the display power ({power_mw} MW) via the
 # ---------------------------------------------------------------------------
 
 with tab_strategy:
-    st.caption(
-        "Compares **Perfect Foresight** (revenue ceiling), **Naive D-1** (zero-skill floor), "
-        "and **ML Model** (realistic best case) — all using identical MPC dispatch and "
-        "the fixed 50 MW / 2h battery.  Date range and services filters apply."
+    st.markdown(
+        "Three price signal strategies are compared below, all using identical MPC dispatch "
+        "on the same fixed 50 MW / 2h battery. The comparison isolates the value of forecast "
+        "quality — holding everything else constant."
     )
+    _c1, _c2, _c3 = st.columns(3)
+    _c1.info("**Perfect Foresight** — dispatches using the actual day-D prices. Not achievable in practice. Sets the theoretical revenue *ceiling*.")
+    _c2.info("**Naive\\*** — uses yesterday's prices as today's forecast. Zero forecasting skill. Sets the *floor* that any real model must beat.")
+    _c3.info("**ML Model** — Random Forest trained on lagged prices, generation mix, and calendar features. The realistic best case with public data.")
+    st.caption("\\* Naive: the D-1 price assumption — yesterday's 48 half-hourly prices are used as the forecast for the same periods today.")
 
     # Load and filter all three cached results
     _all = {}
@@ -619,7 +749,7 @@ with tab_strategy:
         gap = compute_revenue_gap(ml_net, naive_net, pf_net)
 
         # Bar chart: annualised per MW for each strategy
-        strat_labels = ["Naive\n(D-1 prices)", "ML Model\n(Random Forest)", "Perfect Foresight"]
+        strat_labels = ["Naive*", "ML Model\n(Random Forest)", "Perfect Foresight"]
         strat_vals   = [
             _all["Naive (D-1 prices)"].get("annualised_per_mw", 0) / 1_000,
             _all["ML Model"].get("annualised_per_mw", 0) / 1_000,
@@ -643,24 +773,51 @@ with tab_strategy:
             margin=dict(t=40, b=40),
             yaxis=dict(rangemode="tozero"),
         )
-        st.plotly_chart(fig_cmp, use_container_width=True)
+        _col_bar, _col_txt = st.columns([1, 1])
+        with _col_bar:
+            st.plotly_chart(fig_cmp, use_container_width=True)
+        with _col_txt:
+            st.markdown("**Reading the chart**")
+            st.markdown(
+                "The three bars define a range: **Naive\\*** at the bottom sets the zero-skill "
+                "floor — what you'd earn with no forecasting capability at all. "
+                "**Perfect Foresight** at the top is the theoretical ceiling — the maximum "
+                "extractable revenue if you knew the future. "
+                "**ML Model** sits between them, and the key question is how close it gets to "
+                "the ceiling."
+            )
+            st.markdown(
+                "The **revenue gap metric** below quantifies this as a fraction of the "
+                "capturable improvement: `gap = (ML − Naive) / (PF − Naive)`. "
+                "A gap of 70–85% is considered strong performance in published GB and "
+                "European electricity price forecasting literature."
+            )
 
-        # Summary table
+        # Summary table — use £M columns if any value reaches that scale
+        _max_total = max(_all[l].get("total_net", 0) for l in _all) if _all else 0
+        _use_m = abs(_max_total) >= 1_000_000
+        _tot_unit = "£M" if _use_m else "£k"
+        _tot_div  = 1_000_000 if _use_m else 1_000
+        _display_names = {
+            "Naive (D-1 prices)": "Naive*",
+            "ML Model": "ML Model",
+            "Perfect Foresight": "Perfect Foresight",
+        }
         cmp_rows = []
         for label in ["Naive (D-1 prices)", "ML Model", "Perfect Foresight"]:
             s = _all[label]
             cmp_rows.append({
-                "Strategy":                label,
-                "Total Net Rev (£k)":      round(s["total_net"]        / 1_000, 1),
-                "Ann. Net Rev (£k/yr)":    round(s["annualised_net"]   / 1_000, 1),
-                "Rev / MW (£k/MW/yr)":     round(s["annualised_per_mw"] / 1_000, 1),
+                "Strategy":                          _display_names[label],
+                f"Total Net Rev ({_tot_unit})":      round(s["total_net"]         / _tot_div, 2),
+                f"Ann. Net Rev ({_tot_unit}/yr)":    round(s["annualised_net"]    / _tot_div, 2),
+                "Rev / MW (£k/MW/yr)":               round(s["annualised_per_mw"] / 1_000,    1),
             })
         cmp_df = pd.DataFrame(cmp_rows)
         st.dataframe(
             cmp_df.style.format({
-                "Total Net Rev (£k)":   "{:,.1f}",
-                "Ann. Net Rev (£k/yr)": "{:,.1f}",
-                "Rev / MW (£k/MW/yr)":  "{:,.1f}",
+                f"Total Net Rev ({_tot_unit})":   "{:,.2f}",
+                f"Ann. Net Rev ({_tot_unit}/yr)": "{:,.2f}",
+                "Rev / MW (£k/MW/yr)":            "{:,.1f}",
             }),
             hide_index=True,
             use_container_width=True,
@@ -669,18 +826,18 @@ with tab_strategy:
         if gap is not None:
             col_g1, col_g2, col_g3, col_g4 = st.columns(4)
             col_g1.metric(
-                "Naive net revenue",
-                f"£{naive_net / 1_000:,.0f}k",
+                "Naive* net revenue",
+                _fmt_gbp(naive_net),
                 help="Zero-skill baseline — dispatch using yesterday's prices as forecast.",
             )
             col_g2.metric(
                 "ML net revenue",
-                f"£{ml_net / 1_000:,.0f}k",
-                delta=f"£{(ml_net - naive_net) / 1_000:+,.0f}k vs naive",
+                _fmt_gbp(ml_net),
+                delta=f"{_fmt_gbp(ml_net - naive_net)} vs Naive*",
             )
             col_g3.metric(
                 "Perfect Foresight net",
-                f"£{pf_net / 1_000:,.0f}k",
+                _fmt_gbp(pf_net),
                 help="Upper bound — dispatch using actual prices known in advance.",
             )
             col_g4.metric(
@@ -699,10 +856,15 @@ with tab_strategy:
             "Perfect Foresight the ceiling, and ML captures a realistic fraction of the gap."
         )
 
-    # ML model detail
+    # ML model detail — load once, display in expanders
     st.divider()
     st.subheader("ML Model Detail — Random Forest")
-    st.markdown(f"""
+
+    with st.spinner("Loading model metrics… (cached after first load)"):
+        _model, _feat_cols, _train_m, _test_m = load_forecast_model("rf")
+
+    with st.expander("Model architecture & features"):
+        st.markdown(f"""
 The ML strategy uses a **Random Forest** regressor to predict the 48 half-hourly APXMIDP
 prices for day D using features available at the end of day D-1.
 
@@ -721,7 +883,7 @@ be harder to explain. A naive lag model sets the zero-skill baseline.
   and per-fuel breakdown (gas, wind, nuclear, hydro, etc.)
 - Cyclical temporal encodings: settlement period, day-of-week, and day-of-year encoded
   as sin/cos pairs to preserve circularity (e.g. period 48 and period 1 are adjacent)
-- Weekend flag; UK bank holiday flag (holidays have Sunday-like price profiles)
+- Weekend flag; GB bank holiday flag (holidays have Sunday-like price profiles)
 
 **Target transform:** a signed-log1p transform is applied to prices before fitting
 (`sign(y)·log1p(|y|)`) and inverted on predictions. This compresses the heavy-tailed
@@ -734,56 +896,52 @@ future prices during training.
 **Known limitations:** tree-based models cannot extrapolate beyond the price ranges seen
 during training; electricity price forecasting is inherently noisy; and the model improves
 dispatch quality on average but does not eliminate forecast error on individual days.
-    """)
+        """)
+        importances = get_feature_importances(_model, _feat_cols).head(10)
+        fig_imp = go.Figure(go.Bar(
+            x=importances.values[::-1],
+            y=importances.index[::-1],
+            orientation="h",
+            marker_color="#0D7680",
+        ))
+        fig_imp.update_layout(
+            height=320,
+            template="plotly_white", paper_bgcolor="#FFF1E5", plot_bgcolor="#FFF1E5",
+            title="Top 10 feature importances",
+            xaxis_title="Importance",
+            margin=dict(t=40, l=160),
+        )
+        st.plotly_chart(fig_imp, use_container_width=True)
 
-    with st.spinner("Loading model metrics… (cached after first load)"):
-        _model, _feat_cols, _train_m, _test_m = load_forecast_model("rf")
-
-    col_a, col_b = st.columns(2)
-    col_a.metric("Train RMSE (£/MWh)", f"{_train_m['rmse']:.2f}", help=f"n = {_train_m['n_samples']:,} periods")
-    col_b.metric("Test RMSE (£/MWh)",  f"{_test_m['rmse']:.2f}",  help=f"n = {_test_m['n_samples']:,} periods (held-out, after {DEFAULT_TEST_START})")
-    col_a.metric("Train MAE (£/MWh)",  f"{_train_m['mae']:.2f}")
-    col_b.metric("Test MAE (£/MWh)",   f"{_test_m['mae']:.2f}")
-    col_a.metric(
-        "Train Spearman ρ", f"{_train_m['spearman']:.3f}",
-        help="Rank correlation — ordinal accuracy governs MPC dispatch quality.",
-    )
-    col_b.metric(
-        "Test Spearman ρ",  f"{_test_m['spearman']:.3f}",
-        help="Rank correlation — ordinal accuracy governs MPC dispatch quality.",
-    )
-    if "spike_rmse" in _test_m:
+    with st.expander("Model performance metrics"):
+        col_a, col_b = st.columns(2)
+        col_a.metric("Train RMSE (£/MWh)", f"{_train_m['rmse']:.2f}", help=f"n = {_train_m['n_samples']:,} periods")
+        col_b.metric("Test RMSE (£/MWh)",  f"{_test_m['rmse']:.2f}",  help=f"n = {_test_m['n_samples']:,} periods (held-out, after {DEFAULT_TEST_START})")
+        col_a.metric("Train MAE (£/MWh)",  f"{_train_m['mae']:.2f}")
+        col_b.metric("Test MAE (£/MWh)",   f"{_test_m['mae']:.2f}")
         col_a.metric(
-            "Train Spike-RMSE (£/MWh)", f"{_train_m.get('spike_rmse', '—')}",
-            help="RMSE on top-decile price periods — where BESS arbitrage revenue is concentrated.",
+            "Train Spearman ρ", f"{_train_m['spearman']:.3f}",
+            help="Rank correlation — ordinal accuracy governs MPC dispatch quality.",
         )
         col_b.metric(
-            "Test Spike-RMSE (£/MWh)",  f"{_test_m['spike_rmse']}",
-            help="RMSE on top-decile price periods — where BESS arbitrage revenue is concentrated.",
+            "Test Spearman ρ",  f"{_test_m['spearman']:.3f}",
+            help="Rank correlation — ordinal accuracy governs MPC dispatch quality.",
         )
-
-    st.caption(
-        "**Interpretation:** MAE < 15 £/MWh is adequate for MPC dispatch; "
-        "MAE < 8 £/MWh is 'good'. "
-        "Spearman ρ > 0.8 indicates strong ordinal ranking accuracy. "
-        "Spike-RMSE reflects model quality on the high-price periods that drive arbitrage revenue."
-    )
-
-    importances = get_feature_importances(_model, _feat_cols).head(10)
-    fig_imp = go.Figure(go.Bar(
-        x=importances.values[::-1],
-        y=importances.index[::-1],
-        orientation="h",
-        marker_color="#0D7680",
-    ))
-    fig_imp.update_layout(
-        height=320,
-        template="plotly_white", paper_bgcolor="#FFF1E5", plot_bgcolor="#FFF1E5",
-        title="Top 10 feature importances",
-        xaxis_title="Importance",
-        margin=dict(t=40, l=160),
-    )
-    st.plotly_chart(fig_imp, use_container_width=True)
+        if "spike_rmse" in _test_m:
+            col_a.metric(
+                "Train Spike-RMSE (£/MWh)", f"{_train_m.get('spike_rmse', '—')}",
+                help="RMSE on top-decile price periods — where BESS arbitrage revenue is concentrated.",
+            )
+            col_b.metric(
+                "Test Spike-RMSE (£/MWh)",  f"{_test_m['spike_rmse']}",
+                help="RMSE on top-decile price periods — where BESS arbitrage revenue is concentrated.",
+            )
+        st.caption(
+            "**Interpretation:** MAE < 15 £/MWh is adequate for MPC dispatch; "
+            "MAE < 8 £/MWh is 'good'. "
+            "Spearman ρ > 0.8 indicates strong ordinal ranking accuracy. "
+            "Spike-RMSE reflects model quality on the high-price periods that drive arbitrage revenue."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -791,34 +949,95 @@ dispatch quality on average but does not eliminate forecast error on individual 
 # ---------------------------------------------------------------------------
 
 with tab_sensitivity:
-    st.subheader("Sensitivity: Revenue by Battery Size")
-    st.caption(
-        "Fixed battery parameters (efficiency 90%, availability 95%, cycling cost £3/MWh) "
-        "with greedy dispatch. Duration fixed at 2h. Power range only."
+
+    # ---- Section 1: Cycling cost sensitivity ----
+    st.subheader("Cycling Wear Cost Sensitivity")
+    st.markdown(
+        "Battery degradation is a real operating cost: every charge/discharge cycle "
+        "accelerates capacity fade and increases the likelihood of cell replacement. "
+        "The true degradation cost is non-linear — it depends on depth of discharge, "
+        "temperature, cycle chemistry, and financing assumptions — but modelling it "
+        "precisely would require a full electrochemical degradation model that is beyond "
+        "the scope of this analysis and impractical without site-specific data. Instead, "
+        "a flat **£/MWh cycled** figure is used as a financial proxy, consistent with "
+        "industry practice. The NESO/Modo Energy consensus estimate for modern Li-ion "
+        "sits around **£3/MWh**, with plausible ranges from under £1/MWh (well-managed, "
+        "long-life chemistry) to £8–10/MWh (aggressive cycling on shorter-life cells). "
+        "The table below shows how net revenue and annualised return per MW change "
+        "across this range, using the currently selected strategy and date range."
     )
 
-    auctions_s  = load_auctions()
-    mkt_index_s = load_market_index()
+    if summary:
+        gross_rev      = summary["total_gross"]
+        cycling_cost_3 = summary["total_cycling_cost"]   # at base £3/MWh
+        cycling_mwh    = cycling_cost_3 / 3.0             # total MWh cycled
+        years_covered  = summary["years_covered"]
 
-    if auctions_s.empty:
-        st.info("Auction data not available — run `scripts/prepare_data.py` first.")
-    else:
-        sens_df = sensitivity_table(
-            auctions_s,
-            mkt_index_s,
-            FIXED_BATTERY,
-            power_range=[5, 10, 25, 50, 100, 200],
-            start_date=start_date,
-            end_date=end_date,
+        cc_rows = []
+        for c in [0.0, 1.0, 2.0, 3.0, 5.0, 7.5, 10.0]:
+            net       = gross_rev - cycling_mwh * c
+            ann_per_mw = (net / years_covered / power_mw) if years_covered > 0 and power_mw > 0 else 0
+            cc_rows.append({
+                "Cycling Cost (£/MWh)": c,
+                "Total Net Revenue":    _fmt_gbp(net),
+                "Ann. Net / MW (£k/MW/yr)": f"{ann_per_mw / 1_000:,.1f}",
+                "Note": "← industry base case" if c == 3.0 else "",
+            })
+        st.dataframe(pd.DataFrame(cc_rows), hide_index=True, use_container_width=True)
+        st.caption(
+            "Revenue figures use the currently selected strategy and date range. "
+            "Gross revenue is held constant; only the cycling cost deduction changes. "
+            f"Total MWh cycled in this backtest: {cycling_mwh:,.0f} MWh "
+            f"({cycling_mwh / years_covered / power_mw:,.0f} MWh/MW/yr annualised)."
         )
 
-        st.dataframe(
-            sens_df.style.format({
-                "Energy (MWh)":             "{:.0f}",
-                "Total Net Revenue (£k)":   "{:,.1f}",
-                "Ann. Net Revenue (£k/yr)": "{:,.1f}",
-                "Revenue / MW (£k/MW/yr)":  "{:,.1f}",
-            }),
-            use_container_width=True,
-            hide_index=True,
+    st.divider()
+
+    # ---- Section 2: Service mix sensitivity ----
+    st.subheader("Service Mix Sensitivity")
+    st.markdown(
+        "The revenue mix across FR services and wholesale arbitrage varies considerably "
+        "depending on which services a site participates in. The table below compares "
+        "three scenarios using the currently selected strategy and date range: "
+        "FR availability income only (no arbitrage), wholesale arbitrage only (no FR), "
+        "and the full combined stack."
+    )
+
+    if not monthly.empty:
+        _fr_cols = [f"{s}_rev" for s in ALL_SERVICES if f"{s}_rev" in monthly.columns]
+        _arb_col = "imbalance_revenue_gbp"
+
+        def _mix_summary(df, include_fr: bool, include_arb: bool) -> dict:
+            _m = df.copy()
+            if not include_fr:
+                for c in _fr_cols:
+                    _m[c] = 0.0
+            if not include_arb and _arb_col in _m.columns:
+                _m[_arb_col] = 0.0
+                if "cycling_cost_gbp" in _m.columns:
+                    _m["cycling_cost_gbp"] = 0.0
+            return _recompute_summary(_m, power_mw)
+
+        _scenarios = [
+            ("FR only",               True,  False),
+            ("Arbitrage only",         False, True),
+            ("FR + Arbitrage (full stack)", True, True),
+        ]
+        mix_rows = []
+        for label, inc_fr, inc_arb in _scenarios:
+            s = _mix_summary(monthly, inc_fr, inc_arb)
+            if not s:
+                continue
+            mix_rows.append({
+                "Scenario":              label,
+                "Total Net Revenue":     _fmt_gbp(s["total_net"]),
+                "Ann. Net / MW (£k/MW/yr)": f"{s['annualised_per_mw'] / 1_000:,.1f}",
+                "Top stream":            SERVICE_LABELS.get(s.get("top_service", ""), s.get("top_service", "—")),
+            })
+        st.dataframe(pd.DataFrame(mix_rows), hide_index=True, use_container_width=True)
+        st.caption(
+            "Arbitrage-only removes all FR availability fees; cycling wear cost is also "
+            "zeroed in FR-only mode since cycling cost in this model is incurred only "
+            "through arbitrage dispatch. Figures use the currently selected date range "
+            "and strategy."
         )

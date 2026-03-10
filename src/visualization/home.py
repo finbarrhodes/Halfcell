@@ -1,5 +1,5 @@
 """
-Home — UK BESS Market Analysis Tool
+Home — GB BESS Market Analysis Tool
 =====================================
 Landing page. Launched as a page via app.py (st.navigation).
 Can still be run standalone for local development:
@@ -13,7 +13,7 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 try:
     st.set_page_config(
-        page_title="UK BESS Market Analysis",
+        page_title="GB BESS Market Analysis",
         page_icon="⚡",
         layout="wide",
     )
@@ -24,27 +24,28 @@ except st.errors.StreamlitAPIException:
 # Header
 # ---------------------------------------------------------------------------
 
+st.image("bess-banner.png", use_container_width=True)
+
 st.title("BESS Analytics Tools")
 st.markdown(
-
-    "Hello - my name is Finbar Rhodes. I have a passion for the energy transition and am particularly " \
-    "interested in flexibility and grid-scale energy storage. This role, particularly in the UK, has" \
-    "increasingly been filled by battery energy storage systems (BESS). The combination of improving battery" \
-    "technology, cheaper components, and the growing need for flexiblity assets in a grid increasingly " \
-    "reliant on renewable energy sources leaves BESS with a bright future in the energy transition. " \
-    "Batteries are playing a major role in the energy transition, in ways that go beyond the scope of this, "
-    "project and if you're interested, [here](https://climate.benjames.io/batteries/) is a great guide I used.\n\n " \
-    "This is a personal coding project I have undertaken to dive into the UK clean tech and grid-scale" \
-    "battery landscape in hopes to not just learn-through-doing but to provide in some useful " \
-    "insights. With a background in data science, statistics, and economics, I have tried to bring my " \
-    "analytical skills and machine learning experience to showcase how impactful this technology is " \
-    "and how it is making its mark in our grid. I have focused on two key verticals for BESS sites: " \
-    "frequency response services and arbitrage activity, which I go into more detail about below. " \
-    "I have a *Market Overview* section that shows how different market conditions have evolved over "\
-    "time as well as a *Forecasting & Dispatch* model that applies ML price forecasting and Model "
-    "Predctive Control (MPC) optimisation to the day-ahead planning layer of BESS operations. "\
-    "The data powering this tool is sourced from the **Elexon Insights Solution API** "\
-    "and **NESO Data Portal**, with methodology based on well-established literature."\
+    "Hello — my name is Finbar Rhodes. I have a passion for the energy transition and am particularly "
+    "interested in flexibility and grid-scale energy storage. This role, particularly in GB, has "
+    "increasingly been filled by battery energy storage systems (BESS). The combination of improving "
+    "battery technology, cheaper components, and the growing need for flexibility assets in a grid "
+    "increasingly reliant on renewable energy sources leaves BESS with a bright future in the energy "
+    "transition. Batteries are playing a major role beyond the scope of this project, and if you're "
+    "interested, [here](https://climate.benjames.io/batteries/) is a great guide I used.\n\n"
+    "This is a personal project I have undertaken to dive into the GB clean tech and grid-scale "
+    "battery landscape — learning through doing while aiming to surface some useful insights. "
+    "With a background in data science, statistics, and economics, I have tried to bring my "
+    "analytical skills and machine learning experience to bear on how impactful this technology "
+    "is and how it is making its mark on our grid. I have focused on two key revenue verticals for "
+    "BESS: frequency response services and energy arbitrage, which I go into more detail about below. "
+    "There is a *Market Overview* section showing how market conditions have evolved over time, and a "
+    "*Forecasting & Dispatch* model that applies ML price forecasting and Model Predictive Control "
+    "(MPC) optimisation to the day-ahead planning layer of BESS operations. "
+    "The data powering this tool is sourced from the **Elexon Insights Solution API** "
+    "and **NESO Data Portal**, with methodology based on well-established literature."
 )
 
 st.divider()
@@ -81,6 +82,15 @@ st.markdown(
     gas peakers also qualify, particularly for the slower DR service. However, BESS's
     sub-second response capability has made it the dominant and marginal price-setting
     technology in DC and DM auctions.
+
+    **A note on data and scope:** Building a truly complete BESS revenue model would require
+    asset-level operational data — dispatch logs, BM unit IDs, exact SoC histories, and grid
+    connection limits. Much of this is commercially sensitive and not publicly disclosed;
+    operators reasonably keep detailed performance data private. This tool is built entirely
+    on publicly available data from NESO and Elexon, and the modelling approach applies the
+    best analytical methods available within that constraint. The goal is not to replicate a
+    proprietary trading system, but to quantify — as rigorously as the data allows — how
+    market conditions and forecast quality interact to drive BESS revenue outcomes.
     """
 )
 
@@ -113,33 +123,36 @@ st.subheader("What's in this tool")
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.markdown("**Market Overview**")
-    st.markdown(
-        "Explore GB frequency response auction clearing prices (DC, DR, DM), "
-        "High vs Low spread dynamics, system settlement prices (SBP/SSP), "
-        "generation mix trends, and the correlation between system prices and "
-        "DC High auctions."
-    )
-    st.page_link("src/visualization/dashboard.py", label="Market Overview →")
+    with st.container(border=True):
+        st.markdown("**Market Overview**")
+        st.markdown(
+            "Explore GB frequency response auction clearing prices (DC, DR, DM), "
+            "High vs Low spread dynamics, system settlement prices (SBP/SSP), "
+            "and generation mix trends. Includes a correlation analysis between "
+            "system prices and DC High auction outcomes."
+        )
+        st.page_link("src/visualization/dashboard.py", label="Market Overview →")
 
 with col2:
-    st.markdown("**Forecasting & Dispatch Model**")
-    st.markdown(
-        "A day-ahead modelling framework for FR/arbitrage capacity allocation and "
-        "MPC dispatch. Benchmarks three price forecasting strategies — naive D-1 "
-        "baseline, Random Forest, and perfect foresight ceiling — to isolate how "
-        "much forecast quality affects operational outcomes."
-    )
-    st.page_link("src/visualization/backtester.py", label="Forecasting & Dispatch →")
+    with st.container(border=True):
+        st.markdown("**Forecasting & Dispatch Model**")
+        st.markdown(
+            "A day-ahead modelling framework for FR/arbitrage capacity allocation and "
+            "MPC dispatch. Benchmarks three price forecasting strategies — Naive D-1 "
+            "baseline, Random Forest, and perfect foresight ceiling — to isolate how "
+            "much forecast quality affects operational outcomes."
+        )
+        st.page_link("src/visualization/backtester.py", label="Forecasting & Dispatch →")
 
 with col3:
-    st.markdown("**Methodology & Data**")
-    st.markdown(
-        "Understand the modelling assumptions, data sources, and known limitations "
-        "of the backtester. Explains the two-stage participation model, dispatch "
-        "strategies, battery cycling cost, and the ML price forecast approach."
-    )
-    st.page_link("src/visualization/methodology.py", label="Methodology & Data →")
+    with st.container(border=True):
+        st.markdown("**Methodology & Data**")
+        st.markdown(
+            "Understand the modelling assumptions, data sources, and known limitations "
+            "of the backtester. Explains the two-stage participation model, dispatch "
+            "strategies, battery cycling cost, and the ML price forecast approach."
+        )
+        st.page_link("src/visualization/methodology.py", label="Methodology & Data →")
 
 st.divider()
 
@@ -151,6 +164,9 @@ st.caption(
     "Data sourced from the "
     "[Elexon Insights Solution API](https://bmrs.elexon.co.uk/) "
     "and the [NESO Data Portal](https://www.neso.energy/data-portal). "
-    "All prices in GBP. Auction data covers GB Dynamic Services (DC, DR, DM) "
-    "from July 2023 onwards."
+    "All prices in GBP. "
+    "Frequency response auction data (DC, DR, DM) covers September 2021 onwards. "
+    "APXMIDP wholesale price data and generation mix data cover July 2023 – present. "
+    "The ML price forecast model is trained on July 2023 – February 2025 with a "
+    "held-out test set from March 2025 onwards."
 )
