@@ -18,10 +18,22 @@ st.set_page_config(
     layout="wide",
 )
 
-st.sidebar.image("bess-banner.png", use_container_width=True)
 st.sidebar.markdown(
-    "[![GitHub](https://img.shields.io/badge/GitHub-finbarrhodes-181717?logo=github)](https://github.com/finbarrhodes) "
-    "[![LinkedIn](https://img.shields.io/badge/LinkedIn-Finbar%20Rhodes-0A66C2?logo=linkedin)](https://www.linkedin.com/in/finbar-rhodes-637650210/)"
+    """
+    <style>
+    .sidebar-footer {
+        position: fixed;
+        bottom: 1.5rem;
+        font-size: 0.85rem;
+    }
+    </style>
+    <div class="sidebar-footer">
+    <a href="https://github.com/finbarrhodes" target="_blank">GitHub</a>
+    &nbsp;·&nbsp;
+    <a href="https://www.linkedin.com/in/finbar-rhodes-637650210/" target="_blank">LinkedIn</a>
+    </div>
+    """,
+    unsafe_allow_html=True,
 )
 
 pages = [

@@ -24,7 +24,9 @@ except st.errors.StreamlitAPIException:
 # Header
 # ---------------------------------------------------------------------------
 
-st.image("bess-banner.png", use_container_width=True)
+_, banner_col, _ = st.columns([1, 8, 1])
+with banner_col:
+    st.image("bess-banner.png", use_container_width=True)
 
 st.title("BESS Analytics Tools")
 st.markdown(
