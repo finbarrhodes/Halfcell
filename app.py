@@ -25,6 +25,13 @@ st.sidebar.markdown(
         color: #C9400A !important;
         text-decoration: underline !important;
     }
+    [data-testid="stSidebarNav"] a {
+        color: inherit !important;
+        text-decoration: none !important;
+    }
+    [data-testid="stSidebarNav"] a:hover {
+        text-decoration: none !important;
+    }
     .sidebar-footer {
         position: fixed;
         bottom: 1.5rem;
