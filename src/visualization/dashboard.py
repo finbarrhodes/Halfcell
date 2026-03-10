@@ -719,8 +719,10 @@ with sub_gen:
         with right:
             st.subheader("Clean vs Fossil vs Other")
             # Map Elexon fuel groups to three high-level buckets
-            CLEAN = {"WIND", "SOLAR", "HYDRO", "BIOMASS", "NPSHYD"}
-            FOSSIL = {"CCGT", "COAL", "OCGT", "OIL"}
+            # Actual fuelGroup values in data: Wind, Gas, Nuclear, Biomass, Coal,
+            # Hydro, Interconnectors, Oil, Pumped Storage, Other
+            CLEAN = {"WIND", "HYDRO", "BIOMASS"}
+            FOSSIL = {"GAS", "COAL", "OIL"}
             bucket_map = {
                 g: "Renewables" if g.upper() in CLEAN
                 else "Fossil Fuels" if g.upper() in FOSSIL
@@ -743,12 +745,14 @@ with sub_gen:
             st.plotly_chart(fig, use_container_width=True)
 
         st.caption(
-            "The simplified breakdown groups wind, solar, hydro, and biomass as renewables; "
-            "gas (CCGT/OCGT), coal, and oil as fossil fuels; and nuclear, pumped storage, "
-            "and interconnector imports as 'Other'. The long-run trend in the line chart above "
-            "shows renewables growing their share over the data period as coal and gas generation "
-            "step down — a shift that directly increases the variability in system frequency "
-            "and, with it, the value of fast-response assets like BESS."
+            "The simplified breakdown groups wind, hydro, and biomass as renewables; "
+            "gas, coal, and oil as fossil fuels; and nuclear, pumped storage, interconnector "
+            "imports, and unclassified generation as 'Other'. Note: embedded solar is not "
+            "captured in the Elexon FUELHH dataset used here, so its contribution is absent. "
+            "The long-run trend in the line chart above shows renewables growing their share "
+            "over the data period as coal and gas generation step down — a shift that directly "
+            "increases variability in system frequency and, with it, the value of fast-response "
+            "assets like BESS."
         )
 
 
