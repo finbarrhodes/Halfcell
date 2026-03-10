@@ -24,15 +24,11 @@ except st.errors.StreamlitAPIException:
 # Header
 # ---------------------------------------------------------------------------
 
-_, banner_col, _ = st.columns([1, 8, 1])
-with banner_col:
-    st.image("bess-banner.png", use_container_width=True)
-
 st.title("BESS Analytics Tools")
 st.markdown(
     "Hello — my name is Finbar Rhodes. I have a passion for the energy transition and am particularly "
-    "interested in flexibility and grid-scale energy storage. This role, particularly in GB, has "
-    "increasingly been filled by battery energy storage systems (BESS). The combination of improving "
+    "interested in flexibility and grid-scale energy storage. This role has increasingly "
+    "been filled by battery energy storage systems (BESS) in Great Britain. The combination of improving "
     "battery technology, cheaper components, and the growing need for flexibility assets in a grid "
     "increasingly reliant on renewable energy sources leaves BESS with a bright future in the energy "
     "transition. Batteries are playing a major role beyond the scope of this project, and if you're "
@@ -155,6 +151,10 @@ with col3:
             "strategies, battery cycling cost, and the ML price forecast approach."
         )
         st.page_link("src/visualization/methodology.py", label="Methodology & Data →")
+
+_, banner_col, _ = st.columns([1, 8, 1])
+with banner_col:
+    st.image("bess-banner.png", use_container_width=True)
 
 st.divider()
 
