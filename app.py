@@ -25,6 +25,15 @@ st.sidebar.markdown(
         position: fixed;
         bottom: 1.5rem;
         font-size: 0.85rem;
+        text-align: center;
+        width: 16rem;
+    }
+    .sidebar-footer a {
+        color: #C9400A;
+        text-decoration: none;
+    }
+    .sidebar-footer a:hover {
+        text-decoration: underline;
     }
     </style>
     <div class="sidebar-footer">
