@@ -48,6 +48,7 @@ st.sidebar.markdown(
     }
     </style>
     <div class="sidebar-footer">
+    Last updated: March 2026<br><br>
     <a href="https://github.com/finbarrhodes" target="_blank">GitHub</a>
     &nbsp;·&nbsp;
     <a href="https://www.linkedin.com/in/finbar-rhodes-637650210/" target="_blank">LinkedIn</a>

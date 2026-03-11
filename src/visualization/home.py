@@ -54,6 +54,52 @@ st.markdown(
 st.divider()
 
 # ---------------------------------------------------------------------------
+# Navigation guide
+# ---------------------------------------------------------------------------
+
+st.subheader("What's in this tool")
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    with st.container(border=True):
+        st.markdown("**Market Overview**")
+        st.markdown(
+            "Explore GB frequency response auction clearing prices (DC, DR, DM), "
+            "High vs Low spread dynamics, system settlement prices (SBP/SSP), "
+            "and generation mix trends. Includes a correlation analysis between "
+            "system prices and DC High auction outcomes."
+        )
+        st.page_link("src/visualization/dashboard.py", label="Market Overview →")
+
+with col2:
+    with st.container(border=True):
+        st.markdown("**Forecasting & Dispatch Model**")
+        st.markdown(
+            "A day-ahead modelling framework for FR/arbitrage capacity allocation and "
+            "MPC dispatch. Benchmarks three price forecasting strategies — Naive D-1 "
+            "baseline, Random Forest, and perfect foresight ceiling — to isolate how "
+            "much forecast quality affects operational outcomes."
+        )
+        st.page_link("src/visualization/backtester.py", label="Forecasting & Dispatch →")
+
+with col3:
+    with st.container(border=True):
+        st.markdown("**Methodology & Data**")
+        st.markdown(
+            "Understand the modelling assumptions, data sources, and known limitations "
+            "of the backtester. Explains the two-stage participation model, dispatch "
+            "strategies, battery cycling cost, and the ML price forecast approach."
+        )
+        st.page_link("src/visualization/methodology.py", label="Methodology & Data →")
+
+_, banner_col, _ = st.columns([1, 8, 1])
+with banner_col:
+    st.image("bess-banner.png", use_container_width=True)
+
+st.divider()
+
+# ---------------------------------------------------------------------------
 # About — BESS revenue routes & market context
 # ---------------------------------------------------------------------------
 
@@ -114,52 +160,6 @@ st.markdown(
     | **2024–25** | Stack diversification — operators blend FR, arbitrage, and BM participation; long-duration projects begin to emerge |
     """
 )
-
-st.divider()
-
-# ---------------------------------------------------------------------------
-# Navigation guide
-# ---------------------------------------------------------------------------
-
-st.subheader("What's in this tool")
-
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    with st.container(border=True):
-        st.markdown("**Market Overview**")
-        st.markdown(
-            "Explore GB frequency response auction clearing prices (DC, DR, DM), "
-            "High vs Low spread dynamics, system settlement prices (SBP/SSP), "
-            "and generation mix trends. Includes a correlation analysis between "
-            "system prices and DC High auction outcomes."
-        )
-        st.page_link("src/visualization/dashboard.py", label="Market Overview →")
-
-with col2:
-    with st.container(border=True):
-        st.markdown("**Forecasting & Dispatch Model**")
-        st.markdown(
-            "A day-ahead modelling framework for FR/arbitrage capacity allocation and "
-            "MPC dispatch. Benchmarks three price forecasting strategies — Naive D-1 "
-            "baseline, Random Forest, and perfect foresight ceiling — to isolate how "
-            "much forecast quality affects operational outcomes."
-        )
-        st.page_link("src/visualization/backtester.py", label="Forecasting & Dispatch →")
-
-with col3:
-    with st.container(border=True):
-        st.markdown("**Methodology & Data**")
-        st.markdown(
-            "Understand the modelling assumptions, data sources, and known limitations "
-            "of the backtester. Explains the two-stage participation model, dispatch "
-            "strategies, battery cycling cost, and the ML price forecast approach."
-        )
-        st.page_link("src/visualization/methodology.py", label="Methodology & Data →")
-
-_, banner_col, _ = st.columns([1, 8, 1])
-with banner_col:
-    st.image("bess-banner.png", use_container_width=True)
 
 st.divider()
 
