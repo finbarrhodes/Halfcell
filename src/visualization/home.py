@@ -25,18 +25,23 @@ except st.errors.StreamlitAPIException:
 # ---------------------------------------------------------------------------
 
 st.title("Halfcell")
+st.markdown("<br>", unsafe_allow_html=True)
 st.markdown(
-    "Hello — my name is Finbar Rhodes. I have a passion for the energy transition and am particularly "
-    "interested in flexibility and grid-scale energy storage. This role has increasingly "
-    "been filled by battery energy storage systems (BESS) in Great Britain. The combination of improving "
+    "Welcome to Halfcell — an interactive analytics tool for grid-scale battery storage markets "
+    "in Great Britain. Battery energy storage systems (BESS) are a complex part of Great Britain's " \
+    "energy transition; this tool is designed to help unpack how they operate, how they make money, " \
+    "and how market conditions and data science are impacting BESS' role in the grid.\n\n" \
+    "My name is Finbar Rhodes, I have a passion for the energy transition and am particularly "
+    "interested in flexibility and grid-scale energy storage. The combination of improving "
     "battery technology, cheaper components, and the growing need for flexibility assets in a grid "
-    "increasingly reliant on renewable energy sources leaves BESS with a bright future in the energy "
-    "transition. Batteries are playing a major role beyond the scope of this project, and if you're "
-    "interested, [here](https://climate.benjames.io/batteries/) is a great guide I used.\n\n"
-    "This is a personal project I have undertaken to dive into the GB clean tech and grid-scale "
-    "battery landscape — learning through doing while aiming to surface some useful insights. "
-    "With a background in data science, statistics, and economics, I have tried to bring my "
-    "analytical skills and machine learning experience to bear on how impactful this technology "
+    "more reliant on renewable energy sources leaves BESS with a bright future in Great Britain's "
+    "energy transition. Batteries are playing a major role beyond the scope of this project, and if you're "
+    "interested, [here](https://climate.benjames.io/batteries/) is a well-made guide I found helpful.\n\n"
+    "Halfcell is a personal project I have undertaken to dive into the GB clean tech and grid-scale "
+    "battery landscape both to learn through doing and to share some insights into an exciting " \
+    "technology shaping our journey to Net Zero. With a background in data science, "
+    "statistics, and economics, I have tried to bring my analytical skills "
+    "and machine learning experience to bear on how impactful this technology "
     "is and how it is making its mark on our grid. I have focused on two key revenue verticals for "
     "BESS: frequency response services and energy arbitrage, which I go into more detail about below. "
     "There is a *Market Overview* section showing how market conditions have evolved over time, and a "
