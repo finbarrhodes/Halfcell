@@ -1,6 +1,6 @@
 """
-Methodology & Data Sources
-===========================
+Methodology & Data Sources — Halfcell
+=======================================
 Static reference page. Launched as a page via app.py (st.navigation).
 Can still be run standalone for local development:
     streamlit run src/visualization/methodology.py
@@ -13,7 +13,7 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 try:
     st.set_page_config(
-        page_title="Methodology & Data — GB BESS",
+        page_title="Methodology & Data — Halfcell",
         page_icon="⚡",
         layout="wide",
     )

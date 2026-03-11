@@ -1,6 +1,6 @@
 """
-Home — GB BESS Market Analysis Tool
-=====================================
+Home — Halfcell
+================
 Landing page. Launched as a page via app.py (st.navigation).
 Can still be run standalone for local development:
     streamlit run src/visualization/home.py
@@ -13,7 +13,7 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 try:
     st.set_page_config(
-        page_title="GB BESS Market Analysis",
+        page_title="Halfcell",
         page_icon="⚡",
         layout="wide",
     )
@@ -24,7 +24,7 @@ except st.errors.StreamlitAPIException:
 # Header
 # ---------------------------------------------------------------------------
 
-st.title("BESS Analytics Tools")
+st.title("Halfcell")
 st.markdown(
     "Hello — my name is Finbar Rhodes. I have a passion for the energy transition and am particularly "
     "interested in flexibility and grid-scale energy storage. This role has increasingly "

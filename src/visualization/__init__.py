@@ -1,1 +1,1 @@
-"""Visualization modules for GB BESS Market Analysis."""
+"""Visualization modules for Halfcell."""

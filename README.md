@@ -1,8 +1,8 @@
-# UK BESS Market Analysis & Forecasting Tool
+# Halfcell
 
-[![Live Demo](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://uk-bess-exploration.streamlit.app)
+[![Live Demo](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://halfcell.streamlit.app)
 
-A Python toolkit for analyzing the UK's Battery Energy Storage System (BESS) markets, including historical trend analysis, price forecasting, and market insights. This repo contains data acquisition tools for NESO and Elexon data as well as dashboard visualization using Streamlit. This project serves as a personal endeavor to learn more about and uncover insights into the UK BESS landscape; some of what is outlined below has yet to be implemented/shipped; more to come!
+Halfcell is a tool for analysing GB Battery Energy Storage System (BESS) markets — covering historical trends, price dynamics, and revenue modelling across ancillary services. Built on public NESO and Elexon data, with a Streamlit frontend. A personal project to explore and surface insights from the UK BESS landscape; some features are still in progress.
 
 ## Project Overview
 
@@ -56,7 +56,7 @@ Both the NESO Data Portal and Elexon Insights Solution APIs are fully public —
 ## Project Structure
 
 ```
-gb-bess-market-analysis/
+halfcell/
 ├── data/
 │   ├── raw/              # Raw data from APIs
 │   └── processed/        # Cleaned and processed data
@@ -121,7 +121,7 @@ Start the interactive Streamlit app (market dashboard + revenue backtester):
 streamlit run app.py
 ```
 
-Or visit the live deployment: [uk-bess-exploration.streamlit.app](https://uk-bess-exploration.streamlit.app)
+Or visit the live deployment: [halfcell.streamlit.app](https://halfcell.streamlit.app)
 
 ## Key Markets Analyzed
 
