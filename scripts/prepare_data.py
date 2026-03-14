@@ -18,25 +18,28 @@ PROCESSED = ROOT / "data" / "processed"
 PROCESSED.mkdir(parents=True, exist_ok=True)
 
 FUEL_GROUP_MAP = {
-    "CCGT":    "Gas",
-    "OCGT":    "Gas",
-    "NUCLEAR": "Nuclear",
-    "WIND":    "Wind",
-    "NPSHYD":  "Hydro",
-    "BIOMASS": "Biomass",
-    "COAL":    "Coal",
-    "OIL":     "Oil",
-    "PS":      "Pumped Storage",
-    "INTFR":   "Interconnectors",
-    "INTIRL":  "Interconnectors",
-    "INTNED":  "Interconnectors",
-    "INTNEM":  "Interconnectors",
-    "INTNSL":  "Interconnectors",
-    "INTVKL":  "Interconnectors",
-    "INTIFA2": "Interconnectors",
-    "INTEW":   "Interconnectors",
-    "INTELEC": "Interconnectors",
-    "OTHER":   "Other",
+    "CCGT":          "Gas",
+    "OCGT":          "Gas",
+    "NUCLEAR":       "Nuclear",
+    "WIND":          "Wind",
+    "NPSHYD":        "Hydro",
+    "BIOMASS":       "Biomass",
+    "COAL":          "Coal",
+    "OIL":           "Oil",
+    "PS":            "Pumped Storage",
+    "INTFR":         "Interconnectors",
+    "INTIRL":        "Interconnectors",
+    "INTNED":        "Interconnectors",
+    "INTNEM":        "Interconnectors",
+    "INTNSL":        "Interconnectors",
+    "INTVKL":        "Interconnectors",
+    "INTIFA2":       "Interconnectors",
+    "INTEW":         "Interconnectors",
+    "INTELEC":       "Interconnectors",
+    "OTHER":         "Other",
+    # Embedded generation from NESO Historic Demand Data
+    "SOLAR":         "Solar",
+    "EMBEDDED_WIND": "Wind",
 }
 
 
@@ -109,6 +112,13 @@ print(f"  {len(sp):,} rows  →  {_kb(out)} KB  ({out.name})")
 print("Processing generation (aggregating to daily by fuel group)...")
 frames = []
 for p in sorted(RAW.glob("generation_by_fuel_*.csv")):
+    frames.append(pd.read_csv(
+        p,
+        parse_dates=["settlementDate"],
+        usecols=["settlementDate", "fuelType", "generation"],
+    ))
+
+for p in sorted(RAW.glob("embedded_solar_wind_*.csv")):
     frames.append(pd.read_csv(
         p,
         parse_dates=["settlementDate"],

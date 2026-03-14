@@ -721,7 +721,7 @@ with sub_gen:
             # Map Elexon fuel groups to three high-level buckets
             # Actual fuelGroup values in data: Wind, Gas, Nuclear, Biomass, Coal,
             # Hydro, Interconnectors, Oil, Pumped Storage, Other
-            CLEAN = {"WIND", "HYDRO", "BIOMASS"}
+            CLEAN = {"WIND", "HYDRO", "BIOMASS", "SOLAR"}
             FOSSIL = {"GAS", "COAL", "OIL"}
             bucket_map = {
                 g: "Renewables" if g.upper() in CLEAN
@@ -745,14 +745,28 @@ with sub_gen:
             st.plotly_chart(fig, use_container_width=True)
 
         st.caption(
-            "The simplified breakdown groups wind, hydro, and biomass as renewables; "
-            "gas, coal, and oil as fossil fuels; and nuclear, pumped storage, interconnector "
-            "imports, and unclassified generation as 'Other'. Note: embedded solar is not "
-            "captured in the Elexon FUELHH dataset used here, so its contribution is absent. "
-            "The long-run trend in the line chart above shows renewables growing their share "
-            "over the data period as coal and gas generation step down — a shift that directly "
-            "increases variability in system frequency and, with it, the value of fast-response "
-            "assets like BESS."
+            "**Sources:** Transmission-connected generation is sourced from Elexon FUELHH, "
+            "which covers large grid-connected assets metered at the boundary. Embedded solar "
+            "and embedded wind are sourced from the NESO Historic Demand Data dataset and "
+            "represent half-hourly estimates derived from installed capacity registers and "
+            "Met Office irradiance and wind-speed models — the same figures NESO uses "
+            "internally for real-time grid balancing. "
+            "**Why estimates, not meter readings?** Most rooftop solar and small distribution-"
+            "connected wind falls below the metering threshold for direct settlement data. "
+            "NESO back-calculates embedded generation by subtracting metered demand from "
+            "modelled total consumption, producing the operationally relevant signal even "
+            "though it is not a direct physical measurement. "
+            "**Relevance for BESS analytics:** This mix reflects the generation profile that "
+            "drives system frequency deviations and therefore FR procurement need — the "
+            "operational picture that BESS operators respond to, rather than a statistical "
+            "accounting of all electrons produced. Including embedded renewables meaningfully "
+            "raises the measured renewable fraction, particularly in summer midday periods "
+            "when embedded solar peaks. "
+            "**Why this may differ from published energy statistics:** Sources such as Ember "
+            "or BEIS DUKES reconcile generation against annual surveys of small-scale "
+            "generators and FiT/SEG administrative data, and adjust for "
+            "transmission/distribution losses and auxiliary consumption. Those adjustments "
+            "are appropriate for energy accounting but unnecessary for market signal analysis."
         )
 
 

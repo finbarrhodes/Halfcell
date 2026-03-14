@@ -23,6 +23,7 @@ apis:
       dynamic_containment: "dynamic-containment-data"
       dynamic_regulation: "dynamic-regulation-requirements"
       dynamic_moderation: "dynamic-moderation-requirements"
+    demand_data_dataset_id: "8f2fe0af-871c-488d-8bad-960426f24601"
     rate_limit: 2  # datastore limit: 2 requests per minute
 
   elexon:

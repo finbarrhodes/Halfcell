@@ -422,6 +422,138 @@ class NESOCollector:
 
         return df_out
 
+    # Embedded solar and wind (NESO Historic Demand Data)
+
+    def collect_embedded_solar_wind(
+        self,
+        start_date: str,
+        end_date: str,
+        save: bool = True,
+    ) -> pd.DataFrame:
+        """
+        Collect half-hourly embedded solar and embedded wind generation estimates
+        from the NESO Historic Demand Data dataset.
+
+        The dataset (id: ``demand_data_dataset_id`` in config) publishes one CSV
+        per calendar year at:
+          https://api.neso.energy/dataset/{dataset_id}/resource/{resource_id}/download/demanddata_{year}.csv
+
+        Resource IDs are discovered dynamically via ``package_show`` so that the
+        method remains future-proof when NESO adds new yearly files.
+
+        Returns a long-format DataFrame with columns:
+          settlementDate, settlementPeriod, fuelType, generation
+
+        ``fuelType`` is either ``"SOLAR"`` or ``"EMBEDDED_WIND"``.
+        """
+        dataset_id = self.api_config.get("demand_data_dataset_id")
+        if not dataset_id:
+            raise ValueError("demand_data_dataset_id not set in config under apis.national_grid_eso")
+
+        logger.info(
+            f"Collecting embedded solar/wind from {start_date} to {end_date} "
+            f"(dataset {dataset_id})"
+        )
+
+        # --- Discover year → resource_id mapping via package_show ---
+        resp = self.session.get(
+            f"{BASE_URL}/package_show",
+            params={"id": dataset_id},
+            timeout=60,
+        )
+        resp.raise_for_status()
+        body = resp.json()
+        if not body.get("success"):
+            raise RuntimeError(f"package_show failed: {body.get('error')}")
+
+        resources = body["result"]["resources"]
+        # Each resource name follows "Historic Demand Data {year}"
+        year_to_rid: Dict[int, str] = {}
+        for r in resources:
+            name = r.get("name", "")
+            if name.startswith("Historic Demand Data "):
+                try:
+                    year = int(name.replace("Historic Demand Data ", "").strip())
+                    year_to_rid[year] = r["id"]
+                except ValueError:
+                    pass
+
+        if not year_to_rid:
+            logger.warning("No demanddata_*.csv resources found in package_show response")
+            return pd.DataFrame()
+
+        start_year = pd.Timestamp(start_date).year
+        end_year   = pd.Timestamp(end_date).year
+        years_needed = range(start_year, end_year + 1)
+
+        frames: List[pd.DataFrame] = []
+        for year in years_needed:
+            rid = year_to_rid.get(year)
+            if rid is None:
+                logger.warning(f"No resource found for year {year} — skipping")
+                continue
+
+            url = (
+                f"https://api.neso.energy/dataset/{dataset_id}"
+                f"/resource/{rid}/download/demanddata_{year}.csv"
+            )
+            logger.info(f"  Downloading {url}")
+            try:
+                r = self.session.get(url, timeout=120)
+                r.raise_for_status()
+            except Exception as exc:
+                logger.error(f"  Failed to download {year}: {exc}")
+                continue
+
+            from io import StringIO
+            raw = pd.read_csv(
+                StringIO(r.text),
+                usecols=lambda c: c.strip().upper() in {
+                    "SETTLEMENT_DATE", "SETTLEMENT_PERIOD",
+                    "EMBEDDED_SOLAR_GENERATION", "EMBEDDED_WIND_GENERATION",
+                },
+            )
+            # Normalise column names (strip whitespace, uppercase)
+            raw.columns = [c.strip().upper() for c in raw.columns]
+
+            raw["SETTLEMENT_DATE"] = pd.to_datetime(raw["SETTLEMENT_DATE"], dayfirst=True, format="mixed")
+
+            # Reshape to long format — two rows per settlement period
+            solar = raw[["SETTLEMENT_DATE", "SETTLEMENT_PERIOD", "EMBEDDED_SOLAR_GENERATION"]].copy()
+            solar.columns = ["settlementDate", "settlementPeriod", "generation"]
+            solar["fuelType"] = "SOLAR"
+
+            wind = raw[["SETTLEMENT_DATE", "SETTLEMENT_PERIOD", "EMBEDDED_WIND_GENERATION"]].copy()
+            wind.columns = ["settlementDate", "settlementPeriod", "generation"]
+            wind["fuelType"] = "EMBEDDED_WIND"
+
+            frames.append(pd.concat([solar, wind], ignore_index=True))
+            logger.info(f"  Year {year}: {len(raw)} settlement periods loaded")
+
+        if not frames:
+            logger.warning("No embedded solar/wind data collected")
+            return pd.DataFrame()
+
+        df = pd.concat(frames, ignore_index=True)
+        df["generation"] = pd.to_numeric(df["generation"], errors="coerce")
+
+        # Filter to exact requested date range
+        df = df[
+            (df["settlementDate"] >= pd.Timestamp(start_date)) &
+            (df["settlementDate"] <= pd.Timestamp(end_date))
+        ].reset_index(drop=True)
+
+        logger.info(
+            f"Collected {len(df):,} embedded solar/wind rows "
+            f"({df['settlementDate'].min().date()} – {df['settlementDate'].max().date()})"
+        )
+
+        if save:
+            filename = f"embedded_solar_wind_{start_date}_{end_date}"
+            save_dataframe(df, filename, data_type="raw", format="csv")
+
+        return df
+
     # Convenience: collect everything
 
     def collect_all_markets(
@@ -452,10 +584,11 @@ class NESOCollector:
             eac_results = self.collect_eac_results(eac_query_start, end_date, save)
 
         data = {
-            "auction_results": legacy_results,
-            "eac_results":     eac_results,
-            "dr_requirements": self.collect_dr_requirements(save),
-            "dm_requirements": self.collect_dm_requirements(save),
+            "auction_results":      legacy_results,
+            "eac_results":          eac_results,
+            "dr_requirements":      self.collect_dr_requirements(save),
+            "dm_requirements":      self.collect_dm_requirements(save),
+            "embedded_solar_wind":  self.collect_embedded_solar_wind(start_date, end_date, save),
         }
 
         total = sum(len(df) for df in data.values())
