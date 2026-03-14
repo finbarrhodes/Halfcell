@@ -28,27 +28,9 @@ st.title("Halfcell")
 st.markdown("<br>", unsafe_allow_html=True)
 st.markdown(
     "Welcome to Halfcell — an interactive analytics tool for grid-scale battery storage markets "
-    "in Great Britain. Battery energy storage systems (BESS) are a complex part of Great Britain's " \
-    "energy transition; this tool is designed to help unpack how they operate, how they make money, " \
-    "and how market conditions and data science are impacting BESS' role in the grid.\n\n" \
-    "My name is Finbar Rhodes, I have a passion for the energy transition and am particularly "
-    "interested in flexibility and grid-scale energy storage. The combination of improving "
-    "battery technology, cheaper components, and the growing need for flexibility assets in a grid "
-    "more reliant on renewable energy sources leaves BESS with a bright future in Great Britain's "
-    "energy transition. Batteries are playing a major role beyond the scope of this project, and if you're "
-    "interested, [here](https://climate.benjames.io/batteries/) is a well-made guide I found helpful.\n\n"
-    "Halfcell is a personal project I have undertaken to dive into the GB clean tech and grid-scale "
-    "battery landscape both to learn through doing and to share some insights into an exciting " \
-    "technology shaping our journey to Net Zero. With a background in data science, "
-    "statistics, and economics, I have tried to bring my analytical skills "
-    "and machine learning experience to bear on how impactful this technology "
-    "is and how it is making its mark on our grid. I have focused on two key revenue verticals for "
-    "BESS: frequency response services and energy arbitrage, which I go into more detail about below. "
-    "There is a *Market Overview* section showing how market conditions have evolved over time, and a "
-    "*Forecasting & Dispatch* model that applies ML price forecasting and Model Predictive Control "
-    "(MPC) optimisation to the day-ahead planning layer of BESS operations. "
-    "The data powering this tool is sourced from the **Elexon Insights Solution API** "
-    "and **NESO Data Portal**, with methodology based on well-established literature."
+    "in Great Britain. Battery energy storage systems (BESS) are a complex part of Great Britain's "
+    "energy transition; this tool is designed to help unpack how they operate, how they make money, "
+    "and how market conditions and data science are impacting BESS' role in the grid."
 )
 
 st.divider()
@@ -93,6 +75,34 @@ with col3:
         )
         st.page_link("src/visualization/methodology.py", label="Methodology & Data →")
 
+st.markdown("<br>", unsafe_allow_html=True)
+
+# ---------------------------------------------------------------------------
+# About
+# ---------------------------------------------------------------------------
+
+st.markdown(
+    "My name is Finbar Rhodes, I have a passion for the energy transition and am particularly "
+    "interested in flexibility and grid-scale energy storage. The combination of improving "
+    "battery technology, cheaper components, and the growing need for flexibility assets in a grid "
+    "more reliant on renewable energy sources leaves BESS with a bright future in Great Britain's "
+    "energy transition. Batteries are playing a major role beyond the scope of this project, and if you're "
+    "interested, [here](https://climate.benjames.io/batteries/) is a well-made guide I found helpful.\n\n"
+    "Halfcell is a personal project I have undertaken to dive into the GB clean tech and grid-scale "
+    "battery landscape both to learn through doing and to share some insights into an exciting "
+    "technology shaping our journey to Net Zero. With a background in data science, "
+    "statistics, and economics, I have tried to bring my analytical skills "
+    "and machine learning experience to bear on how impactful this technology "
+    "is and how it is making its mark on our grid. I have focused on two key revenue verticals for "
+    "BESS: frequency response services and energy arbitrage, which I go into more detail about below. "
+    "There is a *Market Overview* section showing how market conditions have evolved over time, and a "
+    "*Forecasting & Dispatch* model that applies ML price forecasting and Model Predictive Control "
+    "(MPC) optimisation to the day-ahead planning layer of BESS operations. "
+    "The data powering this tool is sourced from the **Elexon Insights Solution API** "
+    "and **NESO Data Portal**, with methodology based on well-established literature."
+)
+
+st.markdown("<br>", unsafe_allow_html=True)
 _, banner_col, _ = st.columns([1, 8, 1])
 with banner_col:
     st.image("bess-banner.png", use_container_width=True)
