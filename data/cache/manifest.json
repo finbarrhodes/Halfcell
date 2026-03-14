@@ -1,12 +1,12 @@
 {
   "pf_mpc": {
-    "computed_at": "2026-03-09T12:24:56.119719+00:00",
-    "git_sha": "4931b4ca3d241c4e6aa6e7d3d21ff3c19859f596",
+    "computed_at": "2026-03-14T18:06:35.651185+00:00",
+    "git_sha": "88a68dbf14f9d4c77a9441ebd2a652247dfbba09",
     "data_mtimes": {
-      "auctions.parquet": 1772814485.7174647,
-      "generation_daily.parquet": 1772814487.263137,
-      "market_index.parquet": 1772814486.2730398,
-      "system_prices.parquet": 1772814486.3264604
+      "auctions.parquet": 1773510028.8554976,
+      "generation_daily.parquet": 1773510030.767225,
+      "market_index.parquet": 1773510029.5146983,
+      "system_prices.parquet": 1773510029.5698636
     },
     "params": {
       "power_mw": 50.0,
@@ -17,38 +17,38 @@
       "initial_soc": 0.5,
       "dispatch_method": "mpc",
       "horizon": 96,
-      "start_date": "2023-01-01",
+      "start_date": "2021-09-16",
       "end_date": "2026-02-19"
     },
     "summary": {
-      "total_gross": 31082788.0,
-      "total_cycling_cost": 98717.0,
-      "total_net": 30984071.0,
-      "years_covered": 3.17,
-      "annualised_net": 9784443.0,
-      "annualised_per_mw": 195689.0,
+      "total_gross": 52036925.0,
+      "total_cycling_cost": 164586.0,
+      "total_net": 51872339.0,
+      "years_covered": 4.5,
+      "annualised_net": 11527186.0,
+      "annualised_per_mw": 230544.0,
       "breakdown": {
-        "DCH": 2950877.0,
-        "DCL": 3504143.0,
-        "DMH": 2416854.0,
-        "DML": 5760577.0,
-        "DRH": 1293570.0,
-        "DRL": 13259697.0,
-        "Imbalance": 1897071.0
+        "DCH": 4753369.0,
+        "DCL": 11614234.0,
+        "DMH": 3388374.0,
+        "DML": 6145296.0,
+        "DRH": 4813730.0,
+        "DRL": 17210681.0,
+        "Imbalance": 4111242.0
       },
       "top_service": "DRL",
-      "fr_mw": 46.3029494787308,
-      "arb_mw": 3.6970505212691975
+      "fr_mw": 45.43483554602176,
+      "arb_mw": 4.565164453978241
     }
   },
   "naive_mpc": {
-    "computed_at": "2026-03-09T12:29:32.601198+00:00",
-    "git_sha": "4931b4ca3d241c4e6aa6e7d3d21ff3c19859f596",
+    "computed_at": "2026-03-14T18:13:07.835459+00:00",
+    "git_sha": "88a68dbf14f9d4c77a9441ebd2a652247dfbba09",
     "data_mtimes": {
-      "auctions.parquet": 1772814485.7174647,
-      "generation_daily.parquet": 1772814487.263137,
-      "market_index.parquet": 1772814486.2730398,
-      "system_prices.parquet": 1772814486.3264604
+      "auctions.parquet": 1773510028.8554976,
+      "generation_daily.parquet": 1773510030.767225,
+      "market_index.parquet": 1773510029.5146983,
+      "system_prices.parquet": 1773510029.5698636
     },
     "params": {
       "power_mw": 50.0,
@@ -59,39 +59,39 @@
       "initial_soc": 0.5,
       "dispatch_method": "mpc",
       "horizon": 96,
-      "start_date": "2023-01-01",
+      "start_date": "2021-09-16",
       "end_date": "2026-02-19"
     },
     "summary": {
-      "total_gross": 29733597.0,
-      "total_cycling_cost": 84702.0,
-      "total_net": 29648895.0,
-      "total_mwh_cycled": 28233.9,
-      "years_covered": 3.17,
-      "annualised_net": 9362809.0,
-      "annualised_per_mw": 187256.0,
+      "total_gross": 49121129.0,
+      "total_cycling_cost": 141118.0,
+      "total_net": 48980011.0,
+      "years_covered": 4.5,
+      "annualised_net": 10884447.0,
+      "annualised_per_mw": 217689.0,
       "breakdown": {
-        "DCH": 2965681.0,
-        "DCL": 3513355.0,
-        "DMH": 2432466.0,
-        "DML": 5750255.0,
-        "DRH": 1313164.0,
-        "DRL": 13239091.0,
-        "Imbalance": 519586.0
+        "DCH": 4781637.0,
+        "DCL": 11682606.0,
+        "DMH": 3414912.0,
+        "DML": 6137031.0,
+        "DRH": 4827966.0,
+        "DRL": 17207651.0,
+        "Imbalance": 1069326.0
       },
       "top_service": "DRL",
-      "fr_mw": 46.222880142207686,
-      "arb_mw": 3.7771198577923144
+      "fr_mw": 45.26719300489414,
+      "arb_mw": 4.732806995105861,
+      "total_mwh_cycled": 47039.4
     }
   },
   "ml_mpc": {
-    "computed_at": "2026-03-09T12:34:45.970610+00:00",
-    "git_sha": "4931b4ca3d241c4e6aa6e7d3d21ff3c19859f596",
+    "computed_at": "2026-03-14T18:20:09.858193+00:00",
+    "git_sha": "88a68dbf14f9d4c77a9441ebd2a652247dfbba09",
     "data_mtimes": {
-      "auctions.parquet": 1772814485.7174647,
-      "generation_daily.parquet": 1772814487.263137,
-      "market_index.parquet": 1772814486.2730398,
-      "system_prices.parquet": 1772814486.3264604
+      "auctions.parquet": 1773510028.8554976,
+      "generation_daily.parquet": 1773510030.767225,
+      "market_index.parquet": 1773510029.5146983,
+      "system_prices.parquet": 1773510029.5698636
     },
     "params": {
       "power_mw": 50.0,
@@ -102,46 +102,46 @@
       "initial_soc": 0.5,
       "dispatch_method": "mpc",
       "horizon": 96,
-      "start_date": "2023-01-01",
+      "start_date": "2021-09-16",
       "end_date": "2026-02-19",
       "ml_model_type": "rf",
       "test_start": "2025-03-01"
     },
     "summary": {
-      "total_gross": 31010377.0,
-      "total_cycling_cost": 64129.0,
-      "total_net": 30946248.0,
-      "total_mwh_cycled": 21376.4,
-      "years_covered": 3.17,
-      "annualised_net": 9772499.0,
-      "annualised_per_mw": 195450.0,
+      "total_gross": 51669738.0,
+      "total_cycling_cost": 95489.0,
+      "total_net": 51574249.0,
+      "years_covered": 4.5,
+      "annualised_net": 11460944.0,
+      "annualised_per_mw": 229219.0,
       "breakdown": {
-        "DCH": 3068143.0,
-        "DCL": 3622443.0,
-        "DMH": 2518125.0,
-        "DML": 5901375.0,
-        "DRH": 1362743.0,
-        "DRL": 13594599.0,
-        "Imbalance": 942948.0
+        "DCH": 4996498.0,
+        "DCL": 12187427.0,
+        "DMH": 3542188.0,
+        "DML": 6305009.0,
+        "DRH": 4977127.0,
+        "DRL": 17670565.0,
+        "Imbalance": 1990924.0
       },
       "top_service": "DRL",
-      "fr_mw": 47.52952677151934,
-      "arb_mw": 2.4704732284806568
+      "fr_mw": 47.230439645701864,
+      "arb_mw": 2.769560354298136,
+      "total_mwh_cycled": 31829.7
     },
     "model_metrics": {
       "train": {
-        "rmse": 16.03,
+        "rmse": 15.87,
         "mae": 7.23,
         "spearman": 0.983,
         "n_samples": 83401,
-        "spike_rmse": 41.17
+        "spike_rmse": 40.49
       },
       "test": {
-        "rmse": 30.67,
-        "mae": 23.01,
-        "spearman": 0.549,
+        "rmse": 32.38,
+        "mae": 25.0,
+        "spearman": 0.534,
         "n_samples": 13152,
-        "spike_rmse": 46.17
+        "spike_rmse": 49.3
       }
     }
   }
