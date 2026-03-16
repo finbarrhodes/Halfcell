@@ -167,22 +167,40 @@ class REPDCollector:
 
         logger.info(f"Reading REPD workbook: {path}")
 
-        # Try header at row 0 first, then row 4 — the two observed REPD layouts.
-        for header_row in (0, 4):
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                df = pd.read_excel(path, header=header_row, engine="openpyxl")
-            cols = [str(c).strip() for c in df.columns]
+        # The workbook has a 'Definition Sheet' cover page and a 'REPD' data sheet.
+        # Try the 'REPD' sheet first, then fall back to sheet index 0.
+        import openpyxl as _openpyxl
+        _wb = _openpyxl.load_workbook(path, read_only=True)
+        _sheet_names = _wb.sheetnames
+        _wb.close()
+        _candidate_sheets = (
+            ["REPD"] + [s for s in _sheet_names if s != "REPD"]
+            if "REPD" in _sheet_names
+            else _sheet_names
+        )
 
-            # Check that at least two of the expected canonical columns are findable.
-            found = sum(1 for key in _COL_ALIASES if _find_col(cols, key) is not None)
-            if found >= 2:
-                df.columns = cols
+        # Try header at row 0 first, then row 4 — the two observed REPD layouts.
+        df = None
+        for sheet in _candidate_sheets:
+            for header_row in (0, 4):
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    _df = pd.read_excel(path, sheet_name=sheet, header=header_row, engine="openpyxl")
+                cols = [str(c).strip() for c in _df.columns]
+                found = sum(1 for key in _COL_ALIASES if _find_col(cols, key) is not None)
+                if found >= 2:
+                    _df.columns = cols
+                    df = _df
+                    logger.info(f"Using sheet '{sheet}', header row {header_row}")
+                    break
+            if df is not None:
                 break
-        else:
+
+        if df is None:
             raise ValueError(
                 f"Could not detect REPD column layout in {path}. "
-                f"Columns found: {list(df.columns[:10])}"
+                f"Sheets tried: {_candidate_sheets}. "
+                f"Last columns seen: {list(_df.columns[:10])}"
             )
 
         # Rename to canonical names

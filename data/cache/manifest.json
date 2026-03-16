@@ -1,12 +1,13 @@
 {
   "pf_mpc": {
-    "computed_at": "2026-03-16T11:37:51.803106+00:00",
-    "git_sha": "db893300ee2b928cc2530f68567781a0ff0bc710",
+    "computed_at": "2026-03-16T12:57:58.170052+00:00",
+    "git_sha": "869c67fb39435902cb11d945dc0d06ad1cd5027c",
     "data_mtimes": {
-      "auctions.parquet": 1773659450.6323326,
-      "generation_daily.parquet": 1773659452.3769236,
-      "market_index.parquet": 1773659451.218602,
-      "system_prices.parquet": 1773659451.2704375
+      "auctions.parquet": 1773664491.0329397,
+      "bess_fleet_capacity.parquet": 1773664492.6139364,
+      "generation_daily.parquet": 1773664492.6117098,
+      "market_index.parquet": 1773664491.561975,
+      "system_prices.parquet": 1773664491.6144633
     },
     "params": {
       "power_mw": 50.0,
@@ -42,13 +43,14 @@
     }
   },
   "naive_mpc": {
-    "computed_at": "2026-03-16T11:44:12.910403+00:00",
-    "git_sha": "db893300ee2b928cc2530f68567781a0ff0bc710",
+    "computed_at": "2026-03-16T13:04:29.372682+00:00",
+    "git_sha": "869c67fb39435902cb11d945dc0d06ad1cd5027c",
     "data_mtimes": {
-      "auctions.parquet": 1773659450.6323326,
-      "generation_daily.parquet": 1773659452.3769236,
-      "market_index.parquet": 1773659451.218602,
-      "system_prices.parquet": 1773659451.2704375
+      "auctions.parquet": 1773664491.0329397,
+      "bess_fleet_capacity.parquet": 1773664492.6139364,
+      "generation_daily.parquet": 1773664492.6117098,
+      "market_index.parquet": 1773664491.561975,
+      "system_prices.parquet": 1773664491.6144633
     },
     "params": {
       "power_mw": 50.0,
@@ -85,13 +87,14 @@
     }
   },
   "ml_mpc": {
-    "computed_at": "2026-03-16T11:51:16.290978+00:00",
-    "git_sha": "db893300ee2b928cc2530f68567781a0ff0bc710",
+    "computed_at": "2026-03-16T13:11:40.698787+00:00",
+    "git_sha": "869c67fb39435902cb11d945dc0d06ad1cd5027c",
     "data_mtimes": {
-      "auctions.parquet": 1773659450.6323326,
-      "generation_daily.parquet": 1773659452.3769236,
-      "market_index.parquet": 1773659451.218602,
-      "system_prices.parquet": 1773659451.2704375
+      "auctions.parquet": 1773664491.0329397,
+      "bess_fleet_capacity.parquet": 1773664492.6139364,
+      "generation_daily.parquet": 1773664492.6117098,
+      "market_index.parquet": 1773664491.561975,
+      "system_prices.parquet": 1773664491.6144633
     },
     "params": {
       "power_mw": 50.0,
@@ -108,40 +111,40 @@
       "test_start": "2025-03-01"
     },
     "summary": {
-      "total_gross": 51637313.0,
-      "total_cycling_cost": 96910.0,
-      "total_net": 51540403.0,
+      "total_gross": 51629737.0,
+      "total_cycling_cost": 97967.0,
+      "total_net": 51531770.0,
       "years_covered": 4.5,
-      "annualised_net": 11453423.0,
-      "annualised_per_mw": 229068.0,
+      "annualised_net": 11451504.0,
+      "annualised_per_mw": 229030.0,
       "breakdown": {
-        "DCH": 4993764.0,
-        "DCL": 12179934.0,
-        "DMH": 3537273.0,
-        "DML": 6295050.0,
-        "DRH": 4971875.0,
-        "DRL": 17649331.0,
-        "Arbitrage": 2010086.0
+        "DCH": 4992667.0,
+        "DCL": 12178530.0,
+        "DMH": 3538736.0,
+        "DML": 6291550.0,
+        "DRH": 4973635.0,
+        "DRL": 17643727.0,
+        "Arbitrage": 2010892.0
       },
       "top_service": "DRL",
-      "fr_mw": 47.19805840814126,
-      "arb_mw": 2.8019415918587427,
-      "total_mwh_cycled": 32303.5
+      "fr_mw": 47.174427514526485,
+      "arb_mw": 2.825572485473515,
+      "total_mwh_cycled": 32655.7
     },
     "model_metrics": {
       "train": {
-        "rmse": 15.73,
+        "rmse": 15.8,
         "mae": 7.21,
         "spearman": 0.983,
         "n_samples": 83401,
-        "spike_rmse": 40.02
+        "spike_rmse": 40.26
       },
       "test": {
-        "rmse": 30.84,
-        "mae": 23.2,
-        "spearman": 0.555,
+        "rmse": 31.66,
+        "mae": 24.37,
+        "spearman": 0.568,
         "n_samples": 13152,
-        "spike_rmse": 46.54
+        "spike_rmse": 47.63
       }
     }
   }
