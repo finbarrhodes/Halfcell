@@ -137,4 +137,26 @@ out = PROCESSED / "generation_daily.parquet"
 gen_daily.to_parquet(out, index=False)
 print(f"  {len(gen_daily):,} rows  →  {_kb(out)} KB  ({out.name})")
 
+
+# ---------------------------------------------------------------------------
+# BESS fleet capacity — monthly cumulative from REPD
+# ---------------------------------------------------------------------------
+print("Processing BESS fleet capacity (REPD)...")
+REPD_RAW = RAW / "bess_fleet_capacity_raw.csv"
+
+if not REPD_RAW.exists():
+    print(
+        f"  SKIP: {REPD_RAW.name} not found.\n"
+        "  Run REPDCollector.collect() to generate it:\n"
+        "    python src/data_collection/repd_collector.py <repd_url_or_local_path>"
+    )
+else:
+    bess = pd.read_csv(REPD_RAW)
+    bess["month"] = pd.to_datetime(bess["month"])
+    bess = bess[["month", "bess_fleet_mw"]].sort_values("month").reset_index(drop=True)
+    out = PROCESSED / "bess_fleet_capacity.parquet"
+    bess.to_parquet(out, index=False)
+    print(f"  {len(bess):,} months  →  {_kb(out)} KB  ({out.name})")
+
+
 print("\nDone. Commit the files in data/processed/ to git.")

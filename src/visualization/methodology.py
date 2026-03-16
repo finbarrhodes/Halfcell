@@ -251,7 +251,17 @@ naive D-1 lag model sets the zero-skill baseline.
   and per-fuel breakdown (gas, wind, nuclear, hydro, etc.)
 - Cyclical temporal encodings: settlement period, day-of-week, and day-of-year encoded
   as sin/cos pairs to preserve circularity (e.g. period 48 and period 1 are adjacent)
-- Weekend flag
+- Weekend flag and UK bank holiday flag
+- **GB BESS fleet capacity** (`bess_fleet_mw`, monthly MW): total operational GB
+  battery storage capacity at the time of the settlement date, sourced from the
+  DESNZ Renewable Energy Planning Database (REPD). Captures the structural shift
+  as a growing fleet competes for the same arbitrage spreads — from ~0.8 GW at
+  end-2019 to ~6 GW by early 2025.
+- **BESS spread suppression** (`bess_spread_suppression`): `bess_fleet_mw / gen_total` —
+  BESS penetration as a fraction of total system generation. Directly encodes the
+  economic mechanism: as penetration grows, batteries charge in cheap periods and
+  discharge in expensive ones, flattening the merit order and compressing the spreads
+  that arbitrage revenue depends on. Near-zero in 2019; a material signal by 2024–25.
 
 **Train/test split:** strict temporal split — training data ends before 2025-03-01
 to prevent any look-ahead bias. The model never sees future prices during training.
@@ -328,6 +338,7 @@ st.markdown(
 | APXMIDP market index price | [Elexon Insights Solution API](https://developer.data.elexon.co.uk/) | Jul 2023 – present |
 | System buy/sell prices (SBP/SSP) | [Elexon Insights Solution API](https://developer.data.elexon.co.uk/) | Jul 2023 – present |
 | Generation by fuel type (daily) | [Elexon Insights Solution API](https://developer.data.elexon.co.uk/) | Jul 2023 – present |
+| GB BESS fleet capacity (monthly) | [DESNZ REPD](https://www.gov.uk/government/publications/renewable-energy-planning-database-monthly-extract) | 2019 – present (quarterly lag ~3 months) |
 """
 )
 

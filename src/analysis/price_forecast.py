@@ -66,12 +66,46 @@ DEFAULT_TEST_START = "2025-03-01"
 
 
 # ---------------------------------------------------------------------------
+# BESS fleet capacity loader
+# ---------------------------------------------------------------------------
+
+def load_bess_capacity(path: str | None = None) -> pd.DataFrame:
+    """
+    Load the monthly GB BESS fleet capacity series from
+    data/processed/bess_fleet_capacity.parquet.
+
+    Returns a DataFrame with columns:
+        month_start (datetime64[ns]) — first day of each month
+        bess_fleet_mw (float)       — cumulative operational capacity (MW)
+
+    Sorted ascending. If the parquet file does not exist (e.g. REPD data has
+    not yet been collected), returns an empty DataFrame so callers degrade
+    gracefully.
+    """
+    from pathlib import Path as _Path
+    if path is None:
+        _candidate = _Path(__file__).parent.parent.parent / "data" / "processed" / "bess_fleet_capacity.parquet"
+    else:
+        _candidate = _Path(path)
+
+    if not _candidate.exists():
+        return pd.DataFrame(columns=["month_start", "bess_fleet_mw"])
+
+    df = pd.read_parquet(_candidate)
+    # The parquet stores month as a first-of-month timestamp in the "month" column.
+    df = df.rename(columns={"month": "month_start"})
+    df["month_start"] = pd.to_datetime(df["month_start"]).dt.normalize()
+    return df[["month_start", "bess_fleet_mw"]].sort_values("month_start").reset_index(drop=True)
+
+
+# ---------------------------------------------------------------------------
 # Feature engineering
 # ---------------------------------------------------------------------------
 
 def build_feature_matrix(
     market_index: pd.DataFrame,
     generation_daily: pd.DataFrame,
+    bess_capacity: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """
     Construct a feature matrix for price forecasting.
@@ -89,6 +123,12 @@ def build_feature_matrix(
     generation_daily : DataFrame
         From data/processed/generation_daily.parquet. Must contain columns:
         settlementDate, fuelGroup, generation.
+    bess_capacity : DataFrame, optional
+        From load_bess_capacity(). Must contain columns:
+        month_start (datetime64, first of month), bess_fleet_mw (float).
+        When provided, adds ``bess_fleet_mw`` and ``bess_spread_suppression``
+        feature columns. When None, those columns are simply absent (the
+        dynamic column filter in train_forecast_model handles this gracefully).
 
     Returns
     -------
@@ -186,6 +226,35 @@ def build_feature_matrix(
 
     apx = apx.merge(gen_wide_lag, on="settlementDate", how="left")
 
+    # --- GB BESS fleet capacity features (monthly, from REPD, D-1 lagged) ---
+    # Each row gets the fleet capacity for the month of (settlementDate - 1 day),
+    # which is strictly prior to the settlement date — no look-ahead.
+    if bess_capacity is not None and not bess_capacity.empty:
+        bess = bess_capacity.copy()
+        bess["month_start"] = pd.to_datetime(bess["month_start"]).dt.normalize()
+
+        apx["_feature_month"] = (
+            (apx["settlementDate"] - pd.Timedelta(days=1))
+            .dt.to_period("M")
+            .dt.to_timestamp()
+        )
+        apx = apx.merge(
+            bess.rename(columns={"month_start": "_feature_month"}),
+            on="_feature_month",
+            how="left",
+        ).drop(columns=["_feature_month"])
+
+        # Periods before the first REPD entry (pre-2019 or data gap) → 0 MW
+        apx["bess_fleet_mw"] = apx["bess_fleet_mw"].fillna(0.0)
+
+        # Analytical suppression feature: BESS penetration as a fraction of total
+        # system generation. Encodes the economic mechanism — as fleet grows
+        # relative to system size, the merit order flattens and spreads compress.
+        apx["bess_spread_suppression"] = (
+            apx["bess_fleet_mw"]
+            / apx["gen_total"].replace(0, np.nan)
+        ).fillna(0.0)
+
     # --- Cyclical temporal features ---
     sp = apx["settlementPeriod"]
     apx["sp_sin"] = np.sin(2 * np.pi * sp / 48)
@@ -237,6 +306,8 @@ FEATURE_COLS = [
     "dow_sin", "dow_cos",
     "doy_sin", "doy_cos",
     "is_weekend", "is_bank_holiday",
+    # GB BESS fleet capacity (structural market variable, from REPD)
+    "bess_fleet_mw", "bess_spread_suppression",
 ]
 
 # Include any individual fuel-group columns that were built (gas, wind, etc.)

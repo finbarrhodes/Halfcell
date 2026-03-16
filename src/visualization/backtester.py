@@ -23,6 +23,7 @@ from src.analysis.price_forecast import (
     build_feature_matrix,
     compute_revenue_gap,
     get_feature_importances,
+    load_bess_capacity,
     train_forecast_model,
 )
 from src.analysis.revenue_stack import (
@@ -121,7 +122,7 @@ def load_generation_daily() -> pd.DataFrame:
 @st.cache_resource
 def load_forecast_model(model_type: str = "rf"):
     """Train and cache the ML model for feature importance display (not for backtesting)."""
-    feature_df = build_feature_matrix(load_market_index(), load_generation_daily())
+    feature_df = build_feature_matrix(load_market_index(), load_generation_daily(), load_bess_capacity())
     model, feature_cols, train_metrics, test_metrics = train_forecast_model(
         feature_df, model_type=model_type, test_start=DEFAULT_TEST_START
     )

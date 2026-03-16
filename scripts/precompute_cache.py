@@ -34,6 +34,7 @@ import pandas as pd
 from src.analysis.price_forecast import (
     DEFAULT_TEST_START,
     build_feature_matrix,
+    load_bess_capacity,
     run_forecast_backtest,
     train_forecast_model,
 )
@@ -195,7 +196,7 @@ def main() -> None:
     _print_section(3, 3, "ML (Random Forest) + MPC")
 
     print("  Building feature matrix…")
-    feature_df = build_feature_matrix(mkt_index, gen_daily)
+    feature_df = build_feature_matrix(mkt_index, gen_daily, load_bess_capacity())
 
     print(f"  Training {ML_MODEL_TYPE.upper()} model (test split: {DEFAULT_TEST_START})…")
     model, feature_cols, train_metrics, test_metrics = train_forecast_model(
