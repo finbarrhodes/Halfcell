@@ -98,8 +98,9 @@ st.markdown(
     "There is a *Market Overview* section showing how market conditions have evolved over time, and a "
     "*Forecasting & Dispatch* model that applies ML price forecasting and Model Predictive Control "
     "(MPC) optimisation to the day-ahead planning layer of BESS operations. "
-    "The data powering this tool is sourced from the **Elexon Insights Solution API** "
-    "and **NESO Data Portal**, with methodology based on well-established literature."
+    "The data powering this tool is sourced from the **Elexon Insights Solution API**, "
+    "the **NESO Data Portal**, and the **DESNZ Renewable Energy Planning Database (REPD)**, "
+    "with methodology based on well-established literature."
 )
 
 st.markdown("<br>", unsafe_allow_html=True)
@@ -146,8 +147,8 @@ st.markdown(
     asset-level operational data — dispatch logs, BM unit IDs, exact SoC histories, and grid
     connection limits. Much of this is commercially sensitive and not publicly disclosed;
     operators reasonably keep detailed performance data private. This tool is built entirely
-    on publicly available data from NESO and Elexon, and the modelling approach applies the
-    best analytical methods available within that constraint. The goal is not to replicate a
+    on publicly available data from NESO, Elexon, and DESNZ REPD, and the modelling approach
+    applies the best analytical methods available within that constraint. The goal is not to replicate a
     proprietary trading system, but to quantify — as rigorously as the data allows — how
     market conditions and forecast quality interact to drive BESS revenue outcomes.
     """

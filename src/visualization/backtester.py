@@ -885,6 +885,19 @@ be harder to explain. A naive lag model sets the zero-skill baseline.
 - Cyclical temporal encodings: settlement period, day-of-week, and day-of-year encoded
   as sin/cos pairs to preserve circularity (e.g. period 48 and period 1 are adjacent)
 - Weekend flag; GB bank holiday flag (holidays have Sunday-like price profiles)
+- **GB BESS fleet capacity** (`bess_fleet_mw`, monthly MW): total operational GB battery
+  storage capacity at the settlement date, sourced from DESNZ REPD. The GB fleet has grown
+  from ~0.8 GW at end-2019 to ~6 GW by early 2025, and this structural shift has a direct
+  effect on arbitrage price spreads. In the merit order — where generators are dispatched
+  cheapest-first — batteries insert themselves by charging when cheap (low-merit) generation
+  is abundant and discharging when expensive (high-merit) plant is marginal. As more battery
+  capacity does this simultaneously, the peak demand that expensive peakers would otherwise
+  serve is reduced, and the trough that cheap renewables would otherwise flood is absorbed —
+  compressing the spread between high and low settlement periods. A larger fleet therefore
+  tends to produce a flatter daily price curve.
+- **BESS spread suppression** (`bess_spread_suppression`): `bess_fleet_mw / gen_total` —
+  BESS penetration as a fraction of total system generation. This directly encodes the
+  compression mechanism: near-zero in 2019, it has become a material signal by 2024–25.
 
 **Target transform:** a signed-log1p transform is applied to prices before fitting
 (`sign(y)·log1p(|y|)`) and inverted on predictions. This compresses the heavy-tailed
