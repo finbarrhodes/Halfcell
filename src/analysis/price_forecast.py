@@ -9,9 +9,9 @@ Implements three dispatch strategies for the BESS revenue backtester:
   2. Naive baseline — uses actual day D-1 prices as the forecast for day D.
      No ML required; sets the "zero skill" floor.
 
-  3. ML model — trains a Random Forest or XGBoost regressor on features available
-     at end of day D-1 (lagged prices, generation mix, cyclical temporal encodings)
-     with a strict temporal train/test split.
+  3. ML model — trains a Random Forest, XGBoost, LightGBM, or LEAR regressor on
+     features available at end of day D-1 (lagged prices, generation mix, cyclical
+     temporal encodings) with a strict temporal train/test split.
 
 All three strategies share the same dispatch logic: given a price forecast for day D,
 pick the N cheapest periods to charge and N most expensive to discharge; then realise
@@ -55,6 +55,79 @@ class _LogTransformModel:
     def predict(self, X):
         pred_log = self._model.predict(X)
         return np.sign(pred_log) * np.expm1(np.abs(pred_log))
+
+# ---------------------------------------------------------------------------
+# LEAR model — 48 per-settlement-period Lasso regressors
+# ---------------------------------------------------------------------------
+
+class _LEARModel:
+    """
+    Lasso Estimated AutoRegressive (LEAR) model for electricity price forecasting.
+
+    Trains one LassoLarsIC (AIC criterion) per settlement period (48 total),
+    each operating on a StandardScaler-normalised feature space so that Lasso's
+    uniform L1 penalty is not biased by feature scale differences.
+
+    Expects X to contain a 'settlementPeriod' column (int, 1–48) used for
+    period routing; this column is popped internally before Lasso fitting and
+    prediction — it must NOT appear in the caller's feature_cols list.
+
+    feature_importances_ is exposed as the mean of |coef| across all 48
+    period models, aligned to the feature columns (excluding settlementPeriod).
+
+    _lear_extra_df is set by train_forecast_model after fitting so that
+    predict_day_prices can retrieve the pre-built wide lag features without
+    rebuilding them on every call.
+    """
+
+    def __init__(self) -> None:
+        self._models:  dict = {}   # sp -> fitted LassoLarsIC
+        self._scalers: dict = {}   # sp -> fitted StandardScaler
+        self._feat_names: list | None = None
+        self.feature_importances_: np.ndarray | None = None
+        self._lear_extra_df: pd.DataFrame | None = None  # cached post-fit
+
+    def fit(self, X: pd.DataFrame, y) -> "_LEARModel":
+        from sklearn.linear_model import LassoLarsIC
+        from sklearn.preprocessing import StandardScaler
+
+        sp_vals  = X["settlementPeriod"].values
+        X_feat   = X.drop(columns=["settlementPeriod"])
+        self._feat_names = list(X_feat.columns)
+        feat_arr = X_feat.values.astype(float)
+        y_arr    = np.asarray(y, dtype=float)
+
+        all_coefs: list = []
+        for sp in range(1, 49):
+            mask = sp_vals == sp
+            if mask.sum() < 30:
+                continue
+            scaler = StandardScaler()
+            X_sc   = scaler.fit_transform(feat_arr[mask])
+            m      = LassoLarsIC(criterion="aic", fit_intercept=True, max_iter=500)
+            m.fit(X_sc, y_arr[mask])
+            self._models[sp]  = m
+            self._scalers[sp] = scaler
+            all_coefs.append(np.abs(m.coef_))
+
+        n_feat = len(self._feat_names)
+        self.feature_importances_ = (
+            np.mean(all_coefs, axis=0) if all_coefs else np.zeros(n_feat)
+        )
+        return self
+
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        sp_vals = X["settlementPeriod"].values
+        X_feat  = X.drop(columns=["settlementPeriod"]).values.astype(float)
+        out     = np.zeros(len(X))
+        for sp, m in self._models.items():
+            mask = sp_vals == sp
+            if not mask.any():
+                continue
+            X_sc     = self._scalers[sp].transform(X_feat[mask])
+            out[mask] = m.predict(X_sc)
+        return out
+
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -290,6 +363,64 @@ def build_feature_matrix(
 
 
 # ---------------------------------------------------------------------------
+# LEAR-specific feature builder
+# ---------------------------------------------------------------------------
+
+def _build_lear_extra_features(feature_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Build the wide-form lag price features and day-of-week dummies required
+    by the LEAR model, following the formulation in Lago et al. (2021).
+
+    For each lag day (D-1, D-2, D-7), all 48 settlement-period prices from
+    that day are pivoted into individual columns, giving the LEAR model for
+    each period the full shape of prior days' price curves (not just summary
+    statistics). This produces 144 wide price columns (48 SPs × 3 lags).
+
+    Seven binary day-of-week dummies (dow_0..dow_6) are also included.
+    Linear models require explicit dummies to learn per-day level shifts;
+    sin/cos encodings (used by the tree-based models) are insufficient for
+    a linear functional form.
+
+    Returns a DataFrame keyed on (settlementDate, settlementPeriod) with
+    the same row order as feature_df. NaN values (early series without full
+    lag history) are left for the caller to fillna(0) when constructing X.
+    """
+    apx = (
+        feature_df[["settlementDate", "settlementPeriod", "apx_price"]]
+        .drop_duplicates(subset=["settlementDate", "settlementPeriod"])
+        .copy()
+    )
+
+    # Daily × SP wide price matrix: one row per date, 48 SP price columns
+    price_wide = apx.pivot_table(
+        index="settlementDate",
+        columns="settlementPeriod",
+        values="apx_price",
+    )
+    price_wide.columns = [f"d_sp_{int(c)}" for c in price_wide.columns]
+    price_wide = price_wide.reset_index()
+
+    # Shift by 1, 2, 7 days so each row's features are strictly prior to settlementDate
+    base = feature_df[["settlementDate", "settlementPeriod"]].copy()
+    for lag_days in [1, 2, 7]:
+        lag_df = price_wide.copy()
+        lag_df["settlementDate"] = lag_df["settlementDate"] + pd.Timedelta(days=lag_days)
+        lag_df = lag_df.rename(columns={
+            c: f"lear_lag{lag_days}d_{c}"
+            for c in lag_df.columns
+            if c.startswith("d_sp_")
+        })
+        base = base.merge(lag_df, on="settlementDate", how="left")
+
+    # Day-of-week binary dummies (0 = Monday, 6 = Sunday)
+    dow = base["settlementDate"].dt.dayofweek
+    for i in range(7):
+        base[f"dow_{i}"] = (dow == i).astype(int)
+
+    return base
+
+
+# ---------------------------------------------------------------------------
 # Model training
 # ---------------------------------------------------------------------------
 
@@ -355,9 +486,45 @@ def train_forecast_model(
     X_test  = test[feature_cols].fillna(0)
     y_test  = test["apx_price"]
 
+    # LEAR: inject wide price features (all 48 SPs × D-1/D-2/D-7), DoW dummies,
+    # and a settlementPeriod routing column. All three are built from the full
+    # feature_df (no look-ahead — lags are strictly prior dates) and merged in
+    # here so the base feature matrix and tree-model paths are unaffected.
+    _lear_extra: pd.DataFrame | None = None
+    if model_type == "lear":
+        _lear_extra  = _build_lear_extra_features(feature_df)
+        _extra_cols  = [c for c in _lear_extra.columns
+                        if c not in ("settlementDate", "settlementPeriod")]
+
+        _train_extra = (
+            train[["settlementDate", "settlementPeriod"]]
+            .merge(_lear_extra, on=["settlementDate", "settlementPeriod"], how="left")
+        )
+        _test_extra = (
+            test[["settlementDate", "settlementPeriod"]]
+            .merge(_lear_extra, on=["settlementDate", "settlementPeriod"], how="left")
+        )
+        X_train = pd.concat(
+            [X_train.reset_index(drop=True),
+             _train_extra[_extra_cols].reset_index(drop=True)],
+            axis=1,
+        ).fillna(0)
+        X_train["settlementPeriod"] = train["settlementPeriod"].values
+        X_test = pd.concat(
+            [X_test.reset_index(drop=True),
+             _test_extra[_extra_cols].reset_index(drop=True)],
+            axis=1,
+        ).fillna(0)
+        X_test["settlementPeriod"] = test["settlementPeriod"].values
+
     # Wrap with signed-log transform: fit/predict both operate in price space
     model = _LogTransformModel(_build_model(model_type))
     model.fit(X_train, y_train)
+
+    # LEAR: cache extra features on the model so predict_day_prices can retrieve
+    # the wide lag columns without rebuilding them on every call
+    if model_type == "lear" and _lear_extra is not None:
+        model._model._lear_extra_df = _lear_extra
 
     def _metrics(X, y):
         pred = model.predict(X)
@@ -435,16 +602,25 @@ def _build_model(model_type: str):
             random_state=42,
             verbose=-1,
         )
+    elif model_type == "lear":
+        return _LEARModel()
     else:
-        raise ValueError(f"Unknown model_type '{model_type}'. Use 'rf', 'xgb', or 'lgb'.")
+        raise ValueError(f"Unknown model_type '{model_type}'. Use 'rf', 'xgb', 'lgb', or 'lear'.")
 
 
 def get_feature_importances(model, feature_cols: list) -> pd.Series:
-    """Return feature importances as a named Series, sorted descending."""
-    return (
-        pd.Series(model.feature_importances_, index=feature_cols)
-        .sort_values(ascending=False)
+    """Return feature importances as a named Series, sorted descending.
+
+    For LEAR, uses the model's own stored feature names (which include the
+    wide lag and DoW columns) rather than the base feature_cols list.
+    """
+    fi = model.feature_importances_
+    names = (
+        model._model._feat_names
+        if isinstance(model._model, _LEARModel) and model._model._feat_names is not None
+        else feature_cols
     )
+    return pd.Series(fi, index=names[: len(fi)]).sort_values(ascending=False)
 
 
 def compute_revenue_gap(
@@ -485,11 +661,31 @@ def predict_day_prices(
     Returns a Series indexed by settlementPeriod (1–48).
     Returns an empty Series if features for that date are unavailable.
     """
-    day_df = feature_df[feature_df["settlementDate"] == pd.Timestamp(target_date)]
+    day_df = (
+        feature_df[feature_df["settlementDate"] == pd.Timestamp(target_date)]
+        .sort_values("settlementPeriod")
+    )
     if day_df.empty:
         return pd.Series(dtype=float)
 
-    X = day_df[feature_cols].fillna(0)
+    X = day_df[feature_cols].fillna(0).reset_index(drop=True)
+
+    # LEAR: append wide lag features and settlementPeriod routing column
+    if isinstance(model._model, _LEARModel):
+        lear_extra = model._model._lear_extra_df
+        day_extra  = (
+            lear_extra[lear_extra["settlementDate"] == pd.Timestamp(target_date)]
+            .sort_values("settlementPeriod")
+            .reset_index(drop=True)
+        )
+        if day_extra.empty:
+            return pd.Series(dtype=float)
+        extra_cols = [c for c in day_extra.columns
+                      if c not in ("settlementDate", "settlementPeriod")]
+        for col in extra_cols:
+            X[col] = day_extra[col].values
+        X["settlementPeriod"] = day_df["settlementPeriod"].values
+
     preds = model.predict(X)
     return pd.Series(preds, index=day_df["settlementPeriod"].values)
 
