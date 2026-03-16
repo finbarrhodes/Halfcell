@@ -61,7 +61,7 @@ class _LogTransformModel:
 # ---------------------------------------------------------------------------
 
 # Default temporal split: everything before this date is training data.
-# ~20 months train (Jul 2023–Feb 2025), ~12 months test (Mar 2025–Feb 2026).
+# ~72 months train (Jan 2019–Feb 2025), ~12 months test (Mar 2025–Feb 2026).
 DEFAULT_TEST_START = "2025-03-01"
 
 
