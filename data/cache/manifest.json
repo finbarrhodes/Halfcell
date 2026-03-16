@@ -1,12 +1,12 @@
 {
   "pf_mpc": {
-    "computed_at": "2026-03-14T18:06:35.651185+00:00",
-    "git_sha": "88a68dbf14f9d4c77a9441ebd2a652247dfbba09",
+    "computed_at": "2026-03-14T18:55:40.470654+00:00",
+    "git_sha": "944102b497ac350ba0ab7acd369823c5eb09feb3",
     "data_mtimes": {
-      "auctions.parquet": 1773510028.8554976,
-      "generation_daily.parquet": 1773510030.767225,
-      "market_index.parquet": 1773510029.5146983,
-      "system_prices.parquet": 1773510029.5698636
+      "auctions.parquet": 1773514140.5044637,
+      "generation_daily.parquet": 1773514142.2208018,
+      "market_index.parquet": 1773514141.0624511,
+      "system_prices.parquet": 1773514141.1126587
     },
     "params": {
       "power_mw": 50.0,
@@ -42,13 +42,13 @@
     }
   },
   "naive_mpc": {
-    "computed_at": "2026-03-14T18:13:07.835459+00:00",
-    "git_sha": "88a68dbf14f9d4c77a9441ebd2a652247dfbba09",
+    "computed_at": "2026-03-14T19:02:16.317439+00:00",
+    "git_sha": "944102b497ac350ba0ab7acd369823c5eb09feb3",
     "data_mtimes": {
-      "auctions.parquet": 1773510028.8554976,
-      "generation_daily.parquet": 1773510030.767225,
-      "market_index.parquet": 1773510029.5146983,
-      "system_prices.parquet": 1773510029.5698636
+      "auctions.parquet": 1773514140.5044637,
+      "generation_daily.parquet": 1773514142.2208018,
+      "market_index.parquet": 1773514141.0624511,
+      "system_prices.parquet": 1773514141.1126587
     },
     "params": {
       "power_mw": 50.0,
@@ -85,13 +85,13 @@
     }
   },
   "ml_mpc": {
-    "computed_at": "2026-03-14T18:20:09.858193+00:00",
-    "git_sha": "88a68dbf14f9d4c77a9441ebd2a652247dfbba09",
+    "computed_at": "2026-03-14T19:09:32.888062+00:00",
+    "git_sha": "944102b497ac350ba0ab7acd369823c5eb09feb3",
     "data_mtimes": {
-      "auctions.parquet": 1773510028.8554976,
-      "generation_daily.parquet": 1773510030.767225,
-      "market_index.parquet": 1773510029.5146983,
-      "system_prices.parquet": 1773510029.5698636
+      "auctions.parquet": 1773514140.5044637,
+      "generation_daily.parquet": 1773514142.2208018,
+      "market_index.parquet": 1773514141.0624511,
+      "system_prices.parquet": 1773514141.1126587
     },
     "params": {
       "power_mw": 50.0,
@@ -108,40 +108,40 @@
       "test_start": "2025-03-01"
     },
     "summary": {
-      "total_gross": 51669738.0,
-      "total_cycling_cost": 95489.0,
-      "total_net": 51574249.0,
+      "total_gross": 51648981.0,
+      "total_cycling_cost": 97300.0,
+      "total_net": 51551681.0,
       "years_covered": 4.5,
-      "annualised_net": 11460944.0,
-      "annualised_per_mw": 229219.0,
+      "annualised_net": 11455929.0,
+      "annualised_per_mw": 229119.0,
       "breakdown": {
-        "DCH": 4996498.0,
-        "DCL": 12187427.0,
-        "DMH": 3542188.0,
-        "DML": 6305009.0,
-        "DRH": 4977127.0,
-        "DRL": 17670565.0,
-        "Imbalance": 1990924.0
+        "DCH": 4994167.0,
+        "DCL": 12176895.0,
+        "DMH": 3538723.0,
+        "DML": 6295067.0,
+        "DRH": 4974005.0,
+        "DRL": 17650814.0,
+        "Imbalance": 2019310.0
       },
       "top_service": "DRL",
-      "fr_mw": 47.230439645701864,
-      "arb_mw": 2.769560354298136,
-      "total_mwh_cycled": 31829.7
+      "fr_mw": 47.187623839471456,
+      "arb_mw": 2.812376160528544,
+      "total_mwh_cycled": 32433.4
     },
     "model_metrics": {
       "train": {
-        "rmse": 15.87,
-        "mae": 7.23,
+        "rmse": 16.05,
+        "mae": 7.24,
         "spearman": 0.983,
         "n_samples": 83401,
-        "spike_rmse": 40.49
+        "spike_rmse": 41.17
       },
       "test": {
-        "rmse": 32.38,
-        "mae": 25.0,
-        "spearman": 0.534,
+        "rmse": 30.84,
+        "mae": 23.26,
+        "spearman": 0.555,
         "n_samples": 13152,
-        "spike_rmse": 49.3
+        "spike_rmse": 46.47
       }
     }
   }
