@@ -231,7 +231,7 @@ SERVICE_COLOURS = {
     "DRL": "#8AB87F",   # lighter green
     "DMH": "#7B3FA0",   # purple
     "DML": "#B08FC8",   # lighter purple
-    "Imbalance": "#C9400A",  # warm orange-red
+    "Arbitrage": "#C9400A",  # warm orange-red
     "Cycling cost": "#8B2020",  # dark red
 }
 
@@ -310,7 +310,7 @@ def _build_result(
 
     breakdown = {}
     for col in rev_cols:
-        label = col.replace("_rev", "") if col.endswith("_rev") else "Imbalance"
+        label = col.replace("_rev", "") if col.endswith("_rev") else "Arbitrage"
         breakdown[label] = round(monthly[col].sum(), 0)
 
     summary = {

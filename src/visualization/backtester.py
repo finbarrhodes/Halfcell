@@ -182,7 +182,7 @@ def _recompute_summary(monthly: pd.DataFrame, power_mw: float) -> dict:
     ann_net       = total_net   / years_covered if years_covered > 0 else 0.0
     ann_per_mw    = ann_net     / power_mw      if power_mw > 0 else 0.0
 
-    breakdown = {**svc_totals, "Imbalance": imb_rev}
+    breakdown = {**svc_totals, "Arbitrage": imb_rev}
     breakdown = {k: v for k, v in breakdown.items() if v > 0}
     top_service = max(breakdown, key=breakdown.get) if breakdown else ""
 
@@ -520,7 +520,7 @@ with tab_results:
 
         stream_cols = {
             **{f"{s}_rev": s for s in ALL_SERVICES},
-            "imbalance_revenue_gbp": "Imbalance",
+            "imbalance_revenue_gbp": "Arbitrage",
         }
 
         fig = go.Figure()
@@ -637,7 +637,7 @@ with tab_results:
         fig2 = go.Figure()
         for col, label in {
             **{f"{s}_rev": s for s in ALL_SERVICES},
-            "imbalance_revenue_gbp": "Imbalance",
+            "imbalance_revenue_gbp": "Arbitrage",
         }.items():
             if col not in monthly_sorted.columns or monthly_sorted[col].sum() == 0:
                 continue
