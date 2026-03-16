@@ -64,9 +64,11 @@ arbitrage revenue without double-counting the same physical capacity:
 The dispatch strategy is applied consistently to both stages: the same price signal that
 drives dispatch also drives the shadow arb estimate in the allocation step.
 
-*Remaining simplification:* SoC within the FR headroom band is not explicitly simulated
-at half-hourly resolution. A full joint dispatch model (LP/MIP) would track SoC
-continuously and co-optimise both stages simultaneously — see Known Limitations below.
+In Stage 2, the MPC dispatch engine (described below) tracks SoC continuously at
+30-minute resolution, enforcing the FR headroom band `[10%, 90%]` as a hard constraint
+at every step of the planning horizon. The remaining simplification is that Stage 1
+capacity allocation is a daily heuristic rather than being jointly co-optimised with the
+intraday LP — see Known Limitations below.
 """
 )
 
@@ -79,24 +81,50 @@ st.divider()
 st.header("Dispatch strategies")
 st.markdown(
     """
-The arbitrage schedule is derived from a price signal for day D. Three signals are available:
+Intraday dispatch is driven by a **rolling Model Predictive Control (MPC) linear
+programme (LP)**, re-solved at every 30-minute settlement period. At each period *t* the
+LP plans over a 48-hour (96-period) horizon, returns only the first period's
+charge/discharge decision, then re-solves next period — a classic receding-horizon
+approach that reflects real operational constraints (the decision must be made before
+future prices are known).
 
-- **Perfect Foresight**: the optimiser receives the actual day-D APXMIDP prices and picks
-  the true optimal charge/discharge windows. This is the revenue ceiling — it is not
-  achievable in practice but provides a useful benchmark.
-- **Naive (D-1 prices)**: at the end of day D-1, yesterday's actual prices are used as
-  the forecast for day D. The schedule is derived from this forecast, then evaluated
-  against actual day-D prices to compute realised revenue. This is the zero-skill floor —
-  any useful model should outperform it.
-- **ML Model**: a machine learning model trained on historical data predicts day-D prices
-  using features available at end of day D-1 (lagged prices, generation mix, seasonality).
-  The predicted prices drive the same dispatch logic; realised revenue is computed against
-  actual prices.
+**LP formulation.** Decision variables are charge power *p_chg[t]*, discharge power
+*p_dis[t]*, and state of charge *SoC[t+1]* for each of the H horizon periods. The
+objective maximises net arbitrage revenue minus cycling degradation cost:
+
+`maximise  Σ price[t] × (p_dis[t] − p_chg[t]) × 0.5 h  −  cycling_cost × Σ p_dis[t] × 0.5 h`
+
+subject to:
+- SoC state equation with round-trip efficiency applied on the charge side
+- FR feasibility band `[10%, 90%]` of capacity enforced as a **hard constraint** at all
+  H+1 SoC points, forcing the battery to pre-condition its SoC for upcoming FR delivery
+  obligations
+- Power bounded to the residual MW available for arbitrage after FR commitment in each
+  period
+
+Mutual exclusion of simultaneous charge and discharge is handled via LP relaxation:
+since the objective penalises cycling, simultaneous charge+discharge is never optimal
+at a positive spread, so no binary variables are required. The LP is solved with the
+**CLARABEL** interior-point solver, bundled with cvxpy ≥ 1.4.0
+([Diamond & Boyd, 2016](https://www.jmlr.org/papers/v17/15-408.html)).
+
+**Three price signals are benchmarked** — all three run the identical MPC dispatch
+engine; only the price forecast fed to the LP differs:
+
+| Strategy | Price signal fed to LP | What it represents |
+|---|---|---|
+| **Perfect Foresight** | Actual day-D wholesale prices | Theoretical revenue ceiling — achievable only with advance knowledge of the future |
+| **Naive (D-1 prices)** | Yesterday's 48 half-hourly prices | Zero-skill floor — the simplest possible baseline; any real model must beat this |
+| **ML Model** | Random Forest forecast for day D | Realistic best case using features available at end of day D-1 |
+
+Dispatch decisions are executed unconditionally at actual prices. Per-period revenue can
+be negative when forecast error causes an unfavourable trade — this is the realistic
+operational outcome and is intentional.
 
 The **capture rate** (realised revenue ÷ perfect-foresight revenue) summarises how much
-of the theoretical ceiling each strategy achieves. The **revenue/cycling tradeoff chart**
-in the Strategy Comparison tab shows the efficiency of each strategy: a better strategy
-earns more revenue while consuming less cycle life.
+of the theoretical ceiling each strategy achieves. For LP-based joint co-optimisation
+of energy arbitrage and frequency response in the GB market see
+[Swierczynski et al. (2021)](https://doi.org/10.3390/en14248365).
 """
 )
 
@@ -130,15 +158,14 @@ st.divider()
 st.header("Wholesale energy arbitrage revenue")
 st.markdown(
     """
-- One arbitrage cycle per day maximum, using the MW available for arbitrage (total power
-  minus the MW committed to FR).
-- Charge in the N cheapest settlement periods; discharge in the N most expensive periods,
-  where N = battery duration (hours) × 2 (i.e. the number of half-hour periods that fill
-  or empty the battery at full power).
-- Gross profit = `avg_discharge_price × energy capacity (MWh)`
-  − `avg_charge_price × (energy capacity ÷ round-trip efficiency)`
-  (extra input energy needed to account for round-trip losses).
-- Cycle only executed on days where realised gross profit exceeds the cycling wear cost.
+- Arbitrage revenue is computed period-by-period as the MPC LP dispatches:
+  `revenue[t] = actual_price[t] × (e_dis[t] − e_chg[t])`, summed across all 48 settlement
+  periods in the day.
+- Power in each period is bounded to the residual MW available for arbitrage (total power
+  minus the MW committed to FR for that EFA block). The LP respects round-trip efficiency
+  by applying it to the charge side of the SoC state equation.
+- The cycling wear cost `cycling_cost_per_mwh × e_dis[t]` is deducted each period and
+  enters the LP objective, so the optimiser naturally avoids unprofitable cycles.
 - **Price reference: APXMIDP market index** (APX Power UK) from Elexon Insights
   (Jul 2023–present). This is the actual GB spot settlement reference price, giving a
   materially more realistic daily spread than the imbalance settlement price (SSP),
@@ -190,7 +217,7 @@ st.markdown(
   output of the strategy comparison, not revenue alone. For a rigorous treatment of
   cycle-based degradation cost formulation, see
   [Xu et al. (2018)](https://arxiv.org/abs/1703.07968) and
-  [González Castaño et al. (2021)](https://doi.org/10.1016/j.ijepes.2021.107358).
+  [Lee & Kim (2022)](https://doi.org/10.1016/j.ijepes.2021.107795).
 """
 )
 
@@ -251,11 +278,22 @@ st.markdown(
 - Intraday / day-ahead market trading (APXMIDP used as a proxy; DA auction data not yet integrated)
 - Balancing Mechanism (BM) direct trading
 - Real-time dispatch constraints or grid connection limits
-- Half-hourly SoC simulation within the FR headroom band — a full LP/MIP formulation
-  would track SoC state continuously and co-optimise FR headroom and arbitrage dispatch
-  simultaneously. For LP-based joint co-optimisation approaches see
+
+**Known approximations in the current MPC LP:**
+- *Rolling horizon is not globally optimal.* A single LP solved over the full backtest
+  period would yield higher revenue in theory, but the rolling approach is used because
+  it reflects real operational constraints — the dispatch decision must be made before
+  future prices are known.
+- *LP relaxation of charge/discharge mutual exclusion.* The LP does not use binary
+  variables to prohibit simultaneous charging and discharging. This is not a binding
+  limitation in practice: since the objective penalises cycling, simultaneous
+  charge+discharge is never optimal at a positive spread.
+- *Stage 1 capacity allocation is a daily heuristic.* The FR/arbitrage MW split is
+  determined once per day by comparing confirmed FR clearing prices against a
+  shadow arbitrage value. A fully joint formulation would co-optimise the allocation and
+  intraday dispatch simultaneously in a single LP/MIP — see
   [Swierczynski et al. (2021)](https://doi.org/10.3390/en14248365) and
-  [Bai et al. (2024)](https://doi.org/10.1016/j.esm.2024.100442).
+  [Bai et al. (2024)](https://www.sciencedirect.com/science/article/abs/pii/S0306261924015149).
 
 **Battery degradation (not yet modelled):**
 In practice, a BESS asset degrades over its operational life through two primary
@@ -313,6 +351,16 @@ st.markdown(
   econometric approaches. *International Journal of Forecasting*, 30(4), 1030–1081.
   [doi:10.1016/j.ijforecast.2014.08.008](https://doi.org/10.1016/j.ijforecast.2014.08.008)
 
+**MPC dispatch engine & LP solver**
+
+- Diamond, S., & Boyd, S. (2016). CVXPY: A Python-Embedded Modeling Language for Convex
+  Optimization. *Journal of Machine Learning Research*, 17(83), 1–5.
+  [jmlr.org/papers/v17/15-408](https://www.jmlr.org/papers/v17/15-408.html)
+
+- Goulart, P., & Chen, Y. (2024). Clarabel: An interior-point solver for conic programs
+  with quadratic objectives. *IEEE Transactions on Automatic Control*.
+  [doi:10.1109/TAC.2024.3457633](https://doi.org/10.1109/TAC.2024.3457633)
+
 **BESS dispatch optimisation & co-optimisation**
 
 - Swierczynski, M., Teodorescu, R., Rasmussen, C. N., Rodriguez, P., & Vikelgaard, H.
@@ -322,12 +370,12 @@ st.markdown(
 
 - Bai, X., et al. (2024). Smart optimization in battery energy storage systems: An overview.
   *Energy Storage Materials*.
-  [doi:10.1016/j.esm.2024.100442](https://doi.org/10.1016/j.esm.2024.100442)
+  [doi:10.1016/j.esm.2024.100442](https://www.sciencedirect.com/science/article/abs/pii/S0306261924015149)
 
-- Gonzalez Castano, C., Verdugo, F., Candelo-Becerra, J. E., & Restrepo, C. (2021).
-  Novel battery degradation cost formulation for optimal scheduling of distributed energy
-  storage systems. *International Journal of Electrical Power & Energy Systems*, 127, 106596.
-  [doi:10.1016/j.ijepes.2021.107358](https://doi.org/10.1016/j.ijepes.2021.107358)
+- Lee, J.-O., & Kim, Y.-S. (2022). Novel battery degradation cost formulation for optimal
+  scheduling of battery energy storage systems. *International Journal of Electrical Power
+  & Energy Systems*, 137, 107795.
+  [doi:10.1016/j.ijepes.2021.107795](https://doi.org/10.1016/j.ijepes.2021.107795)
 
 **Battery degradation modelling**
 
