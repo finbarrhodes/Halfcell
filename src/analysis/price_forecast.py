@@ -130,6 +130,142 @@ class _LEARModel:
 
 
 # ---------------------------------------------------------------------------
+# DNN model — single global fully-connected network (Lago et al., 2021)
+# ---------------------------------------------------------------------------
+
+class _DNNModel:
+    """
+    Fully-connected deep neural network for electricity price forecasting,
+    following Lago et al. (2021): a single global model across all 48
+    settlement periods, with SP encoded as a plain numeric input feature.
+
+    Architecture: 4 hidden layers (512 → 256 → 128 → 64), ReLU, Dropout(0.15).
+    Trained with Adam + ReduceLROnPlateau scheduler; early stopping on a
+    chronological 10 % validation hold-out from the end of the training window.
+
+    sklearn-compatible interface: fit(X, y) / predict(X).
+    X may be a DataFrame or ndarray; column order must be consistent.
+    Internal StandardScaler normalises inputs before the network sees them.
+
+    _lear_extra_df is set externally by train_forecast_model after fitting so
+    that predict_day_prices can retrieve the wide lag features without
+    rebuilding them on every call.
+    """
+
+    def __init__(
+        self,
+        hidden_dims: tuple = (512, 256, 128, 64),
+        dropout: float = 0.15,
+        lr: float = 1e-3,
+        batch_size: int = 512,
+        max_epochs: int = 200,
+        patience: int = 15,
+        val_frac: float = 0.1,
+        random_state: int = 42,
+    ) -> None:
+        self.hidden_dims  = hidden_dims
+        self.dropout      = dropout
+        self.lr           = lr
+        self.batch_size   = batch_size
+        self.max_epochs   = max_epochs
+        self.patience     = patience
+        self.val_frac     = val_frac
+        self.random_state = random_state
+
+        self._net:    object | None = None
+        self._scaler: object | None = None
+        self.feature_importances_: np.ndarray | None = None
+        self._lear_extra_df: pd.DataFrame | None = None
+
+    def _build_net(self, n_in: int):
+        import torch.nn as nn
+        layers: list = []
+        in_dim = n_in
+        for h in self.hidden_dims:
+            layers += [nn.Linear(in_dim, h), nn.ReLU(), nn.Dropout(self.dropout)]
+            in_dim = h
+        layers.append(nn.Linear(in_dim, 1))
+        return nn.Sequential(*layers)
+
+    def fit(self, X, y) -> "_DNNModel":
+        import torch
+        import torch.nn as nn
+        from sklearn.preprocessing import StandardScaler
+
+        torch.manual_seed(self.random_state)
+        rng = np.random.RandomState(self.random_state)
+
+        X_np = X.values if hasattr(X, "values") else np.asarray(X, dtype=float)
+        y_np = np.asarray(y, dtype=float)
+
+        # Chronological train/val split — val is the last val_frac rows
+        n_val   = max(1, int(len(X_np) * self.val_frac))
+        n_train = len(X_np) - n_val
+        X_tr, X_val = X_np[:n_train], X_np[n_train:]
+        y_tr, y_val = y_np[:n_train], y_np[n_train:]
+
+        self._scaler = StandardScaler()
+        X_tr_sc  = self._scaler.fit_transform(X_tr).astype(np.float32)
+        X_val_sc = self._scaler.transform(X_val).astype(np.float32)
+
+        X_tr_t  = torch.from_numpy(X_tr_sc)
+        X_val_t = torch.from_numpy(X_val_sc)
+        y_tr_t  = torch.from_numpy(y_tr.astype(np.float32))
+        y_val_t = torch.from_numpy(y_val.astype(np.float32))
+
+        self._net = self._build_net(X_tr_sc.shape[1])
+        optimiser = torch.optim.Adam(self._net.parameters(), lr=self.lr)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimiser, patience=5, factor=0.5, min_lr=1e-5
+        )
+        loss_fn = nn.MSELoss()
+
+        best_val   = float("inf")
+        best_state = None
+        no_improve = 0
+
+        for _ in range(self.max_epochs):
+            self._net.train()
+            idx = rng.permutation(n_train)
+            for start in range(0, n_train, self.batch_size):
+                batch_idx = idx[start : start + self.batch_size]
+                xb = X_tr_t[batch_idx]
+                yb = y_tr_t[batch_idx]
+                optimiser.zero_grad()
+                loss = loss_fn(self._net(xb).squeeze(1), yb)
+                loss.backward()
+                optimiser.step()
+
+            self._net.eval()
+            with torch.no_grad():
+                val_loss = loss_fn(self._net(X_val_t).squeeze(1), y_val_t).item()
+            scheduler.step(val_loss)
+
+            if val_loss < best_val - 1e-6:
+                best_val   = val_loss
+                best_state = {k: v.clone() for k, v in self._net.state_dict().items()}
+                no_improve = 0
+            else:
+                no_improve += 1
+                if no_improve >= self.patience:
+                    break
+
+        if best_state is not None:
+            self._net.load_state_dict(best_state)
+
+        self.feature_importances_ = np.zeros(X_tr_sc.shape[1])
+        return self
+
+    def predict(self, X) -> np.ndarray:
+        import torch
+        self._net.eval()
+        X_np = X.values if hasattr(X, "values") else np.asarray(X, dtype=float)
+        X_sc = self._scaler.transform(X_np).astype(np.float32)
+        with torch.no_grad():
+            return self._net(torch.from_numpy(X_sc)).squeeze(1).numpy()
+
+
+# ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
@@ -486,12 +622,13 @@ def train_forecast_model(
     X_test  = test[feature_cols].fillna(0)
     y_test  = test["apx_price"]
 
-    # LEAR: inject wide price features (all 48 SPs × D-1/D-2/D-7), DoW dummies,
-    # and a settlementPeriod routing column. All three are built from the full
-    # feature_df (no look-ahead — lags are strictly prior dates) and merged in
-    # here so the base feature matrix and tree-model paths are unaffected.
+    # LEAR / DNN: inject wide price features (all 48 SPs × D-1/D-2/D-7) and
+    # DoW dummies, plus settlementPeriod. Built from the full feature_df with no
+    # look-ahead. Tree-model paths are unaffected.
+    # LEAR uses settlementPeriod as an internal routing key (popped in _LEARModel).
+    # DNN uses it as a plain numeric input feature.
     _lear_extra: pd.DataFrame | None = None
-    if model_type == "lear":
+    if model_type in ("lear", "dnn"):
         _lear_extra  = _build_lear_extra_features(feature_df)
         _extra_cols  = [c for c in _lear_extra.columns
                         if c not in ("settlementDate", "settlementPeriod")]
@@ -521,9 +658,9 @@ def train_forecast_model(
     model = _LogTransformModel(_build_model(model_type))
     model.fit(X_train, y_train)
 
-    # LEAR: cache extra features on the model so predict_day_prices can retrieve
-    # the wide lag columns without rebuilding them on every call
-    if model_type == "lear" and _lear_extra is not None:
+    # LEAR / DNN: cache extra features on the model so predict_day_prices can
+    # retrieve the wide lag columns without rebuilding them on every call
+    if model_type in ("lear", "dnn") and _lear_extra is not None:
         model._model._lear_extra_df = _lear_extra
 
     def _metrics(X, y):
@@ -604,8 +741,10 @@ def _build_model(model_type: str):
         )
     elif model_type == "lear":
         return _LEARModel()
+    elif model_type == "dnn":
+        return _DNNModel()
     else:
-        raise ValueError(f"Unknown model_type '{model_type}'. Use 'rf', 'xgb', 'lgb', or 'lear'.")
+        raise ValueError(f"Unknown model_type '{model_type}'. Use 'rf', 'xgb', 'lgb', 'lear', or 'dnn'.")
 
 
 def get_feature_importances(model, feature_cols: list) -> pd.Series:
@@ -670,8 +809,9 @@ def predict_day_prices(
 
     X = day_df[feature_cols].fillna(0).reset_index(drop=True)
 
-    # LEAR: append wide lag features and settlementPeriod routing column
-    if isinstance(model._model, _LEARModel):
+    # LEAR / DNN: append wide lag features and settlementPeriod.
+    # LEAR pops settlementPeriod internally as a routing key; DNN keeps it as a feature.
+    if isinstance(model._model, (_LEARModel, _DNNModel)):
         lear_extra = model._model._lear_extra_df
         day_extra  = (
             lear_extra[lear_extra["settlementDate"] == pd.Timestamp(target_date)]
@@ -682,9 +822,11 @@ def predict_day_prices(
             return pd.Series(dtype=float)
         extra_cols = [c for c in day_extra.columns
                       if c not in ("settlementDate", "settlementPeriod")]
-        for col in extra_cols:
-            X[col] = day_extra[col].values
-        X["settlementPeriod"] = day_df["settlementPeriod"].values
+        extra_part = day_extra[extra_cols].reset_index(drop=True)
+        sp_col     = pd.DataFrame(
+            {"settlementPeriod": day_df["settlementPeriod"].values}
+        )
+        X = pd.concat([X, extra_part, sp_col], axis=1).fillna(0)
 
     preds = model.predict(X)
     return pd.Series(preds, index=day_df["settlementPeriod"].values)

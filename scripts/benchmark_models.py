@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Model Benchmark: RF vs LightGBM
-=================================
-Trains RF and LightGBM on the current dataset and prints a side-by-side
-metric comparison. No backtest — just forecasting accuracy.
+Model Benchmark: RF vs LightGBM vs LEAR vs DNN
+================================================
+Trains RF, LightGBM, LEAR, and DNN (Lago 2021) on the current dataset and
+prints a side-by-side metric comparison. No backtest — just forecasting accuracy.
 
 Usage:
     python scripts/benchmark_models.py
@@ -32,8 +32,8 @@ from src.analysis.price_forecast import (
 )
 
 PROCESSED = Path(__file__).parent.parent / "data" / "processed"
-MODELS = ["rf", "lgb", "lear"]
-MODEL_LABELS = {"rf": "Random Forest", "lgb": "LightGBM", "lear": "LEAR"}
+MODELS = ["rf", "lgb", "lear", "dnn"]
+MODEL_LABELS = {"rf": "Random Forest", "lgb": "LightGBM", "lear": "LEAR", "dnn": "DNN (Lago 2021)"}
 
 
 def main() -> None:
