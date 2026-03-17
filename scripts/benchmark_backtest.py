@@ -37,7 +37,7 @@ from src.analysis.price_forecast import (
     run_forecast_backtest,
     train_forecast_model,
 )
-from src.analysis.revenue_stack import ALL_SERVICES, BatterySpec, run_backtest
+from src.analysis.revenue_stack import ALL_SERVICES, REFERENCE_BATTERY, run_backtest
 
 # ---------------------------------------------------------------------------
 # Configuration — mirrors precompute_cache.py exactly
@@ -45,13 +45,7 @@ from src.analysis.revenue_stack import ALL_SERVICES, BatterySpec, run_backtest
 
 PROCESSED = Path(__file__).parent.parent / "data" / "processed"
 
-BATTERY = BatterySpec(
-    power_mw=50.0,
-    duration_h=2.0,
-    efficiency_rt=0.90,
-    cycling_cost_per_mwh=3.0,
-    availability_factor=0.95,
-)
+BATTERY = REFERENCE_BATTERY
 INITIAL_SOC     = 0.5
 DISPATCH_METHOD = "greedy"   # faster than MPC; relative model ranking is consistent
 HORIZON         = 96         # unused in greedy mode; retained for MPC compatibility

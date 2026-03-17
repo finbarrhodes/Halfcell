@@ -30,7 +30,7 @@ from src.analysis.revenue_stack import (
     ALL_SERVICES,
     SERVICE_COLOURS,
     SERVICE_LABELS,
-    BatterySpec,
+    REFERENCE_BATTERY,
 )
 
 # ---------------------------------------------------------------------------
@@ -48,15 +48,8 @@ except st.errors.StreamlitAPIException:
 PROCESSED = Path(__file__).parent.parent.parent / "data" / "processed"
 CACHE_DIR = Path(__file__).parent.parent.parent / "data" / "cache"
 
-# Fixed battery configuration (all parameters documented in methodology expander below)
-FIXED_BATTERY = BatterySpec(
-    power_mw=50.0,
-    duration_h=2.0,
-    efficiency_rt=0.90,
-    cycling_cost_per_mwh=3.0,
-    availability_factor=0.95,
-)
-BASE_POWER_MW = 50.0  # all cache figures are at this MW rating
+FIXED_BATTERY = REFERENCE_BATTERY          # canonical 50 MW / 2h asset
+BASE_POWER_MW = REFERENCE_BATTERY.power_mw  # all cache figures are at this MW rating
 
 # Map sidebar radio label → cache file key
 STRATEGY_KEYS = {

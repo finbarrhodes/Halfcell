@@ -254,6 +254,18 @@ class BatterySpec:
         return self.power_mw * self.duration_h
 
 
+# Representative GB BESS asset used for all pre-computed backtests.
+# Defined here — next to BatterySpec — so scripts and the UI import from
+# one place and parameter changes only need to be made once.
+REFERENCE_BATTERY = BatterySpec(
+    power_mw=50.0,
+    duration_h=2.0,
+    efficiency_rt=0.90,       # Industry standard for modern Li-ion (NESO/Modo fleet data)
+    cycling_cost_per_mwh=3.0, # Mid-range estimate consistent with Li-ion degradation literature
+    availability_factor=0.95, # Min threshold in DC/EAC service agreements; GB fleet consistent
+)
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------

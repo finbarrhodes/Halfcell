@@ -38,7 +38,7 @@ from src.analysis.price_forecast import (
     run_forecast_backtest,
     train_forecast_model,
 )
-from src.analysis.revenue_stack import ALL_SERVICES, BatterySpec, run_backtest
+from src.analysis.revenue_stack import ALL_SERVICES, REFERENCE_BATTERY, run_backtest
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -51,13 +51,7 @@ CACHE     = Path(__file__).parent.parent / "data" / "cache"
 # Fixed battery configuration (documented in methodology expander in the app)
 # ---------------------------------------------------------------------------
 
-BATTERY = BatterySpec(
-    power_mw=50.0,
-    duration_h=2.0,
-    efficiency_rt=0.90,       # Industry standard for modern Li-ion (NESO/Modo fleet data)
-    cycling_cost_per_mwh=3.0, # Mid-range estimate consistent with Li-ion degradation literature
-    availability_factor=0.95, # Min threshold in DC/EAC service agreements; GB fleet consistent
-)
+BATTERY = REFERENCE_BATTERY
 INITIAL_SOC    = 0.5   # Neutral midpoint; SoC tracked continuously thereafter
 DISPATCH_METHOD = "mpc"
 HORIZON         = 96    # 48h rolling LP horizon

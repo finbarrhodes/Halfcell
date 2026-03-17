@@ -1,6 +1,8 @@
 """
 Price Forecast & Forecast-Driven Dispatch
 ==========================================
+Orchestration layer for price forecasting and MPC backtest execution.
+
 Implements three dispatch strategies for the BESS revenue backtester:
 
   1. Perfect Foresight — actual day-D prices fed to the optimizer (revenue ceiling).
@@ -17,6 +19,10 @@ All three strategies share the same dispatch logic: given a price forecast for d
 pick the N cheapest periods to charge and N most expensive to discharge; then realise
 revenue against the actual day-D prices.
 
+Model definitions   → src/analysis/forecasting_models.py
+Feature engineering → src/analysis/features.py
+MPC LP solver       → src/optimisation/mpc.py
+
 New module kept separate from revenue_stack.py so the perfect-foresight backtester
 remains a clean, standalone baseline.
 """
@@ -25,244 +31,21 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from dataclasses import dataclass
 
+from src.analysis.forecasting_models import (
+    _LogTransformModel,
+    _LEARModel,
+    _DNNModel,
+    _build_model,
+)
+from src.analysis.features import (
+    FEATURE_COLS,
+    _build_lear_extra_features,
+)
 
-# ---------------------------------------------------------------------------
-# Log-transform model wrapper
-# ---------------------------------------------------------------------------
-
-class _LogTransformModel:
-    """
-    Wraps a sklearn/xgboost/lightgbm estimator with a signed-log1p target
-    transform so that fit() and predict() both operate in price space.
-
-    Signed-log1p handles negative prices gracefully:
-        transform  : sign(y) * log1p(|y|)
-        inverse    : sign(p) * expm1(|p|)
-    """
-
-    def __init__(self, base_model):
-        self._model = base_model
-        self.feature_importances_: np.ndarray | None = None
-
-    def fit(self, X, y):
-        y_log = np.sign(y) * np.log1p(np.abs(y))
-        self._model.fit(X, y_log)
-        self.feature_importances_ = self._model.feature_importances_
-        return self
-
-    def predict(self, X):
-        pred_log = self._model.predict(X)
-        return np.sign(pred_log) * np.expm1(np.abs(pred_log))
-
-# ---------------------------------------------------------------------------
-# LEAR model — 48 per-settlement-period Lasso regressors
-# ---------------------------------------------------------------------------
-
-class _LEARModel:
-    """
-    Lasso Estimated AutoRegressive (LEAR) model for electricity price forecasting.
-
-    Trains one LassoLarsIC (AIC criterion) per settlement period (48 total),
-    each operating on a StandardScaler-normalised feature space so that Lasso's
-    uniform L1 penalty is not biased by feature scale differences.
-
-    Expects X to contain a 'settlementPeriod' column (int, 1–48) used for
-    period routing; this column is popped internally before Lasso fitting and
-    prediction — it must NOT appear in the caller's feature_cols list.
-
-    feature_importances_ is exposed as the mean of |coef| across all 48
-    period models, aligned to the feature columns (excluding settlementPeriod).
-
-    _lear_extra_df is set by train_forecast_model after fitting so that
-    predict_day_prices can retrieve the pre-built wide lag features without
-    rebuilding them on every call.
-    """
-
-    def __init__(self) -> None:
-        self._models:  dict = {}   # sp -> fitted LassoLarsIC
-        self._scalers: dict = {}   # sp -> fitted StandardScaler
-        self._feat_names: list | None = None
-        self.feature_importances_: np.ndarray | None = None
-        self._lear_extra_df: pd.DataFrame | None = None  # cached post-fit
-
-    def fit(self, X: pd.DataFrame, y) -> "_LEARModel":
-        from sklearn.linear_model import LassoLarsIC
-        from sklearn.preprocessing import StandardScaler
-
-        sp_vals  = X["settlementPeriod"].values
-        X_feat   = X.drop(columns=["settlementPeriod"])
-        self._feat_names = list(X_feat.columns)
-        feat_arr = X_feat.values.astype(float)
-        y_arr    = np.asarray(y, dtype=float)
-
-        all_coefs: list = []
-        for sp in range(1, 49):
-            mask = sp_vals == sp
-            if mask.sum() < 30:
-                continue
-            scaler = StandardScaler()
-            X_sc   = scaler.fit_transform(feat_arr[mask])
-            m      = LassoLarsIC(criterion="aic", fit_intercept=True, max_iter=500)
-            m.fit(X_sc, y_arr[mask])
-            self._models[sp]  = m
-            self._scalers[sp] = scaler
-            all_coefs.append(np.abs(m.coef_))
-
-        n_feat = len(self._feat_names)
-        self.feature_importances_ = (
-            np.mean(all_coefs, axis=0) if all_coefs else np.zeros(n_feat)
-        )
-        return self
-
-    def predict(self, X: pd.DataFrame) -> np.ndarray:
-        sp_vals = X["settlementPeriod"].values
-        X_feat  = X.drop(columns=["settlementPeriod"]).values.astype(float)
-        out     = np.zeros(len(X))
-        for sp, m in self._models.items():
-            mask = sp_vals == sp
-            if not mask.any():
-                continue
-            X_sc     = self._scalers[sp].transform(X_feat[mask])
-            out[mask] = m.predict(X_sc)
-        return out
-
-
-# ---------------------------------------------------------------------------
-# DNN model — single global fully-connected network (Lago et al., 2021)
-# ---------------------------------------------------------------------------
-
-class _DNNModel:
-    """
-    Fully-connected deep neural network for electricity price forecasting,
-    following Lago et al. (2021): a single global model across all 48
-    settlement periods, with SP encoded as a plain numeric input feature.
-
-    Architecture: 4 hidden layers (512 → 256 → 128 → 64), ReLU, Dropout(0.15).
-    Trained with Adam + ReduceLROnPlateau scheduler; early stopping on a
-    chronological 10 % validation hold-out from the end of the training window.
-
-    sklearn-compatible interface: fit(X, y) / predict(X).
-    X may be a DataFrame or ndarray; column order must be consistent.
-    Internal StandardScaler normalises inputs before the network sees them.
-
-    _lear_extra_df is set externally by train_forecast_model after fitting so
-    that predict_day_prices can retrieve the wide lag features without
-    rebuilding them on every call.
-    """
-
-    def __init__(
-        self,
-        hidden_dims: tuple = (512, 256, 128, 64),
-        dropout: float = 0.15,
-        lr: float = 1e-3,
-        batch_size: int = 512,
-        max_epochs: int = 200,
-        patience: int = 15,
-        val_frac: float = 0.1,
-        random_state: int = 42,
-    ) -> None:
-        self.hidden_dims  = hidden_dims
-        self.dropout      = dropout
-        self.lr           = lr
-        self.batch_size   = batch_size
-        self.max_epochs   = max_epochs
-        self.patience     = patience
-        self.val_frac     = val_frac
-        self.random_state = random_state
-
-        self._net:    object | None = None
-        self._scaler: object | None = None
-        self.feature_importances_: np.ndarray | None = None
-        self._lear_extra_df: pd.DataFrame | None = None
-
-    def _build_net(self, n_in: int):
-        import torch.nn as nn
-        layers: list = []
-        in_dim = n_in
-        for h in self.hidden_dims:
-            layers += [nn.Linear(in_dim, h), nn.ReLU(), nn.Dropout(self.dropout)]
-            in_dim = h
-        layers.append(nn.Linear(in_dim, 1))
-        return nn.Sequential(*layers)
-
-    def fit(self, X, y) -> "_DNNModel":
-        import torch
-        import torch.nn as nn
-        from sklearn.preprocessing import StandardScaler
-
-        torch.manual_seed(self.random_state)
-        rng = np.random.RandomState(self.random_state)
-
-        X_np = X.values if hasattr(X, "values") else np.asarray(X, dtype=float)
-        y_np = np.asarray(y, dtype=float)
-
-        # Chronological train/val split — val is the last val_frac rows
-        n_val   = max(1, int(len(X_np) * self.val_frac))
-        n_train = len(X_np) - n_val
-        X_tr, X_val = X_np[:n_train], X_np[n_train:]
-        y_tr, y_val = y_np[:n_train], y_np[n_train:]
-
-        self._scaler = StandardScaler()
-        X_tr_sc  = self._scaler.fit_transform(X_tr).astype(np.float32)
-        X_val_sc = self._scaler.transform(X_val).astype(np.float32)
-
-        X_tr_t  = torch.from_numpy(X_tr_sc)
-        X_val_t = torch.from_numpy(X_val_sc)
-        y_tr_t  = torch.from_numpy(y_tr.astype(np.float32))
-        y_val_t = torch.from_numpy(y_val.astype(np.float32))
-
-        self._net = self._build_net(X_tr_sc.shape[1])
-        optimiser = torch.optim.Adam(self._net.parameters(), lr=self.lr)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimiser, patience=5, factor=0.5, min_lr=1e-5
-        )
-        loss_fn = nn.MSELoss()
-
-        best_val   = float("inf")
-        best_state = None
-        no_improve = 0
-
-        for _ in range(self.max_epochs):
-            self._net.train()
-            idx = rng.permutation(n_train)
-            for start in range(0, n_train, self.batch_size):
-                batch_idx = idx[start : start + self.batch_size]
-                xb = X_tr_t[batch_idx]
-                yb = y_tr_t[batch_idx]
-                optimiser.zero_grad()
-                loss = loss_fn(self._net(xb).squeeze(1), yb)
-                loss.backward()
-                optimiser.step()
-
-            self._net.eval()
-            with torch.no_grad():
-                val_loss = loss_fn(self._net(X_val_t).squeeze(1), y_val_t).item()
-            scheduler.step(val_loss)
-
-            if val_loss < best_val - 1e-6:
-                best_val   = val_loss
-                best_state = {k: v.clone() for k, v in self._net.state_dict().items()}
-                no_improve = 0
-            else:
-                no_improve += 1
-                if no_improve >= self.patience:
-                    break
-
-        if best_state is not None:
-            self._net.load_state_dict(best_state)
-
-        self.feature_importances_ = np.zeros(X_tr_sc.shape[1])
-        return self
-
-    def predict(self, X) -> np.ndarray:
-        import torch
-        self._net.eval()
-        X_np = X.values if hasattr(X, "values") else np.asarray(X, dtype=float)
-        X_sc = self._scaler.transform(X_np).astype(np.float32)
-        with torch.no_grad():
-            return self._net(torch.from_numpy(X_sc)).squeeze(1).numpy()
+# Re-export data-loading and feature-building functions so existing callers
+# that import them from this module continue to work unchanged.
+from src.analysis.features import load_bess_capacity, build_feature_matrix  # noqa: F401
 
 
 # ---------------------------------------------------------------------------
@@ -275,311 +58,8 @@ DEFAULT_TEST_START = "2025-03-01"
 
 
 # ---------------------------------------------------------------------------
-# BESS fleet capacity loader
-# ---------------------------------------------------------------------------
-
-def load_bess_capacity(path: str | None = None) -> pd.DataFrame:
-    """
-    Load the monthly GB BESS fleet capacity series from
-    data/processed/bess_fleet_capacity.parquet.
-
-    Returns a DataFrame with columns:
-        month_start (datetime64[ns]) — first day of each month
-        bess_fleet_mw (float)       — cumulative operational capacity (MW)
-
-    Sorted ascending. If the parquet file does not exist (e.g. REPD data has
-    not yet been collected), returns an empty DataFrame so callers degrade
-    gracefully.
-    """
-    from pathlib import Path as _Path
-    if path is None:
-        _candidate = _Path(__file__).parent.parent.parent / "data" / "processed" / "bess_fleet_capacity.parquet"
-    else:
-        _candidate = _Path(path)
-
-    if not _candidate.exists():
-        return pd.DataFrame(columns=["month_start", "bess_fleet_mw"])
-
-    df = pd.read_parquet(_candidate)
-    # The parquet stores month as a first-of-month timestamp in the "month" column.
-    df = df.rename(columns={"month": "month_start"})
-    df["month_start"] = pd.to_datetime(df["month_start"]).dt.normalize()
-    return df[["month_start", "bess_fleet_mw"]].sort_values("month_start").reset_index(drop=True)
-
-
-# ---------------------------------------------------------------------------
-# Feature engineering
-# ---------------------------------------------------------------------------
-
-def build_feature_matrix(
-    market_index: pd.DataFrame,
-    generation_daily: pd.DataFrame,
-    bess_capacity: pd.DataFrame | None = None,
-) -> pd.DataFrame:
-    """
-    Construct a feature matrix for price forecasting.
-
-    Each row represents one (settlementDate, settlementPeriod) observation.
-    Target column ``apx_price`` is the APXMIDP price for that period.
-    All feature columns use only information available at the end of day D-1,
-    ensuring no look-ahead bias when training or backtesting.
-
-    Parameters
-    ----------
-    market_index : DataFrame
-        From data/processed/market_index.parquet. Must contain columns:
-        settlementDate, settlementPeriod, dataProvider, price.
-    generation_daily : DataFrame
-        From data/processed/generation_daily.parquet. Must contain columns:
-        settlementDate, fuelGroup, generation.
-    bess_capacity : DataFrame, optional
-        From load_bess_capacity(). Must contain columns:
-        month_start (datetime64, first of month), bess_fleet_mw (float).
-        When provided, adds ``bess_fleet_mw`` and ``bess_spread_suppression``
-        feature columns. When None, those columns are simply absent (the
-        dynamic column filter in train_forecast_model handles this gracefully).
-
-    Returns
-    -------
-    DataFrame with columns:
-        settlementDate, settlementPeriod, apx_price  (target),
-        + feature columns described below.
-    Rows with NaN features (due to lag/rolling windows at the start of the
-    series) are dropped.
-    """
-    # --- Base: APXMIDP prices only ---
-    apx = (
-        market_index[market_index["dataProvider"] == "APXMIDP"]
-        [["settlementDate", "settlementPeriod", "price"]]
-        .copy()
-        .rename(columns={"price": "apx_price"})
-    )
-    apx["settlementDate"] = pd.to_datetime(apx["settlementDate"]).dt.normalize()
-    apx = apx.sort_values(["settlementDate", "settlementPeriod"]).reset_index(drop=True)
-
-    # --- Same-period lagged prices ---
-    # Shift by D days within each settlement period group so that day D's feature
-    # is the price at that exact same period D days ago.
-    apx = apx.sort_values(["settlementPeriod", "settlementDate"])
-    for lag_days in [1, 2, 7, 14]:
-        apx[f"apx_lag_{lag_days}d"] = (
-            apx.groupby("settlementPeriod")["apx_price"]
-            .shift(lag_days)
-        )
-
-    # --- Previous-day aggregate statistics ---
-    # For day D, we want stats computed from all 48 periods of day D-1.
-    daily_stats = (
-        apx.groupby("settlementDate")["apx_price"]
-        .agg(daily_mean="mean", daily_std="std", daily_max="max", daily_min="min")
-        .reset_index()
-        .sort_values("settlementDate")
-    )
-    # 7-day rolling mean of daily averages (captures medium-term price level)
-    daily_stats["rolling_7d_mean"] = (
-        daily_stats["daily_mean"].rolling(7, min_periods=7).mean()
-    )
-    # Shift by 1 day so day D gets D-1's stats
-    daily_stats_lag = daily_stats.copy()
-    daily_stats_lag["settlementDate"] = daily_stats_lag["settlementDate"] + pd.Timedelta(days=1)
-    daily_stats_lag = daily_stats_lag.rename(columns={
-        "daily_mean": "prev_day_mean",
-        "daily_std":  "prev_day_std",
-        "daily_max":  "prev_day_max",
-        "daily_min":  "prev_day_min",
-        # rolling_7d_mean column name unchanged
-    })
-    apx = apx.merge(daily_stats_lag, on="settlementDate", how="left")
-
-    # --- Generation mix features (daily, from day D-1) ---
-    gen = generation_daily.copy()
-    gen["settlementDate"] = pd.to_datetime(gen["settlementDate"]).dt.normalize()
-
-    # Pivot fuel groups into columns
-    gen_wide = gen.pivot_table(
-        index="settlementDate",
-        columns="fuelGroup",
-        values="generation",
-        aggfunc="sum",
-        fill_value=0,
-    ).reset_index()
-    gen_wide.columns.name = None
-    # Normalise column names
-    gen_wide.columns = [
-        "settlementDate" if c == "settlementDate"
-        else f"gen_{c.lower().replace(' ', '_')}"
-        for c in gen_wide.columns
-    ]
-
-    # Derived generation features
-    renewable_cols = [c for c in gen_wide.columns if any(
-        fuel in c for fuel in ["wind", "hydro", "biomass", "solar"]
-    )]
-    fossil_cols = [c for c in gen_wide.columns if any(
-        fuel in c for fuel in ["gas", "coal", "oil"]
-    )]
-    all_gen_cols = [c for c in gen_wide.columns if c.startswith("gen_")]
-    gen_wide["gen_total"] = gen_wide[all_gen_cols].sum(axis=1)
-    gen_wide["gen_renewable_frac"] = (
-        gen_wide[[c for c in renewable_cols if c in gen_wide.columns]].sum(axis=1)
-        / gen_wide["gen_total"].replace(0, np.nan)
-    )
-    gen_wide["gen_fossil_frac"] = (
-        gen_wide[[c for c in fossil_cols if c in gen_wide.columns]].sum(axis=1)
-        / gen_wide["gen_total"].replace(0, np.nan)
-    )
-
-    # Shift generation by 1 day: day D gets D-1 generation (available at end-of-D-1)
-    gen_wide_lag = gen_wide.copy()
-    gen_wide_lag["settlementDate"] = gen_wide_lag["settlementDate"] + pd.Timedelta(days=1)
-
-    apx = apx.merge(gen_wide_lag, on="settlementDate", how="left")
-
-    # --- GB BESS fleet capacity features (monthly, from REPD, D-1 lagged) ---
-    # Each row gets the fleet capacity for the month of (settlementDate - 1 day),
-    # which is strictly prior to the settlement date — no look-ahead.
-    if bess_capacity is not None and not bess_capacity.empty:
-        bess = bess_capacity.copy()
-        bess["month_start"] = pd.to_datetime(bess["month_start"]).dt.normalize()
-
-        apx["_feature_month"] = (
-            (apx["settlementDate"] - pd.Timedelta(days=1))
-            .dt.to_period("M")
-            .dt.to_timestamp()
-        )
-        apx = apx.merge(
-            bess.rename(columns={"month_start": "_feature_month"}),
-            on="_feature_month",
-            how="left",
-        ).drop(columns=["_feature_month"])
-
-        # Periods before the first REPD entry (pre-2019 or data gap) → 0 MW
-        apx["bess_fleet_mw"] = apx["bess_fleet_mw"].fillna(0.0)
-
-        # Analytical suppression feature: BESS penetration as a fraction of total
-        # system generation. Encodes the economic mechanism — as fleet grows
-        # relative to system size, the merit order flattens and spreads compress.
-        apx["bess_spread_suppression"] = (
-            apx["bess_fleet_mw"]
-            / apx["gen_total"].replace(0, np.nan)
-        ).fillna(0.0)
-
-    # --- Cyclical temporal features ---
-    sp = apx["settlementPeriod"]
-    apx["sp_sin"] = np.sin(2 * np.pi * sp / 48)
-    apx["sp_cos"] = np.cos(2 * np.pi * sp / 48)
-
-    dow = apx["settlementDate"].dt.dayofweek  # 0=Mon, 6=Sun
-    apx["dow_sin"] = np.sin(2 * np.pi * dow / 7)
-    apx["dow_cos"] = np.cos(2 * np.pi * dow / 7)
-
-    doy = apx["settlementDate"].dt.dayofyear
-    year_len = apx["settlementDate"].dt.is_leap_year.map({True: 366, False: 365})
-    apx["doy_sin"] = np.sin(2 * np.pi * doy / year_len)
-    apx["doy_cos"] = np.cos(2 * np.pi * doy / year_len)
-
-    apx["is_weekend"] = (dow >= 5).astype(int)
-
-    # --- UK bank holiday flag ---
-    # Price profiles on bank holidays closely resemble Sundays.
-    try:
-        import holidays as _holidays
-        _uk_hols = _holidays.country_holidays("GB", subdiv="ENG")
-        apx["is_bank_holiday"] = apx["settlementDate"].apply(
-            lambda d: int(d in _uk_hols)
-        )
-    except ImportError:
-        apx["is_bank_holiday"] = 0
-
-    # --- Drop rows where any lag feature is missing ---
-    lag_cols = [c for c in apx.columns if "lag" in c or "prev_day" in c or c == "rolling_7d_mean"]
-    apx = apx.dropna(subset=lag_cols).reset_index(drop=True)
-
-    return apx
-
-
-# ---------------------------------------------------------------------------
-# LEAR-specific feature builder
-# ---------------------------------------------------------------------------
-
-def _build_lear_extra_features(feature_df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Build the wide-form lag price features and day-of-week dummies required
-    by the LEAR model, following the formulation in Lago et al. (2021).
-
-    For each lag day (D-1, D-2, D-7), all 48 settlement-period prices from
-    that day are pivoted into individual columns, giving the LEAR model for
-    each period the full shape of prior days' price curves (not just summary
-    statistics). This produces 144 wide price columns (48 SPs × 3 lags).
-
-    Seven binary day-of-week dummies (dow_0..dow_6) are also included.
-    Linear models require explicit dummies to learn per-day level shifts;
-    sin/cos encodings (used by the tree-based models) are insufficient for
-    a linear functional form.
-
-    Returns a DataFrame keyed on (settlementDate, settlementPeriod) with
-    the same row order as feature_df. NaN values (early series without full
-    lag history) are left for the caller to fillna(0) when constructing X.
-    """
-    apx = (
-        feature_df[["settlementDate", "settlementPeriod", "apx_price"]]
-        .drop_duplicates(subset=["settlementDate", "settlementPeriod"])
-        .copy()
-    )
-
-    # Daily × SP wide price matrix: one row per date, 48 SP price columns
-    price_wide = apx.pivot_table(
-        index="settlementDate",
-        columns="settlementPeriod",
-        values="apx_price",
-    )
-    price_wide.columns = [f"d_sp_{int(c)}" for c in price_wide.columns]
-    price_wide = price_wide.reset_index()
-
-    # Shift by 1, 2, 7 days so each row's features are strictly prior to settlementDate
-    base = feature_df[["settlementDate", "settlementPeriod"]].copy()
-    for lag_days in [1, 2, 7]:
-        lag_df = price_wide.copy()
-        lag_df["settlementDate"] = lag_df["settlementDate"] + pd.Timedelta(days=lag_days)
-        lag_df = lag_df.rename(columns={
-            c: f"lear_lag{lag_days}d_{c}"
-            for c in lag_df.columns
-            if c.startswith("d_sp_")
-        })
-        base = base.merge(lag_df, on="settlementDate", how="left")
-
-    # Day-of-week binary dummies (0 = Monday, 6 = Sunday)
-    dow = base["settlementDate"].dt.dayofweek
-    for i in range(7):
-        base[f"dow_{i}"] = (dow == i).astype(int)
-
-    return base
-
-
-# ---------------------------------------------------------------------------
 # Model training
 # ---------------------------------------------------------------------------
-
-FEATURE_COLS = [
-    # Same-period lags
-    "apx_lag_1d", "apx_lag_2d", "apx_lag_7d", "apx_lag_14d",
-    # Previous-day aggregate + medium-term rolling level
-    "prev_day_mean", "prev_day_std", "prev_day_max", "prev_day_min",
-    "rolling_7d_mean",
-    # Generation mix
-    "gen_total", "gen_renewable_frac", "gen_fossil_frac",
-    # Temporal
-    "sp_sin", "sp_cos",
-    "dow_sin", "dow_cos",
-    "doy_sin", "doy_cos",
-    "is_weekend", "is_bank_holiday",
-    # GB BESS fleet capacity (structural market variable, from REPD)
-    "bess_fleet_mw", "bess_spread_suppression",
-]
-
-# Include any individual fuel-group columns that were built (gas, wind, etc.)
-# These are appended dynamically in train_forecast_model.
-
 
 def train_forecast_model(
     feature_df: pd.DataFrame,
@@ -592,16 +72,16 @@ def train_forecast_model(
     Parameters
     ----------
     feature_df  : DataFrame from build_feature_matrix()
-    model_type  : "rf" (Random Forest) or "xgb" (XGBoost)
+    model_type  : "rf", "xgb", "lgb", "lear", or "dnn"
     test_start  : ISO date string — all rows on or after this date form the test set
 
     Returns
     -------
     (model, feature_cols, train_metrics, test_metrics) where:
-      model         : fitted sklearn / xgboost estimator
+      model         : fitted _LogTransformModel wrapping the base estimator
       feature_cols  : list of column names used as features
-      train_metrics : dict {rmse, mae, n_samples}
-      test_metrics  : dict {rmse, mae, n_samples}
+      train_metrics : dict {rmse, mae, spearman, n_samples[, spike_rmse]}
+      test_metrics  : dict {rmse, mae, spearman, n_samples[, spike_rmse]}
     """
     from sklearn.metrics import mean_squared_error, mean_absolute_error
     from scipy.stats import spearmanr
@@ -701,51 +181,9 @@ def train_forecast_model(
     return model, feature_cols, train_metrics, test_metrics
 
 
-def _build_model(model_type: str):
-    if model_type == "rf":
-        from sklearn.ensemble import RandomForestRegressor
-        return RandomForestRegressor(
-            n_estimators=300,
-            max_features=0.5,       # outperforms "sqrt" with correlated lag features
-            min_samples_leaf=5,
-            n_jobs=-1,
-            random_state=42,
-        )
-    elif model_type == "xgb":
-        from xgboost import XGBRegressor
-        return XGBRegressor(
-            n_estimators=300,
-            learning_rate=0.05,
-            max_depth=6,
-            subsample=0.8,
-            colsample_bytree=0.8,
-            min_child_weight=3,     # reduces overfitting on ~20-month training set
-            reg_alpha=0.05,         # L1 regularisation
-            n_jobs=-1,
-            random_state=42,
-            verbosity=0,
-        )
-    elif model_type == "lgb":
-        from lightgbm import LGBMRegressor
-        return LGBMRegressor(
-            n_estimators=500,
-            learning_rate=0.03,
-            num_leaves=63,
-            min_child_samples=20,
-            subsample=0.8,
-            colsample_bytree=0.8,
-            reg_alpha=0.05,
-            n_jobs=-1,
-            random_state=42,
-            verbose=-1,
-        )
-    elif model_type == "lear":
-        return _LEARModel()
-    elif model_type == "dnn":
-        return _DNNModel()
-    else:
-        raise ValueError(f"Unknown model_type '{model_type}'. Use 'rf', 'xgb', 'lgb', 'lear', or 'dnn'.")
-
+# ---------------------------------------------------------------------------
+# Feature importance helper
+# ---------------------------------------------------------------------------
 
 def get_feature_importances(model, feature_cols: list) -> pd.Series:
     """Return feature importances as a named Series, sorted descending.
@@ -761,6 +199,10 @@ def get_feature_importances(model, feature_cols: list) -> pd.Series:
     )
     return pd.Series(fi, index=names[: len(fi)]).sort_values(ascending=False)
 
+
+# ---------------------------------------------------------------------------
+# Revenue gap metric
+# ---------------------------------------------------------------------------
 
 def compute_revenue_gap(
     ml_net: float,
@@ -822,11 +264,9 @@ def predict_day_prices(
             return pd.Series(dtype=float)
         extra_cols = [c for c in day_extra.columns
                       if c not in ("settlementDate", "settlementPeriod")]
-        extra_part = day_extra[extra_cols].reset_index(drop=True)
-        sp_col     = pd.DataFrame(
-            {"settlementPeriod": day_df["settlementPeriod"].values}
-        )
-        X = pd.concat([X, extra_part, sp_col], axis=1).fillna(0)
+        for col in extra_cols:
+            X[col] = day_extra[col].values
+        X["settlementPeriod"] = day_df["settlementPeriod"].values
 
     preds = model.predict(X)
     return pd.Series(preds, index=day_df["settlementPeriod"].values)
@@ -961,7 +401,6 @@ def run_forecast_backtest(
         _build_result,
         ALL_SERVICES,
     )
-    import numpy as np
 
     if services is None:
         services = ALL_SERVICES
@@ -1019,7 +458,6 @@ def run_forecast_backtest(
         anc_wide = pd.DataFrame()
 
     # --- Second pass: dispatch with SoC tracking ---
-    # Shared setup: actual prices flat lookup and period list
     actual_by_period = {
         (d, int(sp)): float(price)
         for d, series in apx_by_date.items()
