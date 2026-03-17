@@ -92,6 +92,7 @@ models/*.joblib
 
 # Streamlit
 .streamlit/secrets.toml
+*.png
 
 # OS
 Thumbs.db
