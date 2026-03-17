@@ -92,7 +92,7 @@ models/*.joblib
 
 # Streamlit
 .streamlit/secrets.toml
-*.png
+bess-banner.png
 
 # OS
 Thumbs.db
