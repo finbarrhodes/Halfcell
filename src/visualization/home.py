@@ -86,20 +86,33 @@ st.markdown(
     "interested in flexibility and grid-scale energy storage. The combination of improving "
     "battery technology, cheaper components, and the growing need for flexibility assets in a grid "
     "more reliant on renewable energy sources leaves BESS with a bright future in Great Britain's "
-    "energy transition. Batteries are playing a major role beyond the scope of this project, and if you're "
-    "interested, [here](https://climate.benjames.io/batteries/) is a well-made guide I found helpful.\n\n"
-    "Halfcell is a personal project I have undertaken to dive into the GB clean tech and grid-scale "
-    "battery landscape both to learn through doing and to share some insights into an exciting "
-    "technology shaping our journey to Net Zero. With a background in data science, "
-    "statistics, and economics, I have tried to bring my analytical skills "
+    "energy transition. Batteries are playing a major role beyond the scope of " \
+    "this project, and if you're interested " \
+    "[here](https://climate.benjames.io/batteries/) is a well-made guide I found helpful."
+    "\n\n"
+    "Halfcell is a personal project I have undertaken to dive into the GB clean tech and  "
+    "grid-scale battery landscape both to learn through doing and to share some insights into "
+    "an exciting technology shaping our journey to Net Zero. With a background in "
+    "data science, statistics, and economics, I have tried to bring my analytical skills "
     "and machine learning experience to bear on how impactful this technology "
-    "is and how it is making its mark on our grid. I have focused on two key revenue verticals for "
-    "BESS: frequency response services and energy arbitrage, which I go into more detail about below. "
-    "There is a *Market Overview* section showing how market conditions have evolved over time, and a "
-    "*Forecasting & Dispatch* model that applies ML price forecasting and Model Predictive Control "
-    "(MPC) optimisation to the day-ahead planning layer of BESS operations. "
-    "The data powering this tool is sourced from the **Elexon Insights Solution API**, "
-    "the **NESO Data Portal**, and the **DESNZ Renewable Energy Planning Database (REPD)**, "
+    "is in our grid and what principled modelling on publicly available data can reveal. " \
+    "Halfcell does not aim to be a commercially viable energy management system, but strives to " \
+    "capture some core aspects of BESS deployment and explore the algorithms that " \
+    "drive BESS' success in Great Britain. The beauty of BESS lies in their complexity; their " \
+    "ability to serve many purposes, operate in multiple markets simultaneously, and to " \
+    "continuously orchestrate that involement. The multi-stage decision-making and forecasting " \
+    "explored in Halfcell reflect the central planning layer of a real-world BESS optimizers' " \
+    "operation. Battery sites have several markets at their disposal; I have focused on two " \
+    "key verticals: frequency response services and wholesale energy arbitrage, which " \
+    "I go into more detail about below."
+    "\n\n"
+    "Halfcell aims to be rigorous in the methods it applies while being honest " \
+    "about the complexity that differentiates the modelling shown here from what is done in " \
+    "a site-specific setting. That being said, I hope to showcase what analytical frameworks are " \
+    "available and what questions can be explored using principled modelling architecture " \
+    "and publicly available electricity market data." \
+    "The data powering this tool is sourced from the **Elexon Insights Solution API**, " \
+    "the **NESO Data Portal**, and the **DESNZ Renewable Energy Planning Database (REPD)**, " \
     "with methodology based on well-established literature."
 )
 
