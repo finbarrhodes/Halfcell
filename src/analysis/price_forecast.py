@@ -264,9 +264,9 @@ def predict_day_prices(
             return pd.Series(dtype=float)
         extra_cols = [c for c in day_extra.columns
                       if c not in ("settlementDate", "settlementPeriod")]
-        for col in extra_cols:
-            X[col] = day_extra[col].values
-        X["settlementPeriod"] = day_df["settlementPeriod"].values
+        extra_part = day_extra[extra_cols].reset_index(drop=True)
+        sp_col     = pd.DataFrame({"settlementPeriod": day_df["settlementPeriod"].values})
+        X = pd.concat([X, extra_part, sp_col], axis=1).fillna(0)
 
     preds = model.predict(X)
     return pd.Series(preds, index=day_df["settlementPeriod"].values)

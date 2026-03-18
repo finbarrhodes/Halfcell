@@ -47,7 +47,7 @@ PROCESSED = Path(__file__).parent.parent / "data" / "processed"
 
 BATTERY = REFERENCE_BATTERY
 INITIAL_SOC     = 0.5
-DISPATCH_METHOD = "greedy"   # faster than MPC; relative model ranking is consistent
+DISPATCH_METHOD = "mpc"   # faster than MPC; relative model ranking is consistent
 HORIZON         = 96         # unused in greedy mode; retained for MPC compatibility
 SERVICES        = ALL_SERVICES
 

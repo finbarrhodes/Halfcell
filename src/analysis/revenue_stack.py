@@ -80,7 +80,7 @@ def _efa_prices(apx_by_date: dict, date: pd.Timestamp, efa: int) -> pd.Series:
     if EFA_PERIODS[efa]["prev"]:
         prev = apx_by_date.get(date - pd.Timedelta(days=1), pd.Series(dtype=float))
         slices.insert(0, prev.reindex(EFA_PERIODS[efa]["prev"]).dropna())
-    return pd.concat(slices)
+    return pd.concat([s for s in slices if not s.empty])
 
 def _build_arb_mw_by_period(arb_sched_map: dict) -> dict:
     """
