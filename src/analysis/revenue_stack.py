@@ -49,7 +49,7 @@ EFA_PERIODS = {
 }
 
 # FR SoC band: battery must stay within [lower, upper] × energy_mwh
-# to maintain headroom for both DC High (discharge) and DC Low (charge) delivery.
+# to maintain headroom for both DC High (charge) and DC Low (discharge) delivery.
 FR_SOC_LOWER = 0.10
 FR_SOC_UPPER = 0.90
 

@@ -140,7 +140,7 @@ st.markdown(
 - Revenue = `clearing_price (£/MW/h) × MW committed to FR × 4 hours per EFA block`
 - Services of different response speeds (DC, DR, DM) can be stacked on the same physical MW
   in the GB market — each earns a separate availability payment.
-- High (discharge) and Low (charge) services are modelled as independent and simultaneous,
+- High (charge) and Low (discharge) services are modelled as independent and simultaneous,
   assuming the battery maintains sufficient SoC headroom to respond in both directions.
 - Clearing prices sourced from NESO Data Portal (legacy DC/DR/DM auctions Sep 2021–Nov 2023,
   EAC service Nov 2023–present).
