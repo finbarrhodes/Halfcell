@@ -141,15 +141,42 @@ class ElexonBMRSCollector:
 
         The endpoint caps responses at ~8 days, so we chunk the range
         into 7-day windows and concatenate.
+
+        IMPORTANT: The API's 'from' and 'to' parameters filter by startTime (UTC),
+        not by settlementDate. During BST, some settlement periods for a given date
+        occur before midnight UTC (on the previous calendar day). To capture all
+        settlement periods, we request from (chunk_start - 1 day) and then filter
+        to the desired settlementDate range.
         """
         logger.info(f"Collecting market index prices from {start_date} to {end_date}")
+
+        # Parse the overall start and end dates for filtering later
+        overall_start = parse_date(start_date)
+        overall_end = parse_date(end_date)
+
+        # Extend end_date by 1 day for chunking to ensure we get all settlement periods
+        # for the final date (which may occur on the next UTC day during BST)
+        extended_end = (overall_end + timedelta(days=1)).strftime("%Y-%m-%d")
+
         frames = []
 
-        for chunk_start, chunk_end in _date_chunks(start_date, end_date):
+        for chunk_start, chunk_end in _date_chunks(start_date, extended_end):
             try:
+                # Request from 1 day before chunk_start to chunk_end
+                # This ensures we capture settlement periods for chunk_start that occurred
+                # on (chunk_start - 1) UTC day during BST.
+                # NOTE: API has a 7-day maximum range, so we can't extend both ends.
+                api_start_date = parse_date(chunk_start) - timedelta(days=1)
+                api_start_str = api_start_date.strftime("%Y-%m-%d")
+
+                logger.debug(
+                    f"Fetching chunk: API from={api_start_str}, to={chunk_end} "
+                    f"(will filter to settlementDate {chunk_start} to {chunk_end})"
+                )
+
                 data = self._get(
                     "/balancing/pricing/market-index",
-                    params={"from": chunk_start, "to": chunk_end},
+                    params={"from": api_start_str, "to": chunk_end},
                 )
                 records = data.get("data", [])
                 if records:
@@ -167,13 +194,79 @@ class ElexonBMRSCollector:
         df = pd.concat(frames, ignore_index=True)
         df["settlementDate"] = pd.to_datetime(df["settlementDate"])
         df["startTime"] = pd.to_datetime(df["startTime"])
+
+        # Filter to only include records within the requested settlementDate range
+        # This removes the "spillover" records from the (chunk_start - 1) day
+        records_before_filter = len(df)
+        df = df[
+            (df["settlementDate"] >= overall_start) &
+            (df["settlementDate"] <= overall_end)
+        ]
+        records_after_filter = len(df)
+
+        if records_before_filter > records_after_filter:
+            logger.debug(
+                f"Filtered out {records_before_filter - records_after_filter} records "
+                f"outside requested settlementDate range"
+            )
+
+        # Deduplicate in case of overlapping chunks
+        df = df.drop_duplicates(
+            subset=["settlementDate", "settlementPeriod", "dataProvider"]
+        )
+
         logger.info(f"Collected {len(df)} market index records")
+
+        # Validate settlement period counts
+        self._validate_settlement_periods(df, start_date, end_date)
 
         if save:
             filename = f"market_index_{start_date}_{end_date}"
             save_dataframe(df, filename, data_type="raw", format="csv")
 
         return df
+
+    def _validate_settlement_periods(
+        self, df: pd.DataFrame, start_date: str, end_date: str
+    ):
+        """
+        Validate that each date has the expected number of settlement periods.
+
+        Issues warnings for dates with incorrect counts. Expected counts:
+        - Normal days: 48 SPs
+        - BST spring forward (last Sunday in March): 46 SPs
+        - BST fall back (last Sunday in October): 50 SPs
+        """
+        apx = df[df["dataProvider"] == "APXMIDP"]
+        sp_counts = apx.groupby("settlementDate")["settlementPeriod"].count()
+
+        issues = {}
+        for date, count in sp_counts.items():
+            expected = 48
+            # BST clock changes
+            if date.month == 3 and date.day >= 25 and date.day_name() == "Sunday":
+                expected = 46  # Spring forward: lose 1 hour (2 SPs)
+            elif date.month == 10 and date.day >= 25 and date.day_name() == "Sunday":
+                expected = 50  # Fall back: gain 1 hour (2 SPs)
+
+            if count != expected:
+                issues[date] = (count, expected)
+
+        if issues:
+            logger.warning(
+                f"Found {len(issues)} dates with incorrect SP counts "
+                f"in range {start_date} to {end_date}:"
+            )
+            for date, (actual, expected) in list(issues.items())[:5]:
+                logger.warning(
+                    f"  {date.strftime('%Y-%m-%d %A')}: {actual} SPs (expected {expected})"
+                )
+            if len(issues) > 5:
+                logger.warning(f"  ... and {len(issues) - 5} more")
+        else:
+            logger.info(
+                f"Settlement period validation passed: all dates have correct SP counts"
+            )
 
     # Generation by Fuel Type  (was B1620)
 

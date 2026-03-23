@@ -335,10 +335,14 @@ st.markdown(
 | Dataset | Source | Coverage |
 |---|---|---|
 | Frequency response auction results (DC/DR/DM) | [NESO Data Portal](https://www.neso.energy/data-portal) | Sep 2021 – present |
-| APXMIDP market index price | [Elexon Insights Solution API](https://developer.data.elexon.co.uk/) | Jul 2023 – present |
-| System buy/sell prices (SBP/SSP) | [Elexon Insights Solution API](https://developer.data.elexon.co.uk/) | Jul 2023 – present |
-| Generation by fuel type (daily) | [Elexon Insights Solution API](https://developer.data.elexon.co.uk/) | Jul 2023 – present |
+| APXMIDP market index price | [Elexon Insights Solution API](https://developer.data.elexon.co.uk/) | Jan 2019 – present |
+| System buy/sell prices (SBP/SSP) | [Elexon Insights Solution API](https://developer.data.elexon.co.uk/) | Jan 2019 – present |
+| Generation by fuel type (daily) | [Elexon Insights Solution API](https://developer.data.elexon.co.uk/) | Jan 2019 – present |
 | GB BESS fleet capacity (monthly) | [DESNZ REPD](https://www.gov.uk/government/publications/renewable-energy-planning-database-monthly-extract) | 2019 – present (quarterly lag ~3 months) |
+
+**Data Quality Note:** The market index price dataset was updated in March 2026 to fix systematic gaps caused by UTC/BST
+timezone misalignment in the collection process. Settlement period gaps were reduced from 24.6% to 2.35%, eliminating ~19,000
+missing half-hour records. The remaining 2.35% of dates with gaps are isolated issues rather than systematic patterns.
 """
 )
 
