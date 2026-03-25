@@ -53,10 +53,20 @@ BASE_POWER_MW = REFERENCE_BATTERY.power_mw  # all cache figures are at this MW r
 
 # Map sidebar radio label → cache file key
 STRATEGY_KEYS = {
-    "Perfect Foresight": "pf_mpc",
+    "Perfect Foresight":  "pf_mpc",
     "Naive (D-1 prices)": "naive_mpc",
-    "ML Model": "ml_mpc",
+    "ML Model — RF":      "ml_mpc",
+    "ML Model — LGB":     "lgb_mpc",
+    "ML Model — LEAR":    "lear_mpc",
+    "ML Model — DNN":     "dnn_mpc",
 }
+
+# Cache files that must exist for the app to load (PF + Naive + RF baseline)
+REQUIRED_KEYS = {"pf_mpc", "naive_mpc", "ml_mpc"}
+
+# Which ML model is shown in the headline revenue-gap metrics on the Strategy Comparison tab.
+# Update to "ML Model — LGB" / "— LEAR" / "— DNN" after reviewing the revenue comparison.
+PRODUCTION_MODEL = "ML Model — RF"
 
 
 # ---------------------------------------------------------------------------
@@ -204,14 +214,26 @@ def _fmt_gbp(value: float) -> str:
 # ---------------------------------------------------------------------------
 
 manifest = load_manifest()
-_missing = [k for k in STRATEGY_KEYS.values() if not (CACHE_DIR / f"{k}.parquet").exists()]
 
-if _missing:
+_missing_required = [k for k in REQUIRED_KEYS if not (CACHE_DIR / f"{k}.parquet").exists()]
+if _missing_required:
     st.error(
         "Pre-computed results not found — run `scripts/precompute_cache.py` to generate them.\n\n"
-        f"Missing files: {', '.join(f'data/cache/{k}.parquet' for k in _missing)}"
+        f"Missing files: {', '.join(f'data/cache/{k}.parquet' for k in _missing_required)}"
     )
     st.stop()
+
+_missing_optional = [
+    k for k, v in STRATEGY_KEYS.items()
+    if v not in REQUIRED_KEYS and not (CACHE_DIR / f"{v}.parquet").exists()
+]
+if _missing_optional:
+    st.info(
+        f"Some ML model caches not yet generated and will be hidden: "
+        f"{', '.join(_missing_optional)}. "
+        "Run `scripts/precompute_cache.py` to add them.",
+        icon="ℹ️",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -275,15 +297,29 @@ end_date   = date_range[1] if len(date_range) == 2 else data_end
 st.sidebar.divider()
 st.sidebar.subheader("Strategy")
 
+_available_strategies = [
+    label for label, key in STRATEGY_KEYS.items()
+    if (CACHE_DIR / f"{key}.parquet").exists()
+]
+_default_idx = (
+    _available_strategies.index(PRODUCTION_MODEL)
+    if PRODUCTION_MODEL in _available_strategies else 0
+)
 dispatch_strategy = st.sidebar.radio(
     "Price signal used for arbitrage scheduling",
-    options=list(STRATEGY_KEYS.keys()),
-    index=0,
+    options=_available_strategies,
+    index=_default_idx,
     help=(
         "**Perfect Foresight**: revenue ceiling — dispatches using actual day-D prices.\n\n"
         "**Naive**: zero-skill floor — uses yesterday's prices as today's forecast.\n\n"
-        "**ML Model**: realistic best case — Random Forest trained on lagged prices, "
-        "generation mix, and seasonality features."
+        "**ML Model — RF**: Random Forest trained on lagged prices, generation mix, "
+        "and seasonal features.\n\n"
+        "**ML Model — LGB**: LightGBM — gradient-boosted trees; typically stronger "
+        "on RMSE than RF.\n\n"
+        "**ML Model — LEAR**: Lasso Estimated AutoRegressive — 48 per-period linear "
+        "models; strongest on rank correlation and spike periods.\n\n"
+        "**ML Model — DNN**: Fully-connected deep neural network following "
+        "Lago et al. (2021); single global model across all 48 settlement periods."
     ),
 )
 cache_key = STRATEGY_KEYS[dispatch_strategy]
@@ -348,8 +384,9 @@ st.markdown(
     "allocator** that compares confirmed auction clearing prices against a forecast-based "
     "shadow arbitrage value; an **MPC dispatch engine** (rolling 48-hour LP) that plans "
     "charge/discharge at half-hourly resolution while enforcing FR SoC constraints as hard "
-    "bounds; and a **price forecasting pipeline** that benchmarks three strategies — naive "
-    "D-1 baseline, Random Forest, and perfect foresight ceiling — against each other."
+    "bounds; and a **price forecasting pipeline** that benchmarks four ML models "
+    "(Random Forest, LightGBM, LEAR, DNN) against a naive D-1 baseline and a "
+    "perfect foresight ceiling."
 )
 st.info(
     "**Scope note:** this model covers the day-ahead planning layer only. "
@@ -435,7 +472,7 @@ with st.expander("The two-stage dispatch model — capacity allocation & MPC"):
 with st.expander("Price forecasting strategies — what each one represents"):
     st.markdown(
         """
-        Three price signal strategies are benchmarked, running the same MPC dispatch engine
+        Six price signal strategies are benchmarked, all running the same MPC dispatch engine
         on the same battery asset. The goal is to isolate how much the *quality of the price
         forecast* — not the dispatch engine — affects operational revenue.
 
@@ -443,14 +480,17 @@ with st.expander("Price forecasting strategies — what each one represents"):
         |---|---|---|
         | **Perfect Foresight** | Actual day-D wholesale prices | Theoretical revenue ceiling — achievable only with advance knowledge of the future |
         | **Naive\\*** | Yesterday's prices (day D-1) | Zero-skill floor — the simplest possible baseline; any real model must beat this |
-        | **ML Model** | Random Forest forecast | Realistic best case using features available at end of day D-1 |
+        | **ML — RF** | Random Forest forecast | Tree-based ensemble; robust on tabular data, interpretable feature importances |
+        | **ML — LGB** | LightGBM forecast | Gradient-boosted trees; typically outperforms RF on RMSE and MAE |
+        | **ML — LEAR** | LEAR forecast | 48 per-period Lasso regressors following Lago et al. (2021); strong rank-correlation and spike accuracy |
+        | **ML — DNN** | Deep neural network forecast | Single global fully-connected network (Lago et al., 2021); captures non-linear price dynamics |
 
         The forecast affects both stages: a better price forecast improves the shadow
         arbitrage value estimate in Stage 1 (leading to better FR/arbitrage splits) and
         directly improves MPC dispatch quality in Stage 2.
 
         The **revenue gap** metric quantifies how much of the theoretically capturable
-        improvement the ML model actually delivers:
+        improvement each ML model actually delivers:
 
             gap = (ML revenue − Naive revenue) / (Perfect Foresight revenue − Naive revenue)
 
@@ -704,23 +744,26 @@ Revenue figures are scaled linearly to the display power ({power_mw} MW) via the
 
 with tab_strategy:
     st.markdown(
-        "Three price signal strategies are compared below, all using identical MPC dispatch "
-        "on the same fixed 50 MW / 2h battery. The comparison isolates the value of forecast "
-        "quality — holding everything else constant."
+        "All strategies use identical MPC dispatch on the same fixed 50 MW / 2h battery. "
+        "The comparison isolates the value of forecast quality — holding everything else constant."
     )
-    _c1, _c2, _c3 = st.columns(3)
-    _c1.info("**Perfect Foresight** — dispatches using the actual day-D prices. Not achievable in practice. Sets the theoretical revenue *ceiling*.")
-    _c2.info("**Naive\\*** — uses yesterday's prices as today's forecast. Zero forecasting skill. Sets the *floor* that any real model must beat.")
-    _c3.info("**ML Model** — Random Forest trained on lagged prices, generation mix, and calendar features. The realistic best case with public data.")
-    st.caption("\\* Naive: the D-1 price assumption — yesterday's 48 half-hourly prices are used as the forecast for the same periods today.")
 
-    # Load and filter all three cached results
+    # Info boxes — two rows of three
+    _ib1, _ib2, _ib3 = st.columns(3)
+    _ib1.info("**Perfect Foresight** — dispatches using the actual day-D prices. Not achievable in practice. Sets the theoretical revenue *ceiling*.")
+    _ib2.info("**Naive\\*** — uses yesterday's prices as today's forecast. Zero forecasting skill. Sets the *floor* that any real model must beat.")
+    _ib3.info("**ML — RF** — Random Forest trained on lagged prices, generation mix, and calendar features. Interpretable; competitive benchmark.")
+    _ib4, _ib5, _ib6 = st.columns(3)
+    _ib4.info("**ML — LGB** — LightGBM gradient-boosted trees. Typically strongest on RMSE and MAE.")
+    _ib5.info("**ML — LEAR** — 48 per-period Lasso Estimated AutoRegressive models (Lago et al., 2021). Strong rank-correlation and spike accuracy.")
+    _ib6.info("**ML — DNN** — Single global fully-connected deep neural network (Lago et al., 2021). Captures non-linear price dynamics.")
+    st.caption("\\* Naive: yesterday's 48 half-hourly prices are used as the forecast for the same periods today.")
+
+    # Load and filter all available cached results (skip missing optional caches)
     _all = {}
-    _missing_strats = []
     for label, key in STRATEGY_KEYS.items():
         _m = load_monthly(key)
         if _m is None:
-            _missing_strats.append(key)
             continue
         _filtered = _apply_filters(_m, start_date, end_date, selected_services, power_mw)
         if not include_imbalance and "imbalance_revenue_gbp" in _filtered.columns:
@@ -729,37 +772,37 @@ with tab_strategy:
                 _filtered["cycling_cost_gbp"] = 0.0
         _all[label] = _recompute_summary(_filtered, power_mw)
 
-    if _missing_strats:
-        st.warning(
-            f"Some cache files are missing ({', '.join(_missing_strats)}). "
-            "Run `scripts/precompute_cache.py` to regenerate."
-        )
-    elif _all:
-        pf_net    = _all["Perfect Foresight"].get("total_net", 0)
-        naive_net = _all["Naive (D-1 prices)"].get("total_net", 0)
-        ml_net    = _all["ML Model"].get("total_net", 0)
+    if _all:
+        pf_net    = _all.get("Perfect Foresight", {}).get("total_net", 0)
+        naive_net = _all.get("Naive (D-1 prices)", {}).get("total_net", 0)
+        prod_net  = _all.get(PRODUCTION_MODEL, {}).get("total_net", 0)
 
-        # Revenue gap
-        gap = compute_revenue_gap(ml_net, naive_net, pf_net)
+        # Revenue gap for the production model (shown in headline metrics)
+        gap = compute_revenue_gap(prod_net, naive_net, pf_net)
 
-        # Bar chart: annualised per MW for each strategy
-        strat_labels = ["Naive*", "ML Model\n(Random Forest)", "Perfect Foresight"]
-        strat_vals   = [
-            _all["Naive (D-1 prices)"].get("annualised_per_mw", 0) / 1_000,
-            _all["ML Model"].get("annualised_per_mw", 0) / 1_000,
-            _all["Perfect Foresight"].get("annualised_per_mw", 0) / 1_000,
+        # Bar chart — only include strategies whose cache is loaded; fixed display order
+        _bar_order = [
+            ("Naive (D-1 prices)", "Naive*",           "#C9400A"),
+            ("ML Model — RF",      "RF",                "#0D7680"),
+            ("ML Model — LGB",     "LGB",               "#2A7F62"),
+            ("ML Model — LEAR",    "LEAR",              "#4472C4"),
+            ("ML Model — DNN",     "DNN",               "#7B5EA7"),
+            ("Perfect Foresight",  "Perfect Foresight", "#4E8A3C"),
         ]
-        strat_colours = ["#C9400A", "#0D7680", "#4E8A3C"]
+        _bar_labels  = [lbl for key, lbl, _ in _bar_order if key in _all]
+        _bar_vals    = [_all[key].get("annualised_per_mw", 0) / 1_000
+                        for key, _, _ in _bar_order if key in _all]
+        _bar_colours = [col for key, _, col in _bar_order if key in _all]
 
         fig_cmp = go.Figure(go.Bar(
-            x=strat_labels,
-            y=strat_vals,
-            marker_color=strat_colours,
-            text=[f"£{v:,.1f}k" for v in strat_vals],
+            x=_bar_labels,
+            y=_bar_vals,
+            marker_color=_bar_colours,
+            text=[f"£{v:,.1f}k" for v in _bar_vals],
             textposition="outside",
         ))
         fig_cmp.update_layout(
-            height=380,
+            height=400,
             template="plotly_white", paper_bgcolor="#FFF1E5", plot_bgcolor="#FFF1E5",
             yaxis_title="Annualised net revenue (£k / MW / yr)",
             xaxis_title=None,
@@ -767,24 +810,21 @@ with tab_strategy:
             margin=dict(t=40, b=40),
             yaxis=dict(rangemode="tozero"),
         )
-        _col_bar, _col_txt = st.columns([1, 1])
+        _col_bar, _col_txt = st.columns([3, 2])
         with _col_bar:
             st.plotly_chart(fig_cmp, use_container_width=True)
         with _col_txt:
             st.markdown("**Reading the chart**")
             st.markdown(
-                "The three bars define a range: **Naive\\*** at the bottom sets the zero-skill "
-                "floor — what you'd earn with no forecasting capability at all. "
-                "**Perfect Foresight** at the top is the theoretical ceiling — the maximum "
-                "extractable revenue if you knew the future. "
-                "**ML Model** sits between them, and the key question is how close it gets to "
-                "the ceiling."
+                "**Naive\\*** sets the zero-skill floor — what you'd earn with no forecasting. "
+                "**Perfect Foresight** is the theoretical ceiling. "
+                "The four ML models sit between them: the revenue gap quantifies how much "
+                "of the capturable improvement each one delivers."
             )
             st.markdown(
-                "The **revenue gap metric** below quantifies this as a fraction of the "
-                "capturable improvement: `gap = (ML − Naive) / (PF − Naive)`. "
-                "A gap of 70–85% is considered strong performance in published GB and "
-                "European electricity price forecasting literature."
+                "`gap = (ML − Naive) / (PF − Naive)`  \n"
+                "A gap of 70–85% is considered strong in published GB and European "
+                "electricity price forecasting literature."
             )
 
         # Summary table — use £M columns if any value reaches that scale
@@ -792,19 +832,32 @@ with tab_strategy:
         _use_m = abs(_max_total) >= 1_000_000
         _tot_unit = "£M" if _use_m else "£k"
         _tot_div  = 1_000_000 if _use_m else 1_000
-        _display_names = {
-            "Naive (D-1 prices)": "Naive*",
-            "ML Model": "ML Model",
-            "Perfect Foresight": "Perfect Foresight",
-        }
+
+        _table_order = [
+            ("Naive (D-1 prices)", "Naive*"),
+            ("ML Model — RF",      "ML — RF"),
+            ("ML Model — LGB",     "ML — LGB"),
+            ("ML Model — LEAR",    "ML — LEAR"),
+            ("ML Model — DNN",     "ML — DNN"),
+            ("Perfect Foresight",  "Perfect Foresight"),
+        ]
+        _ml_labels = {"ML Model — RF", "ML Model — LGB", "ML Model — LEAR", "ML Model — DNN"}
         cmp_rows = []
-        for label in ["Naive (D-1 prices)", "ML Model", "Perfect Foresight"]:
-            s = _all[label]
+        for key, display in _table_order:
+            if key not in _all:
+                continue
+            s = _all[key]
+            row_net = s["total_net"]
+            if key in _ml_labels and pf_net != naive_net:
+                row_gap = f"{(row_net - naive_net) / (pf_net - naive_net):.1%}"
+            else:
+                row_gap = "—"
             cmp_rows.append({
-                "Strategy":                          _display_names[label],
-                f"Total Net Rev ({_tot_unit})":      round(s["total_net"]         / _tot_div, 2),
-                f"Ann. Net Rev ({_tot_unit}/yr)":    round(s["annualised_net"]    / _tot_div, 2),
-                "Rev / MW (£k/MW/yr)":               round(s["annualised_per_mw"] / 1_000,    1),
+                "Strategy":                          display,
+                f"Total Net Rev ({_tot_unit})":      round(row_net                  / _tot_div, 2),
+                f"Ann. Net Rev ({_tot_unit}/yr)":    round(s["annualised_net"]      / _tot_div, 2),
+                "Rev / MW (£k/MW/yr)":               round(s["annualised_per_mw"]   / 1_000,    1),
+                "Rev. gap vs Naive":                 row_gap,
             })
         cmp_df = pd.DataFrame(cmp_rows)
         st.dataframe(
@@ -817,6 +870,7 @@ with tab_strategy:
             use_container_width=True,
         )
 
+        # Headline metrics — anchored to the production model
         if gap is not None:
             col_g1, col_g2, col_g3, col_g4 = st.columns(4)
             col_g1.metric(
@@ -825,9 +879,9 @@ with tab_strategy:
                 help="Zero-skill baseline — dispatch using yesterday's prices as forecast.",
             )
             col_g2.metric(
-                "ML net revenue",
-                _fmt_gbp(ml_net),
-                delta=f"{_fmt_gbp(ml_net - naive_net)} vs Naive*",
+                f"{PRODUCTION_MODEL} net revenue",
+                _fmt_gbp(prod_net),
+                delta=f"{_fmt_gbp(prod_net - naive_net)} vs Naive*",
             )
             col_g3.metric(
                 "Perfect Foresight net",
@@ -835,39 +889,63 @@ with tab_strategy:
                 help="Upper bound — dispatch using actual prices known in advance.",
             )
             col_g4.metric(
-                "Revenue gap",
+                f"Revenue gap ({PRODUCTION_MODEL.replace('ML Model — ', '')})",
                 f"{gap:.1%}",
                 help=(
-                    "Fraction of the theoretically capturable improvement over naive "
-                    "that the ML forecast actually delivers. "
-                    "gap = (ML − naive) / (perfect − naive). "
+                    f"Fraction of the capturable improvement that {PRODUCTION_MODEL} delivers. "
+                    "gap = (model − naive) / (perfect − naive). "
                     "Literature benchmark: ML typically achieves 70–85% in normal markets."
                 ),
             )
         st.caption(
-            "All three strategies use identical MPC dispatch with the fixed 50 MW / 2h battery. "
-            "The chart isolates the value of forecast quality: Naive sets the zero-skill floor, "
-            "Perfect Foresight the ceiling, and ML captures a realistic fraction of the gap."
+            f"All strategies use identical MPC dispatch with the fixed 50 MW / 2h battery. "
+            f"Headline metrics above are anchored to **{PRODUCTION_MODEL}** — update "
+            f"`PRODUCTION_MODEL` in backtester.py after reviewing the revenue comparison."
         )
 
-    # ML model detail — load once, display in expanders
+    # ML model detail — selectbox to choose which model to inspect
     st.divider()
-    st.subheader("ML Model Detail — Random Forest")
+    st.subheader("ML Model Detail")
 
-    with st.spinner("Loading model metrics… (cached after first load)"):
-        _model, _feat_cols, _train_m, _test_m = load_forecast_model("rf")
+    _ml_options = {
+        "ML Model — RF":   ("rf",   "#0D7680"),
+        "ML Model — LGB":  ("lgb",  "#2A7F62"),
+        "ML Model — LEAR": ("lear", "#4472C4"),
+        "ML Model — DNN":  ("dnn",  "#7B5EA7"),
+    }
+    _available_ml = [k for k in _ml_options if (CACHE_DIR / f"{STRATEGY_KEYS[k]}.parquet").exists()]
+    _detail_model = st.selectbox(
+        "Select model to inspect",
+        options=_available_ml,
+        index=(_available_ml.index(PRODUCTION_MODEL) if PRODUCTION_MODEL in _available_ml else 0),
+        key="ml_detail_select",
+    )
+    _detail_type, _detail_colour = _ml_options[_detail_model]
+
+    with st.spinner("Loading model… (cached after first load)"):
+        _model, _feat_cols, _train_m, _test_m = load_forecast_model(_detail_type)
 
     with st.expander("Model architecture & features"):
-        st.markdown(f"""
-The ML strategy uses a **Random Forest** regressor to predict the 48 half-hourly APXMIDP
-prices for day D using features available at the end of day D-1.
+        if _detail_type in ("rf", "lgb"):
+            _model_name = "Random Forest" if _detail_type == "rf" else "LightGBM"
+            _model_extra = (
+                "Random Forest builds an ensemble of independently grown decision trees "
+                "using bootstrap sampling and random feature subsets — each tree votes and "
+                "the ensemble averages predictions, which reduces variance without increasing bias."
+                if _detail_type == "rf"
+                else
+                "LightGBM uses gradient boosting with leaf-wise tree growth and histogram-based "
+                "splitting — typically faster and more accurate than RF on tabular tasks, "
+                "particularly on RMSE and MAE."
+            )
+            st.markdown(f"""
+The **{_model_name}** model predicts the 48 half-hourly APXMIDP prices for day D using
+features available at the end of day D-1.
 
-*Why Random Forest?* Tree-based ensemble methods are well suited to this problem: the
-feature set is tabular (lagged prices, generation mix ratios, temporal encodings) rather
-than raw sequences; they require no feature scaling; they are robust on datasets of this
-size (~30,000 training rows); and they provide interpretable feature importances.
-An LSTM was considered but is likely overkill given ~2 years of training data and would
-be harder to explain. A naive lag model sets the zero-skill baseline.
+*Why tree-based?* The feature set is tabular (lagged prices, generation mix ratios,
+temporal encodings) rather than raw sequences; tree-based methods require no feature scaling;
+they are robust on datasets of this size (~30,000 training rows); and they provide
+interpretable feature importances. {_model_extra}
 
 **Features used (all available at end of day D-1):**
 - Same-period lagged prices: price at the same settlement period 1, 2, 7, and 14 days prior
@@ -881,44 +959,99 @@ be harder to explain. A naive lag model sets the zero-skill baseline.
 - **GB BESS fleet capacity** (`bess_fleet_mw`, monthly MW): total operational GB battery
   storage capacity at the settlement date, sourced from DESNZ REPD. The GB fleet has grown
   from ~0.8 GW at end-2019 to ~6 GW by early 2025, and this structural shift has a direct
-  effect on arbitrage price spreads. In the merit order — where generators are dispatched
-  cheapest-first — batteries insert themselves by charging when cheap (low-merit) generation
-  is abundant and discharging when expensive (high-merit) plant is marginal. As more battery
-  capacity does this simultaneously, the peak demand that expensive peakers would otherwise
-  serve is reduced, and the trough that cheap renewables would otherwise flood is absorbed —
-  compressing the spread between high and low settlement periods. A larger fleet therefore
-  tends to produce a flatter daily price curve.
+  effect on arbitrage price spreads. As more battery capacity charges in cheap periods and
+  discharges in expensive ones simultaneously, the merit order flattens and spreads compress.
 - **BESS spread suppression** (`bess_spread_suppression`): `bess_fleet_mw / gen_total` —
-  BESS penetration as a fraction of total system generation. This directly encodes the
-  compression mechanism: near-zero in 2019, it has become a material signal by 2024–25.
+  BESS penetration as a fraction of total system generation. Near-zero in 2019; a material
+  signal by 2024–25.
 
-**Target transform:** a signed-log1p transform is applied to prices before fitting
-(`sign(y)·log1p(|y|)`) and inverted on predictions. This compresses the heavy-tailed
-price distribution so the model does not under-weight high-price periods during training.
+**Target transform:** signed-log1p applied before fitting (`sign(y)·log1p(|y|)`) and
+inverted on predictions. Compresses the heavy-tailed price distribution so the model does
+not under-weight spike periods during training.
 
 **Train/test split:** strict temporal split — training data ends before
-`{DEFAULT_TEST_START}` to prevent any look-ahead bias. The model never sees
-future prices during training.
+`{DEFAULT_TEST_START}`. The model never sees future prices during training.
 
 **Known limitations:** tree-based models cannot extrapolate beyond the price ranges seen
-during training; electricity price forecasting is inherently noisy; and the model improves
-dispatch quality on average but does not eliminate forecast error on individual days.
-        """)
-        importances = get_feature_importances(_model, _feat_cols).head(10)
-        fig_imp = go.Figure(go.Bar(
-            x=importances.values[::-1],
-            y=importances.index[::-1],
-            orientation="h",
-            marker_color="#0D7680",
-        ))
-        fig_imp.update_layout(
-            height=320,
-            template="plotly_white", paper_bgcolor="#FFF1E5", plot_bgcolor="#FFF1E5",
-            title="Top 10 feature importances",
-            xaxis_title="Importance",
-            margin=dict(t=40, l=160),
-        )
-        st.plotly_chart(fig_imp, use_container_width=True)
+during training; forecast error is irreducible on individual days.
+            """)
+        elif _detail_type == "lear":
+            st.markdown(f"""
+The **LEAR (Lasso Estimated AutoRegressive)** model trains one independent
+`LassoLarsIC` (AIC criterion) regressor per settlement period — 48 models in total —
+following [Lago et al. (2021)](https://doi.org/10.1016/j.apenergy.2021.116983).
+
+Each per-period model operates on a `StandardScaler`-normalised feature space so that
+Lasso's uniform L1 penalty is not biased by feature scale. The L1 penalty automatically
+zeroes out irrelevant features, making the model sparse and fast to retrain.
+
+**Features used (all available at end of day D-1):**
+- Wide D-1/D-2/D-7 price lags: all 48 settlement-period prices from each lag day (144 columns total) —
+  gives each period's model the full shape of prior price curves, not just same-period values
+- 7 binary day-of-week dummies (0 = Monday, 6 = Sunday) — linear models require explicit
+  dummies to learn per-day level shifts (sin/cos encodings are insufficient for a linear form)
+- Base tree-model features (lagged prices, generation mix, temporal encodings, BESS features)
+  are also included to give the linear model the same structural signals
+
+**Why LEAR is operationally interesting:** period-level Spearman rank correlation and
+Spike-RMSE (error on top-decile price periods) are the metrics that govern MPC dispatch
+quality, and LEAR literature benchmarks suggest it performs competitively with tree-based
+models on these — at much lower compute cost.
+
+**Train/test split:** strict temporal split — training data ends before
+`{DEFAULT_TEST_START}`. The model never sees future prices during training.
+
+**Known limitations:** linear models cannot capture non-linear interactions between
+features; extrapolation to price regimes outside the training distribution is well-defined
+but may be poorly calibrated.
+            """)
+        else:  # dnn
+            st.markdown(f"""
+The **DNN (Deep Neural Network)** model is a single global fully-connected network trained
+across all 48 settlement periods simultaneously, following
+[Lago et al. (2021)](https://doi.org/10.1016/j.apenergy.2021.116983).
+
+**Architecture:** 4 hidden layers (512 → 256 → 128 → 64), ReLU activations,
+Dropout(0.15) after each hidden layer for regularisation. Settlement period is encoded
+as a plain numeric input feature (unlike LEAR, which trains 48 separate models).
+
+**Training:** Adam optimiser; chronological 10% validation hold-out from the end of the
+training window; early stopping on validation loss with best-weights restore.
+Internal `StandardScaler` normalises all inputs before the network sees them.
+
+**Features used:** same wide D-1/D-2/D-7 price lag matrix as LEAR (144 columns) plus
+the base tree-model features (lagged prices, generation mix, temporal encodings, BESS features)
+and the raw `settlementPeriod` integer.
+
+**Target transform:** signed-log1p applied before fitting and inverted on predictions,
+consistent with the tree-based models.
+
+**Train/test split:** strict temporal split — training data ends before
+`{DEFAULT_TEST_START}`. The model never sees future prices during training.
+
+**Known limitations:** neural networks are harder to interpret than tree-based or linear
+models; training time is substantially longer; and on limited data (~30,000 rows) the
+advantage over LEAR may be marginal — revenue comparison settles this empirically.
+            """)
+            st.caption("Feature importances are not available for neural network models.")
+
+        if _detail_type != "dnn":
+            importances = get_feature_importances(_model, _feat_cols).head(10)
+            _imp_label = "Top 10 feature importances" if _detail_type in ("rf", "lgb") else "Top 10 Lasso coefficient magnitudes (mean across 48 period models)"
+            fig_imp = go.Figure(go.Bar(
+                x=importances.values[::-1],
+                y=importances.index[::-1],
+                orientation="h",
+                marker_color=_detail_colour,
+            ))
+            fig_imp.update_layout(
+                height=320,
+                template="plotly_white", paper_bgcolor="#FFF1E5", plot_bgcolor="#FFF1E5",
+                title=_imp_label,
+                xaxis_title="Importance",
+                margin=dict(t=40, l=160),
+            )
+            st.plotly_chart(fig_imp, use_container_width=True)
 
     with st.expander("Model performance metrics"):
         col_a, col_b = st.columns(2)
