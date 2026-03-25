@@ -66,7 +66,7 @@ REQUIRED_KEYS = {"pf_mpc", "naive_mpc", "ml_mpc"}
 
 # Which ML model is shown in the headline revenue-gap metrics on the Strategy Comparison tab.
 # Update to "ML Model — LGB" / "— LEAR" / "— DNN" after reviewing the revenue comparison.
-PRODUCTION_MODEL = "ML Model — RF"
+PRODUCTION_MODEL = "ML Model — DNN"
 
 
 # ---------------------------------------------------------------------------

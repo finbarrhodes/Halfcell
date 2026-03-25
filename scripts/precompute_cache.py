@@ -59,7 +59,7 @@ INITIAL_SOC    = 0.5   # Neutral midpoint; SoC tracked continuously thereafter
 DISPATCH_METHOD = "mpc"
 HORIZON         = 96    # 48h rolling LP horizon
 SERVICES        = ALL_SERVICES
-ML_MODEL_TYPE   = "rf"  # Current production model — update after revenue comparison
+ML_MODEL_TYPE   = "dnn"  # Production model — DNN wins on Spearman ρ, RMSE, and revenue
 
 # Set to a subset of ["rf", "lgb", "lear", "dnn"] to skip individual models.
 # Useful if e.g. PyTorch is unavailable (comment out "dnn") or a model fails.

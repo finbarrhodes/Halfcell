@@ -115,7 +115,7 @@ engine; only the price forecast fed to the LP differs:
 |---|---|---|
 | **Perfect Foresight** | Actual day-D wholesale prices | Theoretical revenue ceiling — achievable only with advance knowledge of the future |
 | **Naive (D-1 prices)** | Yesterday's 48 half-hourly prices | Zero-skill floor — the simplest possible baseline; any real model must beat this |
-| **ML Model** | Random Forest forecast for day D | Realistic best case using features available at end of day D-1 |
+| **ML Model (DNN)** | Deep neural network forecast for day D | Realistic best case using features available at end of day D-1; selected after revenue benchmarking against RF, LGB, and LEAR |
 
 Dispatch decisions are executed unconditionally at actual prices. Per-period revenue can
 be negative when forecast error causes an unfavourable trade — this is the realistic
@@ -230,18 +230,25 @@ st.divider()
 st.header("ML price forecast model")
 st.markdown(
     """
-The ML strategy uses a **Random Forest regressor** to predict the 48 half-hourly APXMIDP
-prices for day D using features available at the end of day D-1.
+The production ML strategy uses a **deep neural network (DNN)** to predict the 48
+half-hourly APXMIDP prices for day D using features available at the end of day D-1.
 
-*Why Random Forest?* The feature set is tabular (lagged prices, generation mix ratios,
-temporal encodings) rather than raw sequences; they require no feature scaling; they are
-robust on datasets of this size; and they provide interpretable feature importances. This
-choice is consistent with the electricity price forecasting literature, which finds that
-tree-based methods perform competitively against deep learning approaches on short-horizon
-day-ahead forecasting tasks, particularly when training data is limited
-([Lago et al., 2021](https://doi.org/10.1016/j.apenergy.2021.116983);
-[Weron, 2014](https://doi.org/10.1016/j.ijforecast.2014.08.008)). An LSTM was considered
-but is likely overkill given the training data size and would be harder to explain. A
+*Model selection:* Four ML models were benchmarked — Random Forest, LightGBM, LEAR
+(Lasso Estimated AutoRegressive), and DNN — on both forecasting accuracy and full MPC
+revenue backtest. The DNN was selected as the production model after outperforming the
+alternatives on Spearman rank correlation, RMSE, and realised backtest revenue.
+
+The DNN architecture follows [Lago et al. (2021)](https://doi.org/10.1016/j.apenergy.2021.116983):
+a single global fully-connected network across all 48 settlement periods, with 4 hidden
+layers (512 → 256 → 128 → 64), ReLU activations, and Dropout(0.15) for regularisation.
+Settlement period is encoded as a plain numeric input feature. All four models are still
+available for comparison in the Strategy Comparison tab of the backtester.
+
+*Why not tree-based?* Random Forest and LightGBM are strong baselines and remain available
+for comparison, but the DNN's ability to capture non-linear interactions between features
+across the full price curve gave it a material edge on the 2025 test period — particularly
+on Spearman ρ (rank correlation), which governs MPC dispatch quality, and on Spike-RMSE
+(error on high-price periods where arbitrage revenue is concentrated). A
 naive D-1 lag model sets the zero-skill baseline.
 
 **Features used (all available at end of day D-1):**
