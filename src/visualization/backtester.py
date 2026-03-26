@@ -922,8 +922,19 @@ with tab_strategy:
     )
     _detail_type, _detail_colour = _ml_options[_detail_model]
 
-    with st.spinner("Loading model… (cached after first load)"):
-        _model, _feat_cols, _train_m, _test_m = load_forecast_model(_detail_type)
+    # DNN requires PyTorch which is not available on all deployment environments
+    # (e.g. Streamlit Cloud). Its performance metrics are already stored in the
+    # manifest from the precompute run, and it has no meaningful feature importances,
+    # so we read from the manifest rather than re-training it live.
+    if _detail_type == "dnn":
+        _dnn_manifest_entry = manifest.get("dnn_mpc", {}).get("model_metrics", {})
+        _model    = None
+        _feat_cols = []
+        _train_m  = _dnn_manifest_entry.get("train", {})
+        _test_m   = _dnn_manifest_entry.get("test", {})
+    else:
+        with st.spinner("Loading model… (cached after first load)"):
+            _model, _feat_cols, _train_m, _test_m = load_forecast_model(_detail_type)
 
     with st.expander("Model architecture & features"):
         if _detail_type in ("rf", "lgb"):
@@ -1054,34 +1065,37 @@ advantage over LEAR may be marginal — revenue comparison settles this empirica
             st.plotly_chart(fig_imp, use_container_width=True)
 
     with st.expander("Model performance metrics"):
-        col_a, col_b = st.columns(2)
-        col_a.metric("Train RMSE (£/MWh)", f"{_train_m['rmse']:.2f}", help=f"n = {_train_m['n_samples']:,} periods")
-        col_b.metric("Test RMSE (£/MWh)",  f"{_test_m['rmse']:.2f}",  help=f"n = {_test_m['n_samples']:,} periods (held-out, after {DEFAULT_TEST_START})")
-        col_a.metric("Train MAE (£/MWh)",  f"{_train_m['mae']:.2f}")
-        col_b.metric("Test MAE (£/MWh)",   f"{_test_m['mae']:.2f}")
-        col_a.metric(
-            "Train Spearman ρ", f"{_train_m['spearman']:.3f}",
-            help="Rank correlation — ordinal accuracy governs MPC dispatch quality.",
-        )
-        col_b.metric(
-            "Test Spearman ρ",  f"{_test_m['spearman']:.3f}",
-            help="Rank correlation — ordinal accuracy governs MPC dispatch quality.",
-        )
-        if "spike_rmse" in _test_m:
+        if not _train_m or not _test_m:
+            st.caption("Performance metrics not available — re-run `scripts/precompute_cache.py` to populate the manifest.")
+        else:
+            col_a, col_b = st.columns(2)
+            col_a.metric("Train RMSE (£/MWh)", f"{_train_m['rmse']:.2f}", help=f"n = {_train_m['n_samples']:,} periods")
+            col_b.metric("Test RMSE (£/MWh)",  f"{_test_m['rmse']:.2f}",  help=f"n = {_test_m['n_samples']:,} periods (held-out, after {DEFAULT_TEST_START})")
+            col_a.metric("Train MAE (£/MWh)",  f"{_train_m['mae']:.2f}")
+            col_b.metric("Test MAE (£/MWh)",   f"{_test_m['mae']:.2f}")
             col_a.metric(
-                "Train Spike-RMSE (£/MWh)", f"{_train_m.get('spike_rmse', '—')}",
-                help="RMSE on top-decile price periods — where BESS arbitrage revenue is concentrated.",
+                "Train Spearman ρ", f"{_train_m['spearman']:.3f}",
+                help="Rank correlation — ordinal accuracy governs MPC dispatch quality.",
             )
             col_b.metric(
-                "Test Spike-RMSE (£/MWh)",  f"{_test_m['spike_rmse']}",
-                help="RMSE on top-decile price periods — where BESS arbitrage revenue is concentrated.",
+                "Test Spearman ρ",  f"{_test_m['spearman']:.3f}",
+                help="Rank correlation — ordinal accuracy governs MPC dispatch quality.",
             )
-        st.caption(
-            "**Interpretation:** MAE < 15 £/MWh is adequate for MPC dispatch; "
-            "MAE < 8 £/MWh is 'good'. "
-            "Spearman ρ > 0.8 indicates strong ordinal ranking accuracy. "
-            "Spike-RMSE reflects model quality on the high-price periods that drive arbitrage revenue."
-        )
+            if "spike_rmse" in _test_m:
+                col_a.metric(
+                    "Train Spike-RMSE (£/MWh)", f"{_train_m.get('spike_rmse', '—')}",
+                    help="RMSE on top-decile price periods — where BESS arbitrage revenue is concentrated.",
+                )
+                col_b.metric(
+                    "Test Spike-RMSE (£/MWh)",  f"{_test_m['spike_rmse']}",
+                    help="RMSE on top-decile price periods — where BESS arbitrage revenue is concentrated.",
+                )
+            st.caption(
+                "**Interpretation:** MAE < 15 £/MWh is adequate for MPC dispatch; "
+                "MAE < 8 £/MWh is 'good'. "
+                "Spearman ρ > 0.8 indicates strong ordinal ranking accuracy. "
+                "Spike-RMSE reflects model quality on the high-price periods that drive arbitrage revenue."
+            )
 
 
 # ---------------------------------------------------------------------------
