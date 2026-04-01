@@ -357,17 +357,15 @@ def calc_ancillary_revenue(
     services: list,
     start_date=None,
     end_date=None,
-    min_price: float = 0.0,
     fr_mw: float = None,
     fr_schedule: "pd.Series | None" = None,
 ) -> pd.DataFrame:
     """
     Monthly availability revenue from frequency response auctions.
 
-    Negative clearing prices occur in oversupplied GB markets (notably DR High).
-    The min_price floor (default 0.0) models an operator who sets a bid price
-    floor and opts out of any EFA block clearing below that threshold — a
-    rational strategy any real participant would adopt.
+    Negative clearing prices are included — an operator participating in all
+    clearing auctions regardless of sign, consistent with the reality of
+    increasing renewables penetration driving periodic negative price events.
 
     Parameters
     ----------
@@ -385,7 +383,6 @@ def calc_ancillary_revenue(
     """
     df = _filter_dates(auctions.copy(), "EFA Date", start_date, end_date)
     df = df[df["Service"].isin(services)]
-    df = df[df["Clearing Price"] >= min_price]
 
     if df.empty:
         return pd.DataFrame(columns=["month", "service", "revenue_gbp"])

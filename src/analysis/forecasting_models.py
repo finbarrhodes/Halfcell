@@ -3,12 +3,12 @@ Electricity Price Forecasting — Model Definitions
 ===================================================
 Self-contained model classes and factory function for price forecasting.
 All models expose a sklearn-compatible fit(X, y) / predict(X) interface and
-are wrapped by _LogTransformModel in price_forecast.train_forecast_model().
+are wrapped by _AsinhTransformModel in price_forecast.train_forecast_model().
 
 Models
 ------
-_LogTransformModel  : Target-transform wrapper (signed-log1p) applied to any
-                      base estimator; handles negative prices gracefully.
+_AsinhTransformModel : Target-transform wrapper (arcsinh) applied to any
+                       base estimator; handles negative prices gracefully.
 _LEARModel          : LEAR (Lasso Estimated AutoRegressive) — 48 per-period
                       LassoLarsIC regressors following Lago et al. (2021).
 _DNNModel           : Fully-connected DNN — 4 hidden layers (512→256→128→64),
@@ -25,17 +25,21 @@ import pandas as pd
 
 
 # ---------------------------------------------------------------------------
-# Log-transform model wrapper
+# Asinh-transform model wrapper
 # ---------------------------------------------------------------------------
 
-class _LogTransformModel:
+class _AsinhTransformModel:
     """
-    Wraps a sklearn/xgboost/lightgbm estimator with a signed-log1p target
+    Wraps a sklearn/xgboost/lightgbm estimator with an arcsinh target
     transform so that fit() and predict() both operate in price space.
 
-    Signed-log1p handles negative prices gracefully:
-        transform  : sign(y) * log1p(|y|)
-        inverse    : sign(p) * expm1(|p|)
+    arcsinh is variance-stabilising, symmetric around zero, and handles
+    negative prices natively — unlike log transforms. Recommended by
+    Lago et al. (2021) for electricity price forecasting as renewable
+    penetration increases the frequency of zero and negative price periods.
+
+        transform  : arcsinh(y)
+        inverse    : sinh(p)
     """
 
     def __init__(self, base_model):
@@ -43,14 +47,14 @@ class _LogTransformModel:
         self.feature_importances_: np.ndarray | None = None
 
     def fit(self, X, y):
-        y_log = np.sign(y) * np.log1p(np.abs(y))
-        self._model.fit(X, y_log)
+        y_tr = np.arcsinh(y)
+        self._model.fit(X, y_tr)
         self.feature_importances_ = self._model.feature_importances_
         return self
 
     def predict(self, X):
-        pred_log = self._model.predict(X)
-        return np.sign(pred_log) * np.expm1(np.abs(pred_log))
+        pred_tr = self._model.predict(X)
+        return np.sinh(pred_tr)
 
 
 # ---------------------------------------------------------------------------

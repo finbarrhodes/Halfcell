@@ -270,6 +270,14 @@ naive D-1 lag model sets the zero-skill baseline.
   discharge in expensive ones, flattening the merit order and compressing the spreads
   that arbitrage revenue depends on. Near-zero in 2019; a material signal by 2024–25.
 
+**Target transform:** arcsinh (`arcsinh(y)`) is applied to the target price before
+fitting, and inverted (`sinh(p)`) on predictions. This is a variance-stabilising
+transformation that is symmetric around zero and handles negative prices natively —
+unlike log-based transforms, which are undefined at zero and require workarounds for
+negative values. As renewable penetration increases the frequency of zero and negative
+price periods in GB, the arcsinh transform is both a literature-aligned choice
+(Lago et al., 2021) and a market-context-motivated one.
+
 **Train/test split:** strict temporal split — training data ends before 2025-03-01
 to prevent any look-ahead bias. The model never sees future prices during training.
 

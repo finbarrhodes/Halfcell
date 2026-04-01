@@ -33,7 +33,7 @@ import numpy as np
 import pandas as pd
 
 from src.analysis.forecasting_models import (
-    _LogTransformModel,
+    _AsinhTransformModel,
     _LEARModel,
     _DNNModel,
     _build_model,
@@ -78,7 +78,7 @@ def train_forecast_model(
     Returns
     -------
     (model, feature_cols, train_metrics, test_metrics) where:
-      model         : fitted _LogTransformModel wrapping the base estimator
+      model         : fitted _AsinhTransformModel wrapping the base estimator
       feature_cols  : list of column names used as features
       train_metrics : dict {rmse, mae, spearman, n_samples[, spike_rmse]}
       test_metrics  : dict {rmse, mae, spearman, n_samples[, spike_rmse]}
@@ -134,8 +134,8 @@ def train_forecast_model(
         ).fillna(0)
         X_test["settlementPeriod"] = test["settlementPeriod"].values
 
-    # Wrap with signed-log transform: fit/predict both operate in price space
-    model = _LogTransformModel(_build_model(model_type))
+    # Wrap with arcsinh transform: fit/predict both operate in price space
+    model = _AsinhTransformModel(_build_model(model_type))
     model.fit(X_train, y_train)
 
     # LEAR / DNN: cache extra features on the model so predict_day_prices can

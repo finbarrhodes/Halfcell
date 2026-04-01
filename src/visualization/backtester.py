@@ -976,9 +976,10 @@ interpretable feature importances. {_model_extra}
   BESS penetration as a fraction of total system generation. Near-zero in 2019; a material
   signal by 2024–25.
 
-**Target transform:** signed-log1p applied before fitting (`sign(y)·log1p(|y|)`) and
-inverted on predictions. Compresses the heavy-tailed price distribution so the model does
-not under-weight spike periods during training.
+**Target transform:** arcsinh applied before fitting (`arcsinh(y)`) and inverted on
+predictions (`sinh(p)`). Variance-stabilising and symmetric around zero; handles negative
+prices natively, consistent with Lago et al. (2021) and the growing frequency of zero
+and negative price periods driven by renewables penetration.
 
 **Train/test split:** strict temporal split — training data ends before
 `{DEFAULT_TEST_START}`. The model never sees future prices during training.
@@ -1034,7 +1035,7 @@ Internal `StandardScaler` normalises all inputs before the network sees them.
 the base tree-model features (lagged prices, generation mix, temporal encodings, BESS features)
 and the raw `settlementPeriod` integer.
 
-**Target transform:** signed-log1p applied before fitting and inverted on predictions,
+**Target transform:** arcsinh applied before fitting and inverted on predictions,
 consistent with the tree-based models.
 
 **Train/test split:** strict temporal split — training data ends before
