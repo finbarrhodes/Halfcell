@@ -1,0 +1,45 @@
+name: Keep Streamlit App Alive
+
+on:
+  schedule:
+    - cron: '0 */5 * * *'  # Every 5 hours — two-failure buffer before 12h sleep threshold
+  workflow_dispatch:        # Allow manual trigger for testing
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Playwright and Chromium
+        run: npx playwright install chromium --with-deps
+
+      - name: Ping Streamlit app
+        run: |
+          node -e "
+          const { chromium } = require('playwright');
+          (async () => {
+            const browser = await chromium.launch();
+            const page = await browser.newPage();
+            console.log('Navigating to https://halfcell.streamlit.app ...');
+            await page.goto('https://halfcell.streamlit.app', {
+              waitUntil: 'networkidle',
+              timeout: 120000
+            });
+            const title = await page.title();
+            console.log('Page title:', title);
+            // Confirm the Streamlit app root element is present (not the sleep shell)
+            const appRoot = await page.\$('[data-testid=\"stApp\"]');
+            if (appRoot) {
+              console.log('SUCCESS: Streamlit app is live.');
+            } else {
+              console.error('WARNING: App root element not found — app may still be waking up.');
+              process.exit(1);
+            }
+            await browser.close();
+          })();
+          "
