@@ -7,15 +7,18 @@ are wrapped by _AsinhTransformModel in price_forecast.train_forecast_model().
 
 Models
 ------
-_AsinhTransformModel : Target-transform wrapper (arcsinh) applied to any
-                       base estimator; handles negative prices gracefully.
-_LEARModel          : LEAR (Lasso Estimated AutoRegressive) — 48 per-period
-                      LassoLarsIC regressors following Lago et al. (2021).
-_DNNModel           : Fully-connected DNN — 4 hidden layers (512→256→128→64),
-                      ReLU, Dropout(0.15), early stopping; single global model
-                      across all 48 settlement periods.
-_build_model()      : Factory — returns the appropriate base estimator for a
-                      model_type string ("rf", "xgb", "lgb", "lear", "dnn").
+_AsinhTransformModel    : Target-transform wrapper (arcsinh) applied to any
+                          base estimator; handles negative prices gracefully.
+_LEARModel              : LEAR (Lasso Estimated AutoRegressive) — 48 per-period
+                          LassoLarsIC regressors following Lago et al. (2021).
+_LEARCalibratedEnsemble : Calibration-window ensemble for LEAR: N instances
+                          trained on different window lengths, predictions
+                          simple-averaged (Lago et al., 2021).
+_DNNModel               : Fully-connected DNN — 4 hidden layers (512→256→128→64),
+                          ReLU, Dropout(0.15), early stopping; single global model
+                          across all 48 settlement periods.
+_build_model()          : Factory — returns the appropriate base estimator for a
+                          model_type string ("rf", "xgb", "lgb", "lear", "dnn").
 """
 
 from __future__ import annotations
@@ -98,10 +101,13 @@ class _LEARModel:
         feat_arr = X_feat.values.astype(float)
         y_arr    = np.asarray(y, dtype=float)
 
+        n_features = feat_arr.shape[1]
         all_coefs: list = []
         for sp in range(1, 49):
             mask = sp_vals == sp
-            if mask.sum() < 30:
+            # LassoLarsIC requires n_samples > n_features to estimate noise
+            # variance; also enforce a 30-row floor for numerical stability.
+            if mask.sum() <= max(n_features, 30):
                 continue
             scaler = StandardScaler()
             X_sc   = scaler.fit_transform(feat_arr[mask])
@@ -128,6 +134,56 @@ class _LEARModel:
             X_sc     = self._scalers[sp].transform(X_feat[mask])
             out[mask] = m.predict(X_sc)
         return out
+
+
+# ---------------------------------------------------------------------------
+# LEAR calibration-window ensemble (Lago et al., 2021)
+# ---------------------------------------------------------------------------
+
+class _LEARCalibratedEnsemble:
+    """
+    Calibration-window ensemble for LEAR, following Lago et al. (2021).
+
+    Wraps N _AsinhTransformModel(_LEARModel()) instances trained on different
+    window lengths. Predictions are simple-averaged across all constituents.
+    Combining short windows (adapts to recent regime shifts) with long windows
+    (stable baselines) consistently outperforms any single calibration window.
+
+    Exposes the same interface as a single _AsinhTransformModel so all
+    downstream consumers (predict_day_prices, get_feature_importances) work
+    without modification:
+        predict(X)           -> np.ndarray  (averaged across all windows)
+        feature_importances_ -> np.ndarray  (averaged across all windows)
+        ._model              -> first constituent's _LEARModel, satisfying
+                                isinstance(model._model, _LEARModel) checks
+    """
+
+    def __init__(self, constituents: list) -> None:
+        if not constituents:
+            raise ValueError("_LEARCalibratedEnsemble requires at least one constituent.")
+        self._constituents = constituents
+        # Point ._model at the first constituent's inner _LEARModel so that
+        # isinstance checks and _lear_extra_df / _feat_names access in
+        # predict_day_prices and get_feature_importances work transparently.
+        self._model = constituents[0]._model
+
+        fi_arrays = [
+            m.feature_importances_ for m in constituents
+            if m.feature_importances_ is not None
+        ]
+        self.feature_importances_ = (
+            np.mean(fi_arrays, axis=0) if fi_arrays else None
+        )
+
+    def predict(self, X) -> np.ndarray:
+        # Average in arcsinh-transformed space, then apply sinh() once.
+        # Averaging in price space (after sinh) allows the exponential tail of
+        # sinh to amplify magnitude errors from any constituent — particularly
+        # for spike periods where arcsinh-space errors are small but price-space
+        # errors are enormous. Spearman survives this (ranks are scale-invariant)
+        # but RMSE and Spike-RMSE do not.
+        raw = np.stack([m._model.predict(X) for m in self._constituents], axis=0)
+        return np.sinh(raw.mean(axis=0))
 
 
 # ---------------------------------------------------------------------------

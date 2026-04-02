@@ -233,10 +233,9 @@ st.markdown(
 The production ML strategy uses a **deep neural network (DNN)** to predict the 48
 half-hourly APXMIDP prices for day D using features available at the end of day D-1.
 
-*Model selection:* Four ML models were benchmarked — Random Forest, LightGBM, LEAR
+*Model selection:* Four ML models are benchmarked — Random Forest, LightGBM, LEAR
 (Lasso Estimated AutoRegressive), and DNN — on both forecasting accuracy and full MPC
-revenue backtest. The DNN was selected as the production model after outperforming the
-alternatives on Spearman rank correlation, RMSE, and realised backtest revenue.
+revenue backtest. All four are available for comparison in the Strategy Comparison tab.
 
 The DNN architecture follows [Lago et al. (2021)](https://doi.org/10.1016/j.apenergy.2021.116983):
 a single global fully-connected network across all 48 settlement periods, with 4 hidden
@@ -278,8 +277,25 @@ negative values. As renewable penetration increases the frequency of zero and ne
 price periods in GB, the arcsinh transform is both a literature-aligned choice
 (Lago et al., 2021) and a market-context-motivated one.
 
+**LEAR — calibration-window ensemble:** The LEAR model implements the full
+calibration-window combining approach from Lago et al. (2021). Six instances are trained
+on windows of different lengths — 8 weeks, 6 months, 1 year, 2 years, 3 years, and the
+full training history — and their day-ahead predictions are simple-averaged. Short windows
+allow the model to adapt to recent market regime shifts (e.g. the growing BESS fleet
+progressively compressing arbitrage spreads); long windows provide stable baselines for
+prices driven by structural fundamentals. Combining them consistently outperforms any
+single window. The combining method is a simple unweighted average, which Lago et al.
+(2021) show to be competitive with weighted combinations while having no hyperparameters
+to overfit.
+
+**LEAR — feature matrix design:** The same-period lag columns (`apx_lag_1d/2d/7d/14d`) included
+in the tree-model feature set are excluded from LEAR's feature matrix, as they exactly duplicate
+entries already present in the wide lag matrix and worsen the Gram matrix condition number without
+contributing any new information.
+
 **Train/test split:** strict temporal split — training data ends before 2025-03-01
-to prevent any look-ahead bias. The model never sees future prices during training.
+to prevent any look-ahead bias. No calibration window for any model includes data on or
+after this date.
 
 **Known limitations:** tree-based models cannot extrapolate beyond the price ranges seen
 during training; electricity price forecasting is inherently noisy; and the model improves

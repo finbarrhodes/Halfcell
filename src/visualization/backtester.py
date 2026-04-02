@@ -997,21 +997,24 @@ Each per-period model operates on a `StandardScaler`-normalised feature space so
 Lasso's uniform L1 penalty is not biased by feature scale. The L1 penalty automatically
 zeroes out irrelevant features, making the model sparse and fast to retrain.
 
+**Calibration-window ensemble (Lago et al., 2021):** rather than training on the full
+history, six models are trained on different window lengths — 8 weeks, 6 months, 1 year,
+2 years, 3 years, and full history — and their day-ahead predictions are simple-averaged.
+Short windows adapt to recent regime shifts (e.g. the growing BESS fleet compressing
+arbitrage spreads); long windows provide stable baselines. Combining them consistently
+outperforms any single calibration window, per Lago et al. (2021).
+
 **Features used (all available at end of day D-1):**
 - Wide D-1/D-2/D-7 price lags: all 48 settlement-period prices from each lag day (144 columns total) —
   gives each period's model the full shape of prior price curves, not just same-period values
 - 7 binary day-of-week dummies (0 = Monday, 6 = Sunday) — linear models require explicit
   dummies to learn per-day level shifts (sin/cos encodings are insufficient for a linear form)
-- Base tree-model features (lagged prices, generation mix, temporal encodings, BESS features)
-  are also included to give the linear model the same structural signals
-
-**Why LEAR is operationally interesting:** period-level Spearman rank correlation and
-Spike-RMSE (error on top-decile price periods) are the metrics that govern MPC dispatch
-quality, and LEAR literature benchmarks suggest it performs competitively with tree-based
-models on these — at much lower compute cost.
+- Base structural features (generation mix, prev-day statistics, temporal encodings, BESS features) —
+  same-period lag columns (`apx_lag_*d`) are excluded as they duplicate entries in the wide lag matrix
+  exactly and worsen the Gram matrix condition number without adding information
 
 **Train/test split:** strict temporal split — training data ends before
-`{DEFAULT_TEST_START}`. The model never sees future prices during training.
+`{DEFAULT_TEST_START}`. No window includes any data on or after this date.
 
 **Known limitations:** linear models cannot capture non-linear interactions between
 features; extrapolation to price regimes outside the training distribution is well-defined

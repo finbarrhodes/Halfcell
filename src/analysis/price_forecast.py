@@ -34,6 +34,7 @@ import pandas as pd
 
 from src.analysis.forecasting_models import (
     _AsinhTransformModel,
+    _LEARCalibratedEnsemble,
     _LEARModel,
     _DNNModel,
     _build_model,
@@ -55,6 +56,169 @@ from src.analysis.features import load_bess_capacity, build_feature_matrix  # no
 # Default temporal split: everything before this date is training data.
 # ~72 months train (Jan 2019–Feb 2025), ~12 months test (Mar 2025–Feb 2026).
 DEFAULT_TEST_START = "2025-03-01"
+
+# ---------------------------------------------------------------------------
+# LEAR calibration window definitions (Lago et al., 2021)
+# ---------------------------------------------------------------------------
+
+# (label, weeks) pairs; None = full training history.
+# Short windows adapt to recent regime shifts (BESS fleet growth, price
+# suppression); long windows provide stable baselines. Simple averaging of
+# all window predictions consistently outperforms any single window.
+LEAR_CALIBRATION_WINDOWS: list[tuple[str | None, int | None]] = [
+    ("8w",  8),
+    ("26w", 26),
+    ("52w", 52),
+    ("2yr", 104),
+    ("3yr", 156),
+    (None,  None),   # full history
+]
+
+# Skip any window whose training slice falls below this row count.
+# _LEARModel silently omits settlement periods with < 30 rows; below this
+# total threshold enough periods are skipped to degrade the ensemble average.
+_LEAR_MIN_TRAIN_ROWS: int = 48 * 30  # 1 440
+
+
+# ---------------------------------------------------------------------------
+# Shared metrics helper
+# ---------------------------------------------------------------------------
+
+def _compute_metrics(model, X, y) -> dict:
+    """Compute RMSE, MAE, Spearman ρ, and Spike-RMSE for model predictions."""
+    from sklearn.metrics import mean_squared_error, mean_absolute_error
+    from scipy.stats import spearmanr
+
+    pred  = model.predict(X)
+    y_arr = np.asarray(y)
+    rmse  = float(np.sqrt(mean_squared_error(y_arr, pred)))
+    mae   = float(mean_absolute_error(y_arr, pred))
+
+    sp_result = spearmanr(y_arr, pred)
+    sp_corr   = float(
+        sp_result.statistic if hasattr(sp_result, "statistic") else sp_result.correlation
+    )
+
+    threshold  = float(np.percentile(y_arr, 90))
+    spike_mask = y_arr >= threshold
+    spike_rmse = (
+        float(np.sqrt(mean_squared_error(y_arr[spike_mask], pred[spike_mask])))
+        if spike_mask.sum() >= 10 else None
+    )
+
+    m = {
+        "rmse":      round(rmse, 2),
+        "mae":       round(mae, 2),
+        "spearman":  round(sp_corr, 3),
+        "n_samples": len(y_arr),
+    }
+    if spike_rmse is not None:
+        m["spike_rmse"] = round(spike_rmse, 2)
+    return m
+
+
+# ---------------------------------------------------------------------------
+# LEAR calibration-window training
+# ---------------------------------------------------------------------------
+
+def _train_lear_calibrated(
+    feature_df: pd.DataFrame,
+    feature_cols: list,
+    test_start: str,
+    _lear_extra: pd.DataFrame,
+    _extra_cols: list,
+) -> tuple:
+    """
+    Train a LEAR calibration-window ensemble following Lago et al. (2021).
+
+    Trains one _AsinhTransformModel(_LEARModel()) per window in
+    LEAR_CALIBRATION_WINDOWS, skipping any window below _LEAR_MIN_TRAIN_ROWS.
+    Returns a _LEARCalibratedEnsemble whose predictions are the simple average
+    across all valid windows.
+
+    Returns
+    -------
+    (ensemble, train_metrics, test_metrics)
+    """
+    test_ts = pd.Timestamp(test_start)
+    test    = feature_df[feature_df["settlementDate"] >= test_ts]
+
+    # --- Option A: drop same-period lag columns that are strictly redundant for LEAR.
+    # apx_lag_1d/2d/7d/14d each equal the row's own wide-lag column (lear_lag{n}d_d_sp_{sp})
+    # so they add zero information but worsen the Gram matrix condition number.
+    _LEAR_REDUNDANT_LAGS = {"apx_lag_1d", "apx_lag_2d", "apx_lag_7d", "apx_lag_14d"}
+    feature_cols = [c for c in feature_cols if c not in _LEAR_REDUNDANT_LAGS]
+
+    # Build X_test once — identical for all windows
+    _test_extra = (
+        test[["settlementDate", "settlementPeriod"]]
+        .merge(_lear_extra, on=["settlementDate", "settlementPeriod"], how="left")
+    )
+    X_test = pd.concat(
+        [test[feature_cols].fillna(0).reset_index(drop=True),
+         _test_extra[_extra_cols].reset_index(drop=True)],
+        axis=1,
+    ).fillna(0)
+    X_test["settlementPeriod"] = test["settlementPeriod"].values
+    y_test = test["apx_price"]
+
+    constituents: list = []
+    X_train_full: pd.DataFrame | None = None
+    y_train_full: pd.Series   | None = None
+
+    for _label, weeks in LEAR_CALIBRATION_WINDOWS:
+        window_start = (
+            test_ts - pd.Timedelta(weeks=weeks)
+            if weeks is not None else pd.Timestamp("1900-01-01")
+        )
+        train = feature_df[
+            (feature_df["settlementDate"] >= window_start) &
+            (feature_df["settlementDate"] < test_ts)
+        ]
+        if len(train) < _LEAR_MIN_TRAIN_ROWS:
+            continue
+
+        _train_extra = (
+            train[["settlementDate", "settlementPeriod"]]
+            .merge(_lear_extra, on=["settlementDate", "settlementPeriod"], how="left")
+        )
+        X_win = pd.concat(
+            [train[feature_cols].fillna(0).reset_index(drop=True),
+             _train_extra[_extra_cols].reset_index(drop=True)],
+            axis=1,
+        ).fillna(0)
+        X_win["settlementPeriod"] = train["settlementPeriod"].values
+        y_win = train["apx_price"]
+
+        m = _AsinhTransformModel(_build_model("lear"))
+        m.fit(X_win, y_win)
+        # Skip windows where too few SP models were fitted — this happens when
+        # n_samples_per_SP <= n_features (short windows with wide lag matrix).
+        # A constituent with fewer than 24 fitted models would predict zero for
+        # the missing periods and degrade the ensemble average.
+        if len(m._model._models) < 24:
+            continue
+        m._model._lear_extra_df = _lear_extra   # shared reference, no copies
+        constituents.append(m)
+
+        if weeks is None:   # full-history window — use for train metrics
+            X_train_full = X_win
+            y_train_full = y_win
+
+    if not constituents:
+        raise RuntimeError(
+            "No valid LEAR calibration windows — all windows below "
+            f"the minimum row threshold of {_LEAR_MIN_TRAIN_ROWS}."
+        )
+
+    ensemble     = _LEARCalibratedEnsemble(constituents)
+    train_metrics = (
+        _compute_metrics(ensemble, X_train_full, y_train_full)
+        if X_train_full is not None else {}
+    )
+    test_metrics = _compute_metrics(ensemble, X_test, y_test)
+
+    return ensemble, train_metrics, test_metrics
 
 
 # ---------------------------------------------------------------------------
@@ -83,9 +247,6 @@ def train_forecast_model(
       train_metrics : dict {rmse, mae, spearman, n_samples[, spike_rmse]}
       test_metrics  : dict {rmse, mae, spearman, n_samples[, spike_rmse]}
     """
-    from sklearn.metrics import mean_squared_error, mean_absolute_error
-    from scipy.stats import spearmanr
-
     # Resolve the full feature column list (base + any per-fuel gen columns present)
     gen_fuel_cols = sorted([
         c for c in feature_df.columns
@@ -109,10 +270,19 @@ def train_forecast_model(
     # DNN uses it as a plain numeric input feature.
     _lear_extra: pd.DataFrame | None = None
     if model_type in ("lear", "dnn"):
-        _lear_extra  = _build_lear_extra_features(feature_df)
-        _extra_cols  = [c for c in _lear_extra.columns
-                        if c not in ("settlementDate", "settlementPeriod")]
+        _lear_extra = _build_lear_extra_features(feature_df)
+        _extra_cols = [c for c in _lear_extra.columns
+                       if c not in ("settlementDate", "settlementPeriod")]
 
+        # LEAR: delegate entirely to the calibration-window ensemble helper.
+        # All window slicing, X assembly, fitting, and metrics are handled there.
+        if model_type == "lear":
+            ensemble, train_metrics, test_metrics = _train_lear_calibrated(
+                feature_df, feature_cols, test_start, _lear_extra, _extra_cols
+            )
+            return ensemble, feature_cols, train_metrics, test_metrics
+
+        # DNN: augment X_train / X_test with the wide lag features
         _train_extra = (
             train[["settlementDate", "settlementPeriod"]]
             .merge(_lear_extra, on=["settlementDate", "settlementPeriod"], how="left")
@@ -138,45 +308,13 @@ def train_forecast_model(
     model = _AsinhTransformModel(_build_model(model_type))
     model.fit(X_train, y_train)
 
-    # LEAR / DNN: cache extra features on the model so predict_day_prices can
+    # DNN: cache extra features on the model so predict_day_prices can
     # retrieve the wide lag columns without rebuilding them on every call
-    if model_type in ("lear", "dnn") and _lear_extra is not None:
+    if model_type == "dnn" and _lear_extra is not None:
         model._model._lear_extra_df = _lear_extra
 
-    def _metrics(X, y):
-        pred = model.predict(X)
-        y_arr = np.asarray(y)
-        rmse = float(np.sqrt(mean_squared_error(y_arr, pred)))
-        mae  = float(mean_absolute_error(y_arr, pred))
-
-        # Spearman rank correlation of the 48-period daily rankings
-        # (ordinal accuracy — directly governs greedy dispatch quality)
-        sp_result  = spearmanr(y_arr, pred)
-        sp_corr    = float(
-            sp_result.statistic if hasattr(sp_result, "statistic") else sp_result.correlation
-        )
-
-        # Spike RMSE: RMSE restricted to top-decile actual price periods
-        # (the periods that matter most for BESS arbitrage revenue)
-        threshold  = float(np.percentile(y_arr, 90))
-        spike_mask = y_arr >= threshold
-        spike_rmse = (
-            float(np.sqrt(mean_squared_error(y_arr[spike_mask], pred[spike_mask])))
-            if spike_mask.sum() >= 10 else None
-        )
-
-        m = {
-            "rmse":     round(rmse, 2),
-            "mae":      round(mae, 2),
-            "spearman": round(sp_corr, 3),
-            "n_samples": len(y_arr),
-        }
-        if spike_rmse is not None:
-            m["spike_rmse"] = round(spike_rmse, 2)
-        return m
-
-    train_metrics = _metrics(X_train, y_train)
-    test_metrics  = _metrics(X_test,  y_test)
+    train_metrics = _compute_metrics(model, X_train, y_train)
+    test_metrics  = _compute_metrics(model, X_test,  y_test)
 
     return model, feature_cols, train_metrics, test_metrics
 
