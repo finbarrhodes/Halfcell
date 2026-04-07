@@ -7,6 +7,9 @@ Can still be run standalone for local development:
 """
 
 import streamlit as st
+import pandas as pd
+import plotly.graph_objects as go
+from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # Standalone guard — set_page_config only when run directly, not via app.py
@@ -19,6 +22,14 @@ try:
     )
 except st.errors.StreamlitAPIException:
     pass  # already set by app.py
+
+_BESS_CAP_PATH = Path(__file__).parent.parent.parent / "data" / "raw" / "bess_fleet_capacity_raw.csv"
+
+
+@st.cache_data
+def _load_bess_capacity() -> pd.DataFrame:
+    return pd.read_csv(_BESS_CAP_PATH, parse_dates=["month"])
+
 
 # ---------------------------------------------------------------------------
 # Header
@@ -183,6 +194,46 @@ st.markdown(
     | **2023** | Revenue compression accelerates; wholesale arbitrage and Capacity Market grow significantly in relative importance |
     | **2024–25** | Stack diversification — operators blend FR, arbitrage, and BM participation; long-duration projects begin to emerge |
     """
+)
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# ---------------------------------------------------------------------------
+# BESS Fleet Capacity Chart
+# ---------------------------------------------------------------------------
+
+st.subheader("GB Operational BESS Fleet Capacity")
+st.markdown(
+    "Cumulative installed capacity of operational grid-scale battery storage in Great Britain, "
+    "by month — showing the fleet's rapid expansion since 2020."
+)
+
+cap = _load_bess_capacity()
+fig_cap = go.Figure()
+fig_cap.add_trace(go.Scatter(
+    x=cap["month"],
+    y=cap["bess_fleet_mw"],
+    mode="lines",
+    fill="tozeroy",
+    line=dict(color="#C9400A", width=2),
+    fillcolor="rgba(201, 64, 10, 0.12)",
+    hovertemplate="%{x|%b %Y}: %{y:,.0f} MW<extra></extra>",
+))
+fig_cap.update_layout(
+    height=320,
+    template="plotly_white",
+    paper_bgcolor="#FFF1E5",
+    plot_bgcolor="#FFF1E5",
+    yaxis_title="Installed Capacity (MW)",
+    showlegend=False,
+    margin=dict(l=0, r=20, t=10, b=0),
+)
+fig_cap.update_xaxis(showgrid=False)
+st.plotly_chart(fig_cap, use_container_width=True)
+st.caption(
+    "Source: DESNZ [Renewable Energy Planning Database (REPD)](https://www.gov.uk/government/publications/renewable-energy-planning-database-monthly-extract). "
+    "The REPD is published quarterly and lags the current date by approximately one quarter; "
+    "trailing months are linearly extrapolated from the preceding 12-month trend."
 )
 
 st.divider()
