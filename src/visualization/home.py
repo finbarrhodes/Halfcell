@@ -205,7 +205,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 st.subheader("GB Operational BESS Fleet Capacity")
 st.markdown(
     "Cumulative installed capacity of operational grid-scale battery storage in Great Britain, "
-    "by month — showing the fleet's rapid expansion since 2020."
+    "by month."
 )
 
 cap = _load_bess_capacity()
