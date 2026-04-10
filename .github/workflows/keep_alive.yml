@@ -23,7 +23,7 @@ jobs:
           from playwright.async_api import async_playwright, TimeoutError as PWTimeout
 
           URL     = "https://halfcell.streamlit.app"
-          TIMEOUT = 90_000  # ms — generous for a cold wake
+          TIMEOUT = 150_000  # ms — 2.5 min, accounts for cold wake from sleep
 
           async def main():
               async with async_playwright() as pw:
@@ -32,21 +32,27 @@ jobs:
 
                   print(f"Navigating to {URL} ...")
                   await page.goto(URL, wait_until="domcontentloaded", timeout=TIMEOUT)
+                  print(f"Page title: {await page.title()}")
 
-                  # If the app is already sleeping, Streamlit shows a wake prompt.
-                  # Click it so the visit actually triggers a wake, not just a bounce.
-                  try:
-                      btn = await page.wait_for_selector(
-                          "text=Yes, get this app back up!",
-                          timeout=6_000
-                      )
-                      print("App was sleeping — clicking wake button ...")
-                      await btn.click()
-                  except PWTimeout:
-                      pass  # App already live, no wake prompt present
+                  # Dump visible text to diagnose what state the page is in
+                  body_text = await page.inner_text("body")
+                  print(f"Body preview: {body_text[:300]}")
 
-                  # Wait for the Streamlit root element — confirms the app rendered,
-                  # not just that the server responded.
+                  # If the app is sleeping, Streamlit shows a wake prompt — click it.
+                  # The button text may vary; check both known variants.
+                  for wake_text in ["Yes, get this app back up!", "Wake app"]:
+                      try:
+                          btn = await page.wait_for_selector(
+                              f"text={wake_text}",
+                              timeout=5_000
+                          )
+                          print(f"App was sleeping — clicking '{wake_text}' ...")
+                          await btn.click()
+                          break
+                      except PWTimeout:
+                          pass
+
+                  # Wait for the Streamlit root element — confirms the app rendered.
                   try:
                       await page.wait_for_selector(
                           '[data-testid="stApp"]',
