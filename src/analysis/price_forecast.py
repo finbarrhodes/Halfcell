@@ -138,7 +138,10 @@ def _train_lear_calibrated(
 
     Returns
     -------
-    (ensemble, train_metrics, test_metrics)
+    (ensemble, feature_cols, train_metrics, test_metrics)
+        feature_cols is the filtered list (redundant lags removed) — callers
+        must use this, not the original, so that predict_day_prices builds X
+        with the same column set the scalers were fitted on.
     """
     test_ts = pd.Timestamp(test_start)
     test    = feature_df[feature_df["settlementDate"] >= test_ts]
@@ -218,7 +221,7 @@ def _train_lear_calibrated(
     )
     test_metrics = _compute_metrics(ensemble, X_test, y_test)
 
-    return ensemble, train_metrics, test_metrics
+    return ensemble, feature_cols, train_metrics, test_metrics
 
 
 # ---------------------------------------------------------------------------
@@ -277,10 +280,10 @@ def train_forecast_model(
         # LEAR: delegate entirely to the calibration-window ensemble helper.
         # All window slicing, X assembly, fitting, and metrics are handled there.
         if model_type == "lear":
-            ensemble, train_metrics, test_metrics = _train_lear_calibrated(
+            ensemble, lear_feature_cols, train_metrics, test_metrics = _train_lear_calibrated(
                 feature_df, feature_cols, test_start, _lear_extra, _extra_cols
             )
-            return ensemble, feature_cols, train_metrics, test_metrics
+            return ensemble, lear_feature_cols, train_metrics, test_metrics
 
         # DNN: augment X_train / X_test with the wide lag features
         _train_extra = (
