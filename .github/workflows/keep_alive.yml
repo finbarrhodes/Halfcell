@@ -13,7 +13,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Install Playwright and Chromium
         run: |
@@ -22,7 +22,7 @@ jobs:
 
       - name: Ping Streamlit app
         run: |
-          node -e "
+          cat > ping.js << 'EOF'
           const { chromium } = require('playwright');
           (async () => {
             const browser = await chromium.launch();
@@ -34,8 +34,7 @@ jobs:
             });
             const title = await page.title();
             console.log('Page title:', title);
-            // Confirm the Streamlit app root element is present (not the sleep shell)
-            const appRoot = await page.\$('[data-testid=\"stApp\"]');
+            const appRoot = await page.$('[data-testid="stApp"]');
             if (appRoot) {
               console.log('SUCCESS: Streamlit app is live.');
             } else {
@@ -44,4 +43,5 @@ jobs:
             }
             await browser.close();
           })();
-          "
+          EOF
+          node ping.js
