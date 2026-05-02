@@ -5,6 +5,9 @@ on:
     - cron: '0 6 * * *'   # 06:00 UTC daily — after overnight settlement data lands
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   refresh:
     runs-on: ubuntu-latest
