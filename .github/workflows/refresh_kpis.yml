@@ -1,0 +1,40 @@
+name: Refresh Market KPI Snapshot
+
+on:
+  schedule:
+    - cron: '0 6 * * *'   # 06:00 UTC daily — after overnight settlement data lands
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install pandas pyarrow
+
+      - name: Compute KPIs
+        run: python scripts/compute_kpis.py
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/cache/latest_kpis.json
+          if git diff --cached --quiet; then
+            echo "No changes to KPI snapshot — skipping commit."
+          else
+            git commit -m "chore: refresh market KPI snapshot [skip ci]"
+            git push
+          fi

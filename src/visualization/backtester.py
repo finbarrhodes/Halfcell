@@ -449,12 +449,12 @@ with st.expander("Price forecasting strategies — what each one represents"):
         arbitrage value estimate in Stage 1 (leading to better FR/arbitrage splits) and
         directly improves MPC dispatch quality in Stage 2.
 
-        The **revenue gap** metric quantifies how much of the theoretically capturable
+        The **foresight ratio** quantifies how much of the theoretically capturable
         improvement the ML model actually delivers:
 
-            gap = (ML revenue − Naive revenue) / (Perfect Foresight revenue − Naive revenue)
+            foresight ratio = (ML revenue − Naive revenue) / (Perfect Foresight revenue − Naive revenue)
 
-        A gap of 1.0 means the ML model matches perfect foresight. Published literature
+        A ratio of 1.0 means the ML model matches perfect foresight. Published literature
         suggests well-tuned ML models typically achieve 70–85% in normal markets.
 
         *\\* Naive: yesterday's half-hourly prices are used as today's forecast.
@@ -739,8 +739,15 @@ with tab_strategy:
         naive_net = _all["Naive (D-1 prices)"].get("total_net", 0)
         ml_net    = _all["ML Model"].get("total_net", 0)
 
-        # Revenue gap
+        # Foresight ratio (total net revenue)
         gap = compute_revenue_gap(ml_net, naive_net, pf_net)
+
+        # Arbitrage-only foresight ratios: how much of PF arbitrage each strategy captures
+        pf_arb    = _all["Perfect Foresight"]["breakdown"].get("Arbitrage", 0)
+        ml_arb    = _all["ML Model"]["breakdown"].get("Arbitrage", 0)
+        naive_arb = _all["Naive (D-1 prices)"]["breakdown"].get("Arbitrage", 0)
+        ml_arb_ratio    = ml_arb    / pf_arb if pf_arb > 0 else None
+        naive_arb_ratio = naive_arb / pf_arb if pf_arb > 0 else None
 
         # Bar chart: annualised per MW for each strategy
         strat_labels = ["Naive*", "ML Model\n(Random Forest)", "Perfect Foresight"]
@@ -781,9 +788,9 @@ with tab_strategy:
                 "the ceiling."
             )
             st.markdown(
-                "The **revenue gap metric** below quantifies this as a fraction of the "
-                "capturable improvement: `gap = (ML − Naive) / (PF − Naive)`. "
-                "A gap of 70–85% is considered strong performance in published GB and "
+                "The **foresight ratio** below quantifies this as a fraction of the "
+                "capturable improvement: `(ML − Naive) / (PF − Naive)`. "
+                "A ratio of 70–85% is considered strong performance in published GB and "
                 "European electricity price forecasting literature."
             )
 
@@ -835,19 +842,42 @@ with tab_strategy:
                 help="Upper bound — dispatch using actual prices known in advance.",
             )
             col_g4.metric(
-                "Revenue gap",
+                "Foresight ratio",
                 f"{gap:.1%}",
                 help=(
                     "Fraction of the theoretically capturable improvement over naive "
                     "that the ML forecast actually delivers. "
-                    "gap = (ML − naive) / (perfect − naive). "
+                    "(ML − naive) / (perfect − naive). "
                     "Literature benchmark: ML typically achieves 70–85% in normal markets."
                 ),
             )
+
+        if ml_arb_ratio is not None:
+            st.markdown("**Arbitrage foresight ratio** — arbitrage revenue as a fraction of perfect-foresight arbitrage, isolating forecast-dependent returns from FR availability income.")
+            col_a1, col_a2, _, _ = st.columns(4)
+            col_a1.metric(
+                "ML arb. foresight ratio",
+                f"{ml_arb_ratio:.1%}",
+                help=(
+                    "Arbitrage revenue (ML) ÷ arbitrage revenue (Perfect Foresight). "
+                    "Unlike the overall foresight ratio, FR availability income — which is "
+                    "identical across strategies — is excluded, so this reflects forecast "
+                    "quality alone."
+                ),
+            )
+            col_a2.metric(
+                "Naive arb. foresight ratio",
+                f"{naive_arb_ratio:.1%}",
+                help=(
+                    "Arbitrage revenue (Naive D-1) ÷ arbitrage revenue (Perfect Foresight). "
+                    "Sets the zero-skill floor for arbitrage capture."
+                ),
+            )
+
         st.caption(
             "All three strategies use identical MPC dispatch with the fixed 50 MW / 2h battery. "
             "The chart isolates the value of forecast quality: Naive sets the zero-skill floor, "
-            "Perfect Foresight the ceiling, and ML captures a realistic fraction of the gap."
+            "Perfect Foresight the ceiling, and the ML foresight ratio shows how close the model gets."
         )
 
     # ML model detail — load once, display in expanders

@@ -27,7 +27,7 @@ except st.errors.StreamlitAPIException:
 st.title("Halfcell")
 st.markdown("<br>", unsafe_allow_html=True)
 st.markdown(
-    "Welcome to Halfcell — an interactive analytics tool for grid-scale battery storage markets "
+    "Welcome to Halfcell, an interactive analytics tool for grid-scale battery storage markets "
     "in Great Britain. Battery energy storage systems (BESS) are a complex part of Great Britain's "
     "energy transition; this tool is designed to help unpack how they operate, how they make money, "
     "and how market conditions and data science are impacting BESS' role in the grid."

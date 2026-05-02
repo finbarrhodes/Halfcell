@@ -6,11 +6,13 @@ Can still be run standalone for local development:
     streamlit run src/visualization/dashboard.py
 """
 
+import json
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from datetime import datetime, timezone
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -116,25 +118,186 @@ else:
 
 # Header
 st.title("Market Overview")
-st.markdown("Data from the **Elexon Insights Solution API** and **NESO Data Portal**.")
-
-# Top-level metrics
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Auction Records", f"{len(auction_filtered):,}")
-col2.metric("System Price Records", f"{len(sys_prices):,}")
-col3.metric("Market Index Records", f"{len(mkt_index):,}")
-col4.metric("Generation Records", f"{len(gen_fuel):,}")
 
 # ---------------------------------------------------------------------------
-# Outer tab layout
+# Market Snapshot KPIs
 # ---------------------------------------------------------------------------
-outer_fr, outer_grid = st.tabs(["Frequency Response Markets", "Grid & Settlement Prices"])
+
+def _fmt_delta(diff: float, label: str) -> str:
+    sign = "-" if diff < 0 else ""
+    return f"{sign}£{abs(diff):.2f} {label}"
+
+
+def _teal_metric(label: str, value: str, delta: str, help: str = "") -> None:
+    """Metric card matching Streamlit's layout but with brand-teal delta indicators."""
+    arrow = "▼" if delta.startswith("-") else "▲"
+    title_attr = f'title="{help}"' if help else ""
+    st.markdown(
+        f"""
+        <div {title_attr} style="cursor:default;">
+            <p style="margin:0; font-size:0.875rem; color:#6b7280;">{label}</p>
+            <p style="margin:4px 0 2px; font-size:1.75rem; font-weight:600; line-height:1.2;">{value}</p>
+            <p style="margin:0; font-size:0.875rem; color:#0D7680;">{arrow} {delta}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+CACHE    = Path(__file__).parent.parent.parent / "data" / "cache"
+KPI_FILE = CACHE / "latest_kpis.json"
+_KPI_STALE_DAYS = 7
+
+
+def _market_kpis(auctions_df: pd.DataFrame, mkt_df: pd.DataFrame) -> dict:
+    """Compute KPIs inline from loaded DataFrames (fallback path)."""
+    out = {}
+
+    dch = auctions_df[auctions_df["Service"] == "DCH"]
+    if not dch.empty:
+        daily     = dch.groupby("EFA Date")["Clearing Price"].mean().sort_index()
+        latest_dt = daily.index.max()
+        cut30     = latest_dt - pd.Timedelta(days=30)
+        cut90     = latest_dt - pd.Timedelta(days=90)
+        out["dch_latest"]      = daily.iloc[-1]
+        out["dch_latest_date"] = latest_dt
+        out["dch_30d_avg"]     = daily[daily.index >= cut30].mean()
+        out["dch_90d_avg"]     = daily[daily.index >= cut90].mean()
+
+    apx = mkt_df[mkt_df["dataProvider"] == "APXMIDP"]
+    if not apx.empty:
+        spread    = apx.groupby("settlementDate")["price"].agg(lambda x: x.max() - x.min())
+        spread    = spread[spread > 0].sort_index()
+        latest_mkt = spread.index.max()
+        cut30m    = latest_mkt - pd.Timedelta(days=30)
+        cut90m    = latest_mkt - pd.Timedelta(days=90)
+        out["spread_latest"]      = spread.iloc[-1]
+        out["spread_latest_date"] = latest_mkt
+        out["spread_30d_avg"]     = spread[spread.index >= cut30m].mean()
+        out["spread_90d_avg"]     = spread[spread.index >= cut90m].mean()
+
+    if not auctions_df.empty:
+        out["data_start"] = auctions_df["EFA Date"].min()
+        out["data_end"]   = auctions_df["EFA Date"].max()
+
+    return out
+
+
+def _load_kpis() -> tuple[dict, str | None]:
+    """Load KPIs from cache JSON. Returns (kpis_dict, warning_message).
+
+    Date fields in the JSON are strings; convert to pd.Timestamp so the
+    display code is identical regardless of source.
+    """
+    if not KPI_FILE.exists():
+        return _market_kpis(auctions, mkt_index), None
+
+    try:
+        raw = json.loads(KPI_FILE.read_text())
+        computed_at = datetime.strptime(raw["computed_at"], "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=timezone.utc
+        )
+        age_days = (datetime.now(timezone.utc) - computed_at).days
+
+        kpis = {
+            "dch_latest":         raw["dch_latest"],
+            "dch_latest_date":    pd.Timestamp(raw["dch_latest_date"]),
+            "dch_30d_avg":        raw["dch_30d_avg"],
+            "dch_90d_avg":        raw["dch_90d_avg"],
+            "spread_latest":      raw["spread_latest"],
+            "spread_latest_date": pd.Timestamp(raw["spread_latest_date"]),
+            "spread_30d_avg":     raw["spread_30d_avg"],
+            "spread_90d_avg":     raw["spread_90d_avg"],
+            "data_start":         pd.Timestamp(raw["data_start"]),
+            "data_end":           pd.Timestamp(raw["data_end"]),
+            "computed_at":        computed_at,
+        }
+
+        warning = (
+            f"Market snapshot data is {age_days} days old — "
+            "the scheduled refresh job may not have run recently."
+            if age_days >= _KPI_STALE_DAYS else None
+        )
+        return kpis, warning
+
+    except Exception:
+        return _market_kpis(auctions, mkt_index), None
+
+
+_kpis, _kpi_warning = _load_kpis()
+
+if _kpi_warning:
+    st.warning(_kpi_warning)
+
+if _kpis:
+    _fr_col, _div_col, _arb_col = st.columns([4.5, 0.3, 4.5])
+
+    with _fr_col:
+        st.markdown("##### Clearing Price: Dynamic Containment High")
+        _f1, _f2 = st.columns(2)
+        if "dch_latest" in _kpis:
+            with _f1:
+                _teal_metric(
+                    "Latest (daily avg)",
+                    f"£{_kpis['dch_latest']:.2f} /MW/h",
+                    _fmt_delta(_kpis['dch_latest'] - _kpis['dch_30d_avg'], "vs 30d avg"),
+                    help=f"Average DCH clearing price across all EFA blocks on {_kpis['dch_latest_date'].strftime('%d %b %Y')}.",
+                )
+            with _f2:
+                _teal_metric(
+                    "30-day average",
+                    f"£{_kpis['dch_30d_avg']:.2f} /MW/h",
+                    _fmt_delta(_kpis['dch_30d_avg'] - _kpis['dch_90d_avg'], "vs 90d avg"),
+                    help="Mean daily DCH clearing price over the past 30 days. Arrow shows direction vs the 90-day average.",
+                )
+
+    with _div_col:
+        st.markdown(
+            "<div style='border-left:1px solid #ddd; height:90px; margin-top:28px;'></div>",
+            unsafe_allow_html=True,
+        )
+
+    with _arb_col:
+        st.markdown("##### Arbitrage: Wholesale Price Spread")
+        _a1, _a2 = st.columns(2)
+        if "spread_latest" in _kpis:
+            with _a1:
+                _teal_metric(
+                    "Latest daily spread",
+                    f"£{_kpis['spread_latest']:.2f} /MWh",
+                    _fmt_delta(_kpis['spread_latest'] - _kpis['spread_30d_avg'], "vs 30d avg"),
+                    help=f"Peak-to-trough APXMIDP settlement price on {_kpis['spread_latest_date'].strftime('%d %b %Y')}. A wider spread means a larger theoretical arbitrage window for BESS.",
+                )
+            with _a2:
+                _teal_metric(
+                    "30-day average spread",
+                    f"£{_kpis['spread_30d_avg']:.2f} /MWh",
+                    _fmt_delta(_kpis['spread_30d_avg'] - _kpis['spread_90d_avg'], "vs 90d avg"),
+                    help="Average daily price spread over the past 30 days. Arrow shows direction vs the 90-day average.",
+                )
+
+    _cov_parts = []
+    if "data_start" in _kpis:
+        _cov_parts.append(
+            f"Data covers **{_kpis['data_start'].strftime('%b %Y')}** – "
+            f"**{_kpis['data_end'].strftime('%b %Y')}**"
+        )
+    if "dch_latest_date" in _kpis:
+        _cov_parts.append(f"DCH as of {_kpis['dch_latest_date'].strftime('%d %b %Y')}")
+    if "spread_latest_date" in _kpis:
+        _cov_parts.append(f"spread as of {_kpis['spread_latest_date'].strftime('%d %b %Y')}")
+    if "computed_at" in _kpis:
+        _cov_parts.append(f"snapshot updated {_kpis['computed_at'].strftime('%d %b %Y %H:%M')} UTC")
+    _cov_parts.append("Source: Elexon Insights Solution API · NESO Data Portal")
+    st.caption("  ·  ".join(_cov_parts))
+
+st.divider()
 
 # ---------------------------------------------------------------------------
-# Outer Tab 1: Frequency Response Markets → sub-tabs
+# Section 1: Frequency Response Markets
 # ---------------------------------------------------------------------------
-with outer_fr:
-    sub_auction, sub_spread = st.tabs(["Dynamic Services", "H vs L Spread"])
+st.subheader("Frequency Response Markets")
+sub_auction, sub_spread = st.tabs(["Dynamic Services", "H vs L Spread"])
 
 # ---------------------------------------------------------------------------
 # Sub-tab 1a: Dynamic Services
@@ -527,10 +690,11 @@ with sub_spread:
 
 
 # ---------------------------------------------------------------------------
-# Outer Tab 2: Grid & Settlement Prices → sub-tabs
+# Section 2: Grid & Settlement Prices
 # ---------------------------------------------------------------------------
-with outer_grid:
-    sub_system, sub_gen = st.tabs(["System Prices", "Generation Mix"])
+st.divider()
+st.subheader("Grid & Settlement Prices")
+sub_system, sub_gen = st.tabs(["System Prices", "Generation Mix"])
 
 # ---------------------------------------------------------------------------
 # Sub-tab 2a: System Prices

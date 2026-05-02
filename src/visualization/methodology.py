@@ -121,7 +121,7 @@ Dispatch decisions are executed unconditionally at actual prices. Per-period rev
 be negative when forecast error causes an unfavourable trade — this is the realistic
 operational outcome and is intentional.
 
-The **capture rate** (realised revenue ÷ perfect-foresight revenue) summarises how much
+The **foresight ratio** (realised revenue ÷ perfect-foresight revenue) summarises how much
 of the theoretical ceiling each strategy achieves. For LP-based joint co-optimisation
 of energy arbitrage and frequency response in the GB market see
 [Swierczynski et al. (2021)](https://doi.org/10.3390/en14248365).
