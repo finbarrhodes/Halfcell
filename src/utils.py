@@ -249,36 +249,53 @@ def load_dataframe(
 
 def calculate_settlement_period(timestamp: datetime) -> int:
     """
-    Calculate GB electricity settlement period (1-48) from timestamp.
-    
+    GB electricity settlement period (1-48) for a local-time timestamp.
+
+    Settlement period 1 covers 00:00-00:30 local time, period 48 covers
+    22:30-23:00 — matching the convention used by Elexon (which reports
+    settlementPeriod 47 at 23:00 and 48 at 23:30 on the same settlementDate)
+    and by EFA_PERIODS in src/analysis/revenue_stack.py.
+
+    Note this is a clock-time mapping and assumes a 48-period day; on the two
+    BST transition days a date has 46 or 50 periods. Use
+    settlement_periods_in_day() for the count.
+
     Args:
-        timestamp: datetime object
-        
+        timestamp: naive datetime in GB local time
+
     Returns:
         Settlement period number (1-48)
     """
-    # Settlement periods are 30-minute intervals starting at 23:00 previous day
-    # Period 1: 23:00-23:30 (previous day)
-    # Period 2: 23:30-00:00 (previous day)
-    # Period 3: 00:00-00:30 (current day)
-    # ...
-    # Period 48: 22:30-23:00 (current day)
-    
-    hour = timestamp.hour
-    minute = timestamp.minute
-    
-    # Convert to minutes since midnight
-    minutes_since_midnight = hour * 60 + minute
-    
-    # Calculate settlement period (1-indexed)
-    # Add 2 because periods 1-2 are from previous day
-    period = (minutes_since_midnight // 30) + 3
-    
-    # Handle wrap-around for periods 1-2 (23:00-00:00 previous day)
-    if period > 48:
-        period = period - 48
-    
-    return period
+    return (timestamp.hour * 60 + timestamp.minute) // 30 + 1
+
+
+def settlement_periods_in_day(date) -> int:
+    """
+    Number of settlement periods on a given GB calendar date.
+
+    Normally 48. On the spring-forward day the 01:00-02:00 hour does not exist,
+    giving 46; on the fall-back day it occurs twice, giving 50. Derived from the
+    actual UTC offset change rather than hardcoded transition dates, so it stays
+    correct as the transition dates move year to year.
+
+    Args:
+        date: date or datetime (naive; interpreted as a GB calendar date)
+
+    Returns:
+        46, 48 or 50
+    """
+    from datetime import date as _date, datetime as _datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    tz = ZoneInfo("Europe/London")
+    day = date.date() if isinstance(date, _datetime) else _date(date.year, date.month, date.day)
+
+    start = _datetime(day.year, day.month, day.day, tzinfo=tz)
+    nxt = day + timedelta(days=1)
+    end = _datetime(nxt.year, nxt.month, nxt.day, tzinfo=tz)
+
+    hours = (end.astimezone(ZoneInfo("UTC")) - start.astimezone(ZoneInfo("UTC"))).total_seconds() / 3600
+    return int(round(hours * 2))
 
 
 if __name__ == "__main__":
