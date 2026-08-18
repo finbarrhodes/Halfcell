@@ -20,11 +20,7 @@ import streamlit as st
 
 from src.analysis.price_forecast import (
     DEFAULT_TEST_START,
-    build_feature_matrix,
     compute_revenue_gap,
-    get_feature_importances,
-    load_bess_capacity,
-    train_forecast_model,
 )
 from src.analysis.revenue_stack import (
     ALL_SERVICES,
@@ -45,7 +41,6 @@ try:
 except st.errors.StreamlitAPIException:
     pass  # already set by app.py
 
-PROCESSED = Path(__file__).parent.parent.parent / "data" / "processed"
 CACHE_DIR = Path(__file__).parent.parent.parent / "data" / "cache"
 
 FIXED_BATTERY = REFERENCE_BATTERY          # canonical 50 MW / 2h asset
@@ -88,38 +83,6 @@ def load_manifest() -> dict:
         return {}
     with open(p) as f:
         return json.load(f)
-
-
-# ---------------------------------------------------------------------------
-# Source data (used only for the Sensitivity tab)
-# ---------------------------------------------------------------------------
-
-@st.cache_data
-def load_auctions() -> pd.DataFrame:
-    p = PROCESSED / "auctions.parquet"
-    return pd.read_parquet(p) if p.exists() else pd.DataFrame()
-
-
-@st.cache_data
-def load_market_index() -> pd.DataFrame:
-    p = PROCESSED / "market_index.parquet"
-    return pd.read_parquet(p) if p.exists() else pd.DataFrame()
-
-
-@st.cache_data
-def load_generation_daily() -> pd.DataFrame:
-    p = PROCESSED / "generation_daily.parquet"
-    return pd.read_parquet(p) if p.exists() else pd.DataFrame()
-
-
-@st.cache_resource
-def load_forecast_model(model_type: str = "rf"):
-    """Train and cache the ML model for feature importance display (not for backtesting)."""
-    feature_df = build_feature_matrix(load_market_index(), load_generation_daily(), load_bess_capacity())
-    model, feature_cols, train_metrics, test_metrics = train_forecast_model(
-        feature_df, model_type=model_type, test_start=DEFAULT_TEST_START
-    )
-    return model, feature_cols, train_metrics, test_metrics
 
 
 # ---------------------------------------------------------------------------
@@ -884,8 +847,13 @@ with tab_strategy:
     st.divider()
     st.subheader("ML Model Detail — Random Forest")
 
-    with st.spinner("Loading model metrics… (cached after first load)"):
-        _model, _feat_cols, _train_m, _test_m = load_forecast_model("rf")
+    # Metrics and feature importances are read from the pre-computed manifest.
+    # This page used to train a Random Forest on every cold start purely to draw
+    # the importance chart below — several seconds of compute for ~20 numbers.
+    _ml_manifest = manifest.get("ml_mpc", {})
+    _train_m = _ml_manifest.get("model_metrics", {}).get("train", {})
+    _test_m  = _ml_manifest.get("model_metrics", {}).get("test", {})
+    _importances = _ml_manifest.get("feature_importances", [])
 
     with st.expander("Model architecture & features"):
         st.markdown(f"""
@@ -934,10 +902,10 @@ future prices during training.
 during training; electricity price forecasting is inherently noisy; and the model improves
 dispatch quality on average but does not eliminate forecast error on individual days.
         """)
-        importances = get_feature_importances(_model, _feat_cols).head(10)
+        _top = _importances[:10]
         fig_imp = go.Figure(go.Bar(
-            x=importances.values[::-1],
-            y=importances.index[::-1],
+            x=[d["importance"] for d in _top][::-1],
+            y=[d["feature"] for d in _top][::-1],
             orientation="h",
             marker_color="#0D7680",
         ))

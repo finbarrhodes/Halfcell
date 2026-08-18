@@ -34,6 +34,7 @@ import pandas as pd
 from src.analysis.price_forecast import (
     DEFAULT_TEST_START,
     build_feature_matrix,
+    get_feature_importances,
     load_bess_capacity,
     run_forecast_backtest,
     train_forecast_model,
@@ -57,6 +58,7 @@ DISPATCH_METHOD = "mpc"
 HORIZON         = 96    # 48h rolling LP horizon
 SERVICES        = ALL_SERVICES
 ML_MODEL_TYPE   = "rf"  # Random Forest selected at precompute time (see methodology expander)
+N_IMPORTANCES   = 20    # Top-N feature importances stored in the manifest for display
 
 
 # ---------------------------------------------------------------------------
@@ -219,6 +221,10 @@ def main() -> None:
     if ml.get("soc_trajectory") is not None:
         ml["soc_trajectory"].to_parquet(CACHE / "soc_ml_mpc.parquet", index=False)
 
+    # Feature importances are stored here so the app never has to train a model
+    # at runtime — the chart needs ~20 numbers, not a fresh Random Forest fit.
+    importances = get_feature_importances(model, feature_cols).head(N_IMPORTANCES)
+
     manifest["ml_mpc"] = dict(
         computed_at   = datetime.now(timezone.utc).isoformat(),
         git_sha       = git_sha,
@@ -227,6 +233,10 @@ def main() -> None:
                          "test_start": str(DEFAULT_TEST_START)},
         summary       = ml["summary"],
         model_metrics = {"train": train_metrics, "test": test_metrics},
+        feature_importances = [
+            {"feature": str(k), "importance": float(v)}
+            for k, v in importances.items()
+        ],
     )
     print(f"  Total net revenue : £{ml['summary']['total_net']:>12,.0f}")
     print(f"  Ann. per MW       : £{ml['summary']['annualised_per_mw']:>10,.0f} / MW / yr")
