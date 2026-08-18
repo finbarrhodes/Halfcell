@@ -21,10 +21,12 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
-      # The unit suite is pure logic — no network, and mostly no data files —
-      # so it needs only the analysis dependencies, not the full app stack.
+      # Installed from requirements.txt rather than a hand-picked subset: the
+      # tests import collectors and analysis modules that pull in loguru, pyyaml
+      # and requests transitively, and a curated list drifts out of date the
+      # moment a module gains an import.
       - name: Install dependencies
-        run: pip install pytest pandas pyarrow numpy scipy scikit-learn cvxpy holidays
+        run: pip install -r requirements.txt pytest
 
       - name: Run unit tests
         run: pytest -m "not integration" -q
@@ -46,7 +48,7 @@ jobs:
           cache: 'pip'
 
       - name: Install dependencies
-        run: pip install pytest pandas pyarrow requests
+        run: pip install -r requirements.txt pytest
 
       - name: Run integration tests
         run: pytest -m integration -q
