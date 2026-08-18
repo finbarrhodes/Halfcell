@@ -288,8 +288,13 @@ const allSummaries = Object.fromEntries(Object.keys(STRATEGY_LABELS).map((key) =
 }));
 
 const pf = allSummaries.pf_mpc, nv = allSummaries.naive_mpc, ml = allSummaries.ml_mpc;
-const foresightRatio = pf && nv && ml && pf.net !== nv.net
-  ? (ml.net - nv.net) / (pf.net - nv.net) : null;
+// Mirrors compute_revenue_gap() in price_forecast.py: the denominator is the
+// capturable headroom between the zero-skill floor and the ceiling, and it goes
+// to zero when there is no arbitrage opportunity to capture. A bare !== check
+// lets the ratio explode when the two sit within a pound of each other.
+const foresightDenom = pf && nv ? pf.net - nv.net : 0;
+const foresightRatio = pf && nv && ml && Math.abs(foresightDenom) >= 1
+  ? (ml.net - nv.net) / foresightDenom : null;
 const arbRatio = pf?.breakdown.Arbitrage
   ? (ml?.breakdown.Arbitrage ?? 0) / pf.breakdown.Arbitrage : null;
 ```
