@@ -147,9 +147,13 @@ class ElexonBMRSCollector:
 
         for chunk_start, chunk_end in _date_chunks(start_date, end_date):
             try:
+                # `to` is parsed as a datetime: a bare date means midnight, which
+                # returns only the first ~3 settlement periods of that day and
+                # silently truncates the last day of every chunk. Pin it to
+                # end-of-day so the full range is returned.
                 data = self._get(
                     "/balancing/pricing/market-index",
-                    params={"from": chunk_start, "to": chunk_end},
+                    params={"from": chunk_start, "to": f"{chunk_end}T23:59:59Z"},
                 )
                 records = data.get("data", [])
                 if records:
