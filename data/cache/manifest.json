@@ -1,13 +1,13 @@
 {
   "pf_mpc": {
-    "computed_at": "2026-08-18T09:48:26.464233+00:00",
-    "git_sha": "aebd8a2780c2f76807a37029d1658ee795fb1477",
+    "computed_at": "2026-08-18T11:27:14.896748+00:00",
+    "git_sha": "fdc272e62d41220a0406e3fc8543fe21cdf89fbf",
     "data_mtimes": {
-      "auctions.parquet": 1787045984.1562734,
-      "bess_fleet_capacity.parquet": 1787045987.918071,
-      "generation_daily.parquet": 1787045987.9141784,
-      "market_index.parquet": 1787045985.430045,
-      "system_prices.parquet": 1787045985.5912569
+      "auctions.parquet": 1787051911.7881904,
+      "bess_fleet_capacity.parquet": 1787051916.1542282,
+      "generation_daily.parquet": 1787051916.0978034,
+      "market_index.parquet": 1787051913.0704134,
+      "system_prices.parquet": 1787051913.2642205
     },
     "params": {
       "power_mw": 50.0,
@@ -22,35 +22,35 @@
       "end_date": "2026-08-17"
     },
     "summary": {
-      "total_gross": 58287430.0,
-      "total_cycling_cost": 212770.0,
-      "total_net": 58074660.0,
+      "total_gross": 58277236.0,
+      "total_cycling_cost": 215687.0,
+      "total_net": 58061549.0,
       "years_covered": 5.0,
-      "annualised_net": 11614932.0,
-      "annualised_per_mw": 232299.0,
+      "annualised_net": 11612310.0,
+      "annualised_per_mw": 232246.0,
       "breakdown": {
-        "DCH": 4988035.0,
-        "DCL": 11897772.0,
-        "DMH": 3558066.0,
-        "DML": 7389592.0,
-        "DRH": 4870303.0,
-        "DRL": 20147690.0,
-        "Arbitrage": 5435973.0
+        "DCH": 4981764.0,
+        "DCL": 11889187.0,
+        "DMH": 3551502.0,
+        "DML": 7372282.0,
+        "DRH": 4863562.0,
+        "DRL": 20115609.0,
+        "Arbitrage": 5503328.0
       },
       "top_service": "DRL",
-      "fr_mw": 44.731621242477274,
-      "arb_mw": 5.268378757522726
+      "fr_mw": 44.669835249053996,
+      "arb_mw": 5.330164750946004
     }
   },
   "naive_mpc": {
-    "computed_at": "2026-08-18T09:57:07.049035+00:00",
-    "git_sha": "aebd8a2780c2f76807a37029d1658ee795fb1477",
+    "computed_at": "2026-08-18T11:36:34.121170+00:00",
+    "git_sha": "fdc272e62d41220a0406e3fc8543fe21cdf89fbf",
     "data_mtimes": {
-      "auctions.parquet": 1787045984.1562734,
-      "bess_fleet_capacity.parquet": 1787045987.918071,
-      "generation_daily.parquet": 1787045987.9141784,
-      "market_index.parquet": 1787045985.430045,
-      "system_prices.parquet": 1787045985.5912569
+      "auctions.parquet": 1787051911.7881904,
+      "bess_fleet_capacity.parquet": 1787051916.1542282,
+      "generation_daily.parquet": 1787051916.0978034,
+      "market_index.parquet": 1787051913.0704134,
+      "system_prices.parquet": 1787051913.2642205
     },
     "params": {
       "power_mw": 50.0,
@@ -65,36 +65,36 @@
       "end_date": "2026-08-17"
     },
     "summary": {
-      "total_gross": 54587878.0,
-      "total_cycling_cost": 214299.0,
-      "total_net": 54373579.0,
+      "total_gross": 54582091.0,
+      "total_cycling_cost": 218900.0,
+      "total_net": 54363190.0,
       "years_covered": 5.0,
-      "annualised_net": 10874716.0,
-      "annualised_per_mw": 217494.0,
+      "annualised_net": 10872638.0,
+      "annualised_per_mw": 217453.0,
       "breakdown": {
-        "DCH": 5034863.0,
-        "DCL": 11973619.0,
-        "DMH": 3581418.0,
-        "DML": 7375687.0,
-        "DRH": 4893997.0,
-        "DRL": 20113137.0,
-        "Arbitrage": 1615155.0
+        "DCH": 5028565.0,
+        "DCL": 11967159.0,
+        "DMH": 3576042.0,
+        "DML": 7359803.0,
+        "DRH": 4889361.0,
+        "DRL": 20078889.0,
+        "Arbitrage": 1682271.0
       },
       "top_service": "DRL",
-      "fr_mw": 44.58623904806102,
-      "arb_mw": 5.413760951938983,
-      "total_mwh_cycled": 71433.0
+      "fr_mw": 44.522613209273864,
+      "arb_mw": 5.477386790726136,
+      "total_mwh_cycled": 72966.8
     }
   },
   "ml_mpc": {
-    "computed_at": "2026-08-18T10:06:35.837143+00:00",
-    "git_sha": "aebd8a2780c2f76807a37029d1658ee795fb1477",
+    "computed_at": "2026-08-18T11:46:42.563364+00:00",
+    "git_sha": "fdc272e62d41220a0406e3fc8543fe21cdf89fbf",
     "data_mtimes": {
-      "auctions.parquet": 1787045984.1562734,
-      "bess_fleet_capacity.parquet": 1787045987.918071,
-      "generation_daily.parquet": 1787045987.9141784,
-      "market_index.parquet": 1787045985.430045,
-      "system_prices.parquet": 1787045985.5912569
+      "auctions.parquet": 1787051911.7881904,
+      "bess_fleet_capacity.parquet": 1787051916.1542282,
+      "generation_daily.parquet": 1787051916.0978034,
+      "market_index.parquet": 1787051913.0704134,
+      "system_prices.parquet": 1787051913.2642205
     },
     "params": {
       "power_mw": 50.0,
@@ -111,25 +111,25 @@
       "test_start": "2025-03-01"
     },
     "summary": {
-      "total_gross": 57621073.0,
-      "total_cycling_cost": 150780.0,
-      "total_net": 57470292.0,
+      "total_gross": 57563088.0,
+      "total_cycling_cost": 153417.0,
+      "total_net": 57409671.0,
       "years_covered": 5.0,
-      "annualised_net": 11494058.0,
-      "annualised_per_mw": 229881.0,
+      "annualised_net": 11481934.0,
+      "annualised_per_mw": 229639.0,
       "breakdown": {
-        "DCH": 5240189.0,
-        "DCL": 12449995.0,
-        "DMH": 3726883.0,
-        "DML": 7511786.0,
-        "DRH": 5053281.0,
-        "DRL": 20518233.0,
-        "Arbitrage": 3120706.0
+        "DCH": 5238463.0,
+        "DCL": 12442317.0,
+        "DMH": 3724947.0,
+        "DML": 7494034.0,
+        "DRH": 5050828.0,
+        "DRL": 20478637.0,
+        "Arbitrage": 3133863.0
       },
       "top_service": "DRL",
-      "fr_mw": 46.38862156518853,
-      "arb_mw": 3.6113784348114706,
-      "total_mwh_cycled": 50260.1
+      "fr_mw": 46.33368367865461,
+      "arb_mw": 3.6663163213453913,
+      "total_mwh_cycled": 51138.9
     },
     "model_metrics": {
       "train": {
@@ -140,12 +140,94 @@
         "spike_rmse": 50.78
       },
       "test": {
-        "rmse": 36.52,
-        "mae": 27.54,
-        "spearman": 0.532,
-        "n_samples": 24503,
-        "spike_rmse": 57.94
+        "rmse": 36.8,
+        "mae": 27.83,
+        "spearman": 0.542,
+        "n_samples": 25678,
+        "spike_rmse": 56.96
       }
-    }
+    },
+    "feature_importances": [
+      {
+        "feature": "apx_lag_1d",
+        "importance": 0.25200857610567207
+      },
+      {
+        "feature": "prev_day_mean",
+        "importance": 0.145550490743703
+      },
+      {
+        "feature": "prev_day_max",
+        "importance": 0.06189429817418696
+      },
+      {
+        "feature": "apx_lag_2d",
+        "importance": 0.06128882588494459
+      },
+      {
+        "feature": "apx_lag_7d",
+        "importance": 0.044709172743075815
+      },
+      {
+        "feature": "sp_sin",
+        "importance": 0.040938054293013226
+      },
+      {
+        "feature": "sp_cos",
+        "importance": 0.03590302296672028
+      },
+      {
+        "feature": "apx_lag_14d",
+        "importance": 0.03555045025441358
+      },
+      {
+        "feature": "prev_day_min",
+        "importance": 0.03485978894832687
+      },
+      {
+        "feature": "rolling_7d_mean",
+        "importance": 0.02715133959878352
+      },
+      {
+        "feature": "gen_fossil_frac",
+        "importance": 0.021036997603577523
+      },
+      {
+        "feature": "doy_cos",
+        "importance": 0.01976871815373836
+      },
+      {
+        "feature": "gen_renewable_frac",
+        "importance": 0.019141547717561172
+      },
+      {
+        "feature": "gen_gas",
+        "importance": 0.01871910523211014
+      },
+      {
+        "feature": "gen_pumped_storage",
+        "importance": 0.018178592924148012
+      },
+      {
+        "feature": "prev_day_std",
+        "importance": 0.0172916404105518
+      },
+      {
+        "feature": "gen_nuclear",
+        "importance": 0.01622343817751162
+      },
+      {
+        "feature": "doy_sin",
+        "importance": 0.013182189059962077
+      },
+      {
+        "feature": "gen_solar",
+        "importance": 0.012624289465464275
+      },
+      {
+        "feature": "gen_other",
+        "importance": 0.012245066708295383
+      }
+    ]
   }
 }
