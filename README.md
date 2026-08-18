@@ -145,10 +145,20 @@ pyarrow against the repo's parquet files.
 
 First-time setup:
 
-1. Create a Cloudflare Pages project named `halfcell` (Workers & Pages → Create → Pages →
-   **Direct Upload**; the workflow uploads a prebuilt `dist/`, so do not connect the repo).
-2. Create an API token with the **Cloudflare Pages: Edit** permission.
-3. Add two repository secrets: `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
+1. Create the Pages project as **Direct Upload**: Workers & Pages → Create → Pages →
+   *Upload assets* → name it `halfcell`. Cloudflare treats Direct Upload and
+   Git-connected projects as different types and `wrangler pages deploy` cannot target a
+   Git-connected one — so if the repo was already connected, delete that project first
+   and recreate it this way. The repo does **not** need connecting: the workflow uploads
+   a prebuilt `dist/`.
+2. Create an API token with the **Cloudflare Pages: Edit** permission
+   (My Profile → API Tokens → Create Token).
+3. Copy the Account ID from the Workers & Pages sidebar.
+4. Add both as repository secrets under Settings → Secrets and variables → Actions:
+   `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
+
+The workflow checks both secrets are present before invoking wrangler, so a missing one
+fails with a clear message rather than wrangler's generic token error.
 
 The workflow runs `scripts/check_cache_consistency.py` before building. `precompute_cache.py`
 writes the three strategy parquets sequentially over ~20 minutes, so a build landing mid-run

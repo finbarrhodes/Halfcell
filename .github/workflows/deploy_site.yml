@@ -53,6 +53,24 @@ jobs:
       - name: Build site
         run: npm run build --prefix site
 
+      # wrangler's own error for a missing token is a wall of prose about
+      # creating one; this says which secret is absent and where it goes.
+      - name: Check deploy credentials
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          missing=""
+          [ -z "$TOKEN" ]   && missing="$missing CLOUDFLARE_API_TOKEN"
+          [ -z "$ACCOUNT" ] && missing="$missing CLOUDFLARE_ACCOUNT_ID"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secret(s):$missing"
+            echo "Add them under Settings -> Secrets and variables -> Actions."
+            echo "The Pages project must be created as Direct Upload, not Git-connected —"
+            echo "wrangler cannot deploy into a Git-connected project."
+            exit 1
+          fi
+
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
