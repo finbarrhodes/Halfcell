@@ -11,7 +11,33 @@ from pathlib import Path
 # Ensure src/ is importable when launched from any working directory
 sys.path.insert(0, str(Path(__file__).parent))
 
+import json
+from datetime import date
+
 import streamlit as st
+
+
+def _data_through() -> str:
+    """Latest date covered by the pre-computed cache, for the sidebar footer.
+
+    Read from the cache manifest rather than hardcoded, so it tracks the data
+    instead of drifting out of date between refreshes.
+    """
+    try:
+        manifest = json.loads(
+            (Path(__file__).parent / "data" / "cache" / "manifest.json").read_text()
+        )
+        ends = [
+            m["params"]["end_date"]
+            for m in manifest.values()
+            if m.get("params", {}).get("end_date")
+        ]
+        if ends:
+            return date.fromisoformat(max(ends)[:10]).strftime("%B %Y")
+    except Exception:
+        pass
+    return "—"
+
 
 st.set_page_config(
     page_title="Halfcell",
@@ -48,12 +74,12 @@ st.sidebar.markdown(
     }
     </style>
     <div class="sidebar-footer">
-    Last updated: March 2026<br><br>
+    Data through: __DATA_THROUGH__<br><br>
     <a href="https://github.com/finbarrhodes" target="_blank">GitHub</a>
     &nbsp;·&nbsp;
     <a href="https://www.linkedin.com/in/finbar-rhodes-637650210/" target="_blank">LinkedIn</a>
     </div>
-    """,
+    """.replace("__DATA_THROUGH__", _data_through()),
     unsafe_allow_html=True,
 )
 

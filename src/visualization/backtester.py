@@ -895,8 +895,8 @@ prices for day D using features available at the end of day D-1.
 *Why Random Forest?* Tree-based ensemble methods are well suited to this problem: the
 feature set is tabular (lagged prices, generation mix ratios, temporal encodings) rather
 than raw sequences; they require no feature scaling; they are robust on datasets of this
-size (~30,000 training rows); and they provide interpretable feature importances.
-An LSTM was considered but is likely overkill given ~2 years of training data and would
+size (~105,000 training rows); and they provide interpretable feature importances.
+An LSTM was considered but is likely overkill on tabular features of this kind and would
 be harder to explain. A naive lag model sets the zero-skill baseline.
 
 **Features used (all available at end of day D-1):**

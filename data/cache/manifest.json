@@ -1,13 +1,13 @@
 {
   "pf_mpc": {
-    "computed_at": "2026-03-16T12:57:58.170052+00:00",
-    "git_sha": "869c67fb39435902cb11d945dc0d06ad1cd5027c",
+    "computed_at": "2026-08-18T09:48:26.464233+00:00",
+    "git_sha": "aebd8a2780c2f76807a37029d1658ee795fb1477",
     "data_mtimes": {
-      "auctions.parquet": 1773664491.0329397,
-      "bess_fleet_capacity.parquet": 1773664492.6139364,
-      "generation_daily.parquet": 1773664492.6117098,
-      "market_index.parquet": 1773664491.561975,
-      "system_prices.parquet": 1773664491.6144633
+      "auctions.parquet": 1787045984.1562734,
+      "bess_fleet_capacity.parquet": 1787045987.918071,
+      "generation_daily.parquet": 1787045987.9141784,
+      "market_index.parquet": 1787045985.430045,
+      "system_prices.parquet": 1787045985.5912569
     },
     "params": {
       "power_mw": 50.0,
@@ -19,38 +19,38 @@
       "dispatch_method": "mpc",
       "horizon": 96,
       "start_date": "2021-09-16",
-      "end_date": "2026-02-19"
+      "end_date": "2026-08-17"
     },
     "summary": {
-      "total_gross": 52036925.0,
-      "total_cycling_cost": 164586.0,
-      "total_net": 51872339.0,
-      "years_covered": 4.5,
-      "annualised_net": 11527186.0,
-      "annualised_per_mw": 230544.0,
+      "total_gross": 58287430.0,
+      "total_cycling_cost": 212770.0,
+      "total_net": 58074660.0,
+      "years_covered": 5.0,
+      "annualised_net": 11614932.0,
+      "annualised_per_mw": 232299.0,
       "breakdown": {
-        "DCH": 4753369.0,
-        "DCL": 11614234.0,
-        "DMH": 3388374.0,
-        "DML": 6145296.0,
-        "DRH": 4813730.0,
-        "DRL": 17210681.0,
-        "Arbitrage": 4111242.0
+        "DCH": 4988035.0,
+        "DCL": 11897772.0,
+        "DMH": 3558066.0,
+        "DML": 7389592.0,
+        "DRH": 4870303.0,
+        "DRL": 20147690.0,
+        "Arbitrage": 5435973.0
       },
       "top_service": "DRL",
-      "fr_mw": 45.43483554602176,
-      "arb_mw": 4.565164453978241
+      "fr_mw": 44.731621242477274,
+      "arb_mw": 5.268378757522726
     }
   },
   "naive_mpc": {
-    "computed_at": "2026-03-16T13:04:29.372682+00:00",
-    "git_sha": "869c67fb39435902cb11d945dc0d06ad1cd5027c",
+    "computed_at": "2026-08-18T09:57:07.049035+00:00",
+    "git_sha": "aebd8a2780c2f76807a37029d1658ee795fb1477",
     "data_mtimes": {
-      "auctions.parquet": 1773664491.0329397,
-      "bess_fleet_capacity.parquet": 1773664492.6139364,
-      "generation_daily.parquet": 1773664492.6117098,
-      "market_index.parquet": 1773664491.561975,
-      "system_prices.parquet": 1773664491.6144633
+      "auctions.parquet": 1787045984.1562734,
+      "bess_fleet_capacity.parquet": 1787045987.918071,
+      "generation_daily.parquet": 1787045987.9141784,
+      "market_index.parquet": 1787045985.430045,
+      "system_prices.parquet": 1787045985.5912569
     },
     "params": {
       "power_mw": 50.0,
@@ -62,39 +62,39 @@
       "dispatch_method": "mpc",
       "horizon": 96,
       "start_date": "2021-09-16",
-      "end_date": "2026-02-19"
+      "end_date": "2026-08-17"
     },
     "summary": {
-      "total_gross": 49121129.0,
-      "total_cycling_cost": 141118.0,
-      "total_net": 48980011.0,
-      "years_covered": 4.5,
-      "annualised_net": 10884447.0,
-      "annualised_per_mw": 217689.0,
+      "total_gross": 54587878.0,
+      "total_cycling_cost": 214299.0,
+      "total_net": 54373579.0,
+      "years_covered": 5.0,
+      "annualised_net": 10874716.0,
+      "annualised_per_mw": 217494.0,
       "breakdown": {
-        "DCH": 4781637.0,
-        "DCL": 11682606.0,
-        "DMH": 3414912.0,
-        "DML": 6137031.0,
-        "DRH": 4827966.0,
-        "DRL": 17207651.0,
-        "Arbitrage": 1069326.0
+        "DCH": 5034863.0,
+        "DCL": 11973619.0,
+        "DMH": 3581418.0,
+        "DML": 7375687.0,
+        "DRH": 4893997.0,
+        "DRL": 20113137.0,
+        "Arbitrage": 1615155.0
       },
       "top_service": "DRL",
-      "fr_mw": 45.26719300489414,
-      "arb_mw": 4.732806995105861,
-      "total_mwh_cycled": 47039.4
+      "fr_mw": 44.58623904806102,
+      "arb_mw": 5.413760951938983,
+      "total_mwh_cycled": 71433.0
     }
   },
   "ml_mpc": {
-    "computed_at": "2026-03-16T13:11:40.698787+00:00",
-    "git_sha": "869c67fb39435902cb11d945dc0d06ad1cd5027c",
+    "computed_at": "2026-08-18T10:06:35.837143+00:00",
+    "git_sha": "aebd8a2780c2f76807a37029d1658ee795fb1477",
     "data_mtimes": {
-      "auctions.parquet": 1773664491.0329397,
-      "bess_fleet_capacity.parquet": 1773664492.6139364,
-      "generation_daily.parquet": 1773664492.6117098,
-      "market_index.parquet": 1773664491.561975,
-      "system_prices.parquet": 1773664491.6144633
+      "auctions.parquet": 1787045984.1562734,
+      "bess_fleet_capacity.parquet": 1787045987.918071,
+      "generation_daily.parquet": 1787045987.9141784,
+      "market_index.parquet": 1787045985.430045,
+      "system_prices.parquet": 1787045985.5912569
     },
     "params": {
       "power_mw": 50.0,
@@ -106,45 +106,45 @@
       "dispatch_method": "mpc",
       "horizon": 96,
       "start_date": "2021-09-16",
-      "end_date": "2026-02-19",
+      "end_date": "2026-08-17",
       "ml_model_type": "rf",
       "test_start": "2025-03-01"
     },
     "summary": {
-      "total_gross": 51629737.0,
-      "total_cycling_cost": 97967.0,
-      "total_net": 51531770.0,
-      "years_covered": 4.5,
-      "annualised_net": 11451504.0,
-      "annualised_per_mw": 229030.0,
+      "total_gross": 57621073.0,
+      "total_cycling_cost": 150780.0,
+      "total_net": 57470292.0,
+      "years_covered": 5.0,
+      "annualised_net": 11494058.0,
+      "annualised_per_mw": 229881.0,
       "breakdown": {
-        "DCH": 4992667.0,
-        "DCL": 12178530.0,
-        "DMH": 3538736.0,
-        "DML": 6291550.0,
-        "DRH": 4973635.0,
-        "DRL": 17643727.0,
-        "Arbitrage": 2010892.0
+        "DCH": 5240189.0,
+        "DCL": 12449995.0,
+        "DMH": 3726883.0,
+        "DML": 7511786.0,
+        "DRH": 5053281.0,
+        "DRL": 20518233.0,
+        "Arbitrage": 3120706.0
       },
       "top_service": "DRL",
-      "fr_mw": 47.174427514526485,
-      "arb_mw": 2.825572485473515,
-      "total_mwh_cycled": 32655.7
+      "fr_mw": 46.38862156518853,
+      "arb_mw": 3.6113784348114706,
+      "total_mwh_cycled": 50260.1
     },
     "model_metrics": {
       "train": {
-        "rmse": 15.8,
-        "mae": 7.21,
-        "spearman": 0.983,
-        "n_samples": 83401,
-        "spike_rmse": 40.26
+        "rmse": 18.54,
+        "mae": 7.29,
+        "spearman": 0.984,
+        "n_samples": 104634,
+        "spike_rmse": 50.78
       },
       "test": {
-        "rmse": 31.66,
-        "mae": 24.37,
-        "spearman": 0.568,
-        "n_samples": 13152,
-        "spike_rmse": 47.63
+        "rmse": 36.52,
+        "mae": 27.54,
+        "spearman": 0.532,
+        "n_samples": 24503,
+        "spike_rmse": 57.94
       }
     }
   }

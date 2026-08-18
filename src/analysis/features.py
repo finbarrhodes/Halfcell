@@ -194,14 +194,32 @@ def build_feature_matrix(
             .dt.to_period("M")
             .dt.to_timestamp()
         )
-        apx = apx.merge(
-            bess.rename(columns={"month_start": "_feature_month"}),
-            on="_feature_month",
-            how="left",
-        ).drop(columns=["_feature_month"])
+        # Reindex the REPD series over every month present in the price data
+        # before merging. Interior gaps and any months past the final REPD entry
+        # carry the last known capacity forward; only months before the first
+        # entry are genuinely zero (no GB BESS fleet to speak of).
+        #
+        # A plain fillna(0.0) here reported a 0 MW fleet for every month beyond
+        # the end of the REPD extract. REPD is quarterly and always lags the
+        # half-hourly price data, so that path is hit on every refresh — and it
+        # fails silently, feeding the model a fleet collapse that never happened.
+        months = pd.date_range(
+            min(bess["month_start"].min(), apx["_feature_month"].min()),
+            max(bess["month_start"].max(), apx["_feature_month"].max()),
+            freq="MS",
+        )
+        bess = (
+            bess.set_index("month_start")["bess_fleet_mw"]
+            .reindex(months)
+            .ffill()
+            .fillna(0.0)
+            .rename_axis("_feature_month")
+            .reset_index(name="bess_fleet_mw")
+        )
 
-        # Periods before the first REPD entry (pre-2019 or data gap) → 0 MW
-        apx["bess_fleet_mw"] = apx["bess_fleet_mw"].fillna(0.0)
+        apx = apx.merge(
+            bess, on="_feature_month", how="left"
+        ).drop(columns=["_feature_month"])
 
         # Analytical suppression feature: BESS penetration as a fraction of total
         # system generation. Encodes the economic mechanism — as fleet grows

@@ -143,7 +143,10 @@ st.markdown(
 - High (discharge) and Low (charge) services are modelled as independent and simultaneous,
   assuming the battery maintains sufficient SoC headroom to respond in both directions.
 - Clearing prices sourced from NESO Data Portal (legacy DC/DR/DM auctions Sep 2021–Nov 2023,
-  EAC service Nov 2023–present).
+  EAC service Nov 2023–present). NESO publishes EAC results as one resource per
+  fiscal year plus a live current-year feed, rotating the live feed into a new
+  archive each April; collection stitches these segments together, de-duplicating
+  the one-day overlap where adjacent segments meet.
 - Ancillary revenue is identical across all three dispatch strategies — it does not depend
   on price forecasting.
 """
@@ -255,8 +258,20 @@ naive D-1 lag model sets the zero-skill baseline.
 - **GB BESS fleet capacity** (`bess_fleet_mw`, monthly MW): total operational GB
   battery storage capacity at the time of the settlement date, sourced from the
   DESNZ Renewable Energy Planning Database (REPD). Captures the structural shift
-  as a growing fleet competes for the same arbitrage spreads — from ~0.8 GW at
-  end-2019 to ~6 GW by early 2025.
+  as a growing fleet competes for the same arbitrage spreads — from ~0.9 GW at
+  end-2019 to ~5.0 GW by March 2026.
+
+  REPD is a *planning* database published quarterly, which has two consequences.
+  First, recent months are revised upward as projects are confirmed operational:
+  the Q4 2025 extract put March 2026 at 3.4 GW, while the Q2 2026 extract puts the
+  same month at 5.0 GW. Figures for the most recent year should be read as
+  provisional. Second, the extract always lags the half-hourly price data, so the
+  trailing months are projected forward from a 12-month linear trend, anchored at
+  the last measured value to keep the cumulative series monotonic. Projected months
+  are flagged `is_extrapolated` in `bess_fleet_capacity.parquet`; as of the Q2 2026
+  extract, 5 of 92 months (April–August 2026) are projected rather than measured.
+  Months before the first REPD entry are zero; months after the last carry the most
+  recent measured capacity forward rather than dropping to zero.
 - **BESS spread suppression** (`bess_spread_suppression`): `bess_fleet_mw / gen_total` —
   BESS penetration as a fraction of total system generation. Directly encodes the
   economic mechanism: as penetration grows, batteries charge in cheap periods and
@@ -265,6 +280,12 @@ naive D-1 lag model sets the zero-skill baseline.
 
 **Train/test split:** strict temporal split — training data ends before 2025-03-01
 to prevent any look-ahead bias. The model never sees future prices during training.
+Training uses an expanding window covering 2019-01-19 to 2025-02-28 (6.1 years,
+~105,000 half-hourly observations); the held-out test period runs from 2025-03-01
+to the end of the data, currently ~1.5 years and 19% of all observations. The split
+date is held fixed as the data is extended, so each refresh adds to the out-of-sample
+period rather than to training — and the test window stays longer than a full year,
+so seasonal performance can be assessed across a complete annual cycle.
 
 **Known limitations:** tree-based models cannot extrapolate beyond the price ranges seen
 during training; electricity price forecasting is inherently noisy; and the model improves

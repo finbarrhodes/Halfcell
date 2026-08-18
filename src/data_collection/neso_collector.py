@@ -53,17 +53,29 @@ RESOURCE_IDS = {
     # Indicative volume requirements published ahead of auctions
     "dr_requirements": "d6c576b9-91d5-4c48-bf6d-300c7d7aa6ad",
     "dm_requirements": "2aae8747-776d-4fe5-af9c-adcf38f1af8a",
-    # EAC (Enduring Auction Capability) — successor to DC/DR/DM auctions
-    # Archive: Nov 2023 – Mar 2025 (30-min granularity; aggregated to EFA blocks on load)
-    "eac_archive": "be5c6b0d-a335-4859-93f2-389585b4e9a1",
-    # Current: Apr 2025 – present (same schema; updated daily)
-    "eac_current": "596f29ac-0387-4ba4-a6d3-95c243140707",
 }
 
-# Boundary dates for EAC resources
+# EAC (Enduring Auction Capability) — successor to DC/DR/DM auctions.
+# NESO publishes one resource per fiscal year (Apr–Mar) plus a live "Results
+# Summary" resource, which is rotated into a new FY archive each April. Routing
+# is therefore by segment; a single archive/current boundary goes stale on the
+# next rotation and silently returns short.
+#
+# Re-discover the IDs after each April rotation with:
+#   GET {BASE_URL}/package_search?q=enduring+auction+capability
+# looking for "NESO Response-Reserve Results Summary FY<year> (Archive)".
+#
+# (resource_id, first deliveryStart, last deliveryStart); None = to present.
+# Adjacent segments overlap by a day — duplicates are dropped on load.
+_EAC_SEGMENTS = [
+    ("be5c6b0d-a335-4859-93f2-389585b4e9a1", "2023-11-02", "2024-03-31"),  # FY2023
+    ("ab130833-3ce4-4361-90fb-69fa3cf30f15", "2024-03-31", "2025-03-31"),  # FY2024
+    ("be55ee51-b79e-47da-b71e-a0f8865d9d66", "2025-03-31", "2026-03-31"),  # FY2025
+    ("596f29ac-0387-4ba4-a6d3-95c243140707", "2026-03-31", None),          # FY2026 (live)
+]
+
+# Earliest date for which any EAC data exists
 _EAC_ARCHIVE_START = "2023-11-02"
-_EAC_ARCHIVE_END   = "2025-03-31"
-_EAC_CURRENT_START = "2025-04-01"
 
 # Response products shared across both EAC resources (H/L split DC, DR, DM)
 _EAC_RESPONSE_PRODUCTS = ("DCH", "DCL", "DRH", "DRL", "DMH", "DML")
@@ -331,37 +343,37 @@ class NESOCollector:
           Service, EFA Date, EFA, Delivery Start, Delivery End,
           Cleared Volume, Clearing Price
 
-        The method automatically routes to the archive resource (Nov 2023 –
-        Mar 2025) or the current resource (Apr 2025 – present), querying both
-        when the requested date range spans the boundary.
+        The requested range is split across the per-fiscal-year EAC resources in
+        ``_EAC_SEGMENTS`` and each overlapping segment is queried in turn, so a
+        range spanning several fiscal years is stitched together transparently.
         """
         logger.info(f"Collecting EAC auction results from {start_date} to {end_date}")
 
         start = pd.Timestamp(start_date).date()
         end   = pd.Timestamp(end_date).date()
-        archive_end   = pd.Timestamp(_EAC_ARCHIVE_END).date()
-        current_start = pd.Timestamp(_EAC_CURRENT_START).date()
 
         frames: List[pd.DataFrame] = []
 
-        # Archive resource
-        if start <= archive_end:
-            chunk_end = min(end, archive_end).strftime("%Y-%m-%d")
-            logger.info(f"  Querying EAC archive ({start_date} – {chunk_end})")
-            df = self._query_eac_resource(
-                RESOURCE_IDS["eac_archive"], start_date, chunk_end
-            )
-            if not df.empty:
-                frames.append(df)
+        for resource_id, seg_start, seg_end in _EAC_SEGMENTS:
+            seg_lo = pd.Timestamp(seg_start).date()
+            seg_hi = pd.Timestamp(seg_end).date() if seg_end else end
 
-        # Current resource
-        if end >= current_start:
-            chunk_start = max(start, current_start).strftime("%Y-%m-%d")
-            logger.info(f"  Querying EAC current ({chunk_start} – {end_date})")
-            df = self._query_eac_resource(
-                RESOURCE_IDS["eac_current"], chunk_start, end_date
-            )
-            if not df.empty:
+            # Skip segments that do not intersect the requested range
+            if end < seg_lo or start > seg_hi:
+                continue
+
+            chunk_start = max(start, seg_lo).strftime("%Y-%m-%d")
+            chunk_end   = min(end,   seg_hi).strftime("%Y-%m-%d")
+            logger.info(f"  Querying EAC segment {resource_id[:8]} ({chunk_start} – {chunk_end})")
+
+            df = self._query_eac_resource(resource_id, chunk_start, chunk_end)
+            if df.empty:
+                logger.warning(
+                    f"  Segment {resource_id[:8]} returned no rows for "
+                    f"{chunk_start} – {chunk_end} — the resource may have been "
+                    "rotated; re-check _EAC_SEGMENTS against the NESO portal."
+                )
+            else:
                 frames.append(df)
 
         if not frames:
@@ -371,6 +383,8 @@ class NESOCollector:
             return pd.DataFrame()
 
         raw = pd.concat(frames, ignore_index=True)
+        # Adjacent FY segments overlap by a day — keep one row per slot
+        raw = raw.drop_duplicates(subset=["auctionProduct", "deliveryStart"])
         raw["clearedVolume"] = pd.to_numeric(raw["clearedVolume"], errors="coerce")
         raw["clearingPrice"] = pd.to_numeric(raw["clearingPrice"], errors="coerce")
         raw = self._add_efa_columns(raw)

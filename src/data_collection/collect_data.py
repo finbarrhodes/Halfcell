@@ -142,8 +142,10 @@ def main():
     else:
         # Use dates from config
         data_config = config['data_collection']
-        start_date = data_config['start_date']
-        end_date = data_config['end_date']
+        start_date = args.start or data_config['start_date']
+        # end_date is null in config by default — collect through today
+        end_date = args.end or data_config.get('end_date') or \
+            datetime.now().strftime('%Y-%m-%d')
     
     logger.info(f"Collecting data from {start_date} to {end_date}")
     

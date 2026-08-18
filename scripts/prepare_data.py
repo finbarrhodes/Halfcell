@@ -153,7 +153,14 @@ if not REPD_RAW.exists():
 else:
     bess = pd.read_csv(REPD_RAW)
     bess["month"] = pd.to_datetime(bess["month"])
-    bess = bess[["month", "bess_fleet_mw"]].sort_values("month").reset_index(drop=True)
+    # is_extrapolated marks months projected past the end of the REPD extract
+    # (REPD is quarterly, so the tail is always projected). Carried through so
+    # the app and methodology can distinguish measured from projected capacity.
+    cols = ["month", "bess_fleet_mw"]
+    if "is_extrapolated" in bess.columns:
+        bess["is_extrapolated"] = bess["is_extrapolated"].astype(bool)
+        cols.append("is_extrapolated")
+    bess = bess[cols].sort_values("month").reset_index(drop=True)
     out = PROCESSED / "bess_fleet_capacity.parquet"
     bess.to_parquet(out, index=False)
     print(f"  {len(bess):,} months  →  {_kb(out)} KB  ({out.name})")

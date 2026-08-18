@@ -3,13 +3,13 @@
 project:
   name: "Halfcell"
   version: "0.1.0"
-  author: "Your Name"
+  author: "Finbar Rhodes"
 
 # Data collection settings
 data_collection:
   # Date range for historical data
   start_date: "2019-01-01"
-  end_date: "2024-10-24"
+  end_date: null   # null => collect through today; override with --end
   
   # Update frequency for automated collection
   update_frequency: "daily"  # daily, weekly, monthly

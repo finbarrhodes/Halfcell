@@ -1,8 +1,14 @@
 name: Refresh Market KPI Snapshot
 
+# Scheduled runs are disabled. This job reads the committed processed parquets,
+# which only change when the data pipeline is re-run locally — so on a schedule it
+# recomputed identical KPIs and committed a bare `computed_at` bump every day
+# (~100 no-op commits between May and August 2026).
+#
+# KPI computation now belongs in the data-refresh pipeline, alongside
+# prepare_data.py and precompute_cache.py, so it runs when the data actually
+# changes. Kept here as manual-dispatch only until that pipeline exists.
 on:
-  schedule:
-    - cron: '0 6 * * *'   # 06:00 UTC daily — after overnight settlement data lands
   workflow_dispatch:
 
 permissions:
