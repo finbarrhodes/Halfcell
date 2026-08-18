@@ -98,8 +98,10 @@ function summarise(rows, mw) {
   const gross = d3.sum(Object.values(svc)) + arb;
   const net = gross - cyc;
   const years = rows.length / 12;
+  // Negative streams are kept: FR services can clear below zero, and filtering
+  // them out would hide that from the breakdown table and the revenue stack.
   const breakdown = Object.fromEntries(
-    Object.entries({...svc, Arbitrage: arb}).filter(([, v]) => v > 0)
+    Object.entries({...svc, Arbitrage: arb}).filter(([, v]) => v !== 0)
   );
   return {
     gross, cyc, net, years,

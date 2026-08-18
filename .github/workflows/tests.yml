@@ -1,0 +1,52 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'data/cache/latest_kpis.json'
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      # The unit suite is pure logic — no network, and mostly no data files —
+      # so it needs only the analysis dependencies, not the full app stack.
+      - name: Install dependencies
+        run: pip install pytest pandas pyarrow numpy scipy scikit-learn cvxpy holidays
+
+      - name: Run unit tests
+        run: pytest -m "not integration" -q
+
+  contracts:
+    name: Upstream API contracts
+    runs-on: ubuntu-latest
+    # Live public APIs — informational, so an upstream outage doesn't block a push.
+    # A real failure here means NESO rotated its EAC resources (expected each
+    # April) or Elexon changed date-parameter semantics; both need a code change.
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install pytest pandas pyarrow requests
+
+      - name: Run integration tests
+        run: pytest -m integration -q

@@ -116,6 +116,36 @@ achieves. For LP-based joint co-optimisation of arbitrage and frequency response
   the imbalance settlement price (SSP), which can reach extreme negative values during
   high-renewable periods and would otherwise inflate arbitrage revenue.
 
+## Negative clearing prices
+
+GB frequency response auctions clear below zero more often than is widely appreciated:
+**13.5% of auction records in this dataset (8,134 of 60,054) have a negative clearing
+price**, concentrated in DR High (5,205 records) and DM High (2,816). As the storage fleet
+has grown, procurement volumes have been outpaced and the High-side services in particular
+have tipped into oversupply.
+
+**These are included in revenue.** Negative prices are a real feature of a maturing
+flexibility market, and excluding them overstates FR income — by roughly 12% of total
+modelled revenue on this dataset. Earlier versions floored clearing prices at zero, which
+silently removed those records; the floor is now opt-in rather than a default.
+
+**Capacity allocation treats them differently, and deliberately so.** The Stage 1 allocator
+splits each block's capacity in proportion to the value of each stream, and capacity cannot
+rationally be allocated *toward* negative expected value — so the FR signal used for the
+split is clamped at zero. Two consequences:
+
+- A block whose services net out negative receives **no** FR commitment; the capacity is
+  released to arbitrage. It earns nothing from FR either way, and committing it would bind
+  the dispatch LP to the FR SoC band for no return.
+- A block that nets out positive but contains a negative leg (5,178 of 10,773 blocks) **is**
+  committed, and the negative leg is netted into revenue — modelling an operator bidding a
+  service stack that is profitable overall while carrying one loss-making component, rather
+  than one that cherry-picks each leg after the fact.
+
+Without the clamp the proportional split is undefined: a negative numerator produces
+negative committed MW, which propagates into the LP's power bounds, and the denominator can
+cross zero and make the fraction unbounded.
+
 ## Availability factor
 
 - Applied as a uniform multiplier to all revenue streams and cycling costs.

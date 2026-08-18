@@ -111,27 +111,25 @@ def test_unselected_services_contribute_nothing():
     assert set(df["service"]) == {"DCH"}
 
 
-def test_negative_clearing_blocks_are_excluded_by_the_default_price_floor():
-    """Pins the current modelling choice.
+def test_negative_clearing_prices_are_included_by_default():
+    """Negative clearing is a real feature of an oversupplied flexibility market.
 
-    `min_price` defaults to 0.0, so EFA blocks clearing below zero earn nothing
-    — modelling an operator who sets a bid floor and opts out rather than paying
-    to provide availability. This is material: ~13.5% of GB auction records in
-    the dataset clear negative, concentrated in DRH and DMH. If this choice is
-    ever revisited, this test should fail loudly rather than the revenue figures
-    shifting silently.
+    ~13.5% of GB auction records in the dataset clear below zero, concentrated in
+    DRH and DMH. Flooring them at zero overstated FR income by roughly 12% of
+    total modelled revenue, so signed prices are now the default.
     """
     battery = BatterySpec(power_mw=10.0, availability_factor=1.0)
-    assert _total(calc_ancillary_revenue(_auctions(price=-5.0), battery, ["DCH"], fr_mw=10.0)) == 0.0
+    total = _total(calc_ancillary_revenue(_auctions(price=-5.0), battery, ["DCH"], fr_mw=10.0))
+    assert total == pytest.approx(-5.0 * 10.0 * 4 * 6 * 31, rel=1e-6)
 
 
-def test_price_floor_is_configurable():
-    """Lowering the floor admits negative clearing prices."""
+def test_price_floor_is_opt_in():
+    """min_price still available for an operator who bids a floor and opts out."""
     battery = BatterySpec(power_mw=10.0, availability_factor=1.0)
     df = calc_ancillary_revenue(
-        _auctions(price=-5.0), battery, ["DCH"], fr_mw=10.0, min_price=-100.0
+        _auctions(price=-5.0), battery, ["DCH"], fr_mw=10.0, min_price=0.0
     )
-    assert _total(df) == pytest.approx(-5.0 * 10.0 * 4 * 6 * 31, rel=1e-6)
+    assert _total(df) == 0.0
 
 
 def test_date_filtering_restricts_the_period():
@@ -142,3 +140,73 @@ def test_date_filtering_restricts_the_period():
         start_date="2026-01-01", end_date="2026-01-15",
     ))
     assert 0 < part < full
+
+
+# --- FR/arbitrage allocation guard --------------------------------------
+
+def _forecast(days=3, flat=50.0):
+    """Flat forecast prices — no spread, so shadow arbitrage value is zero."""
+    dates = pd.date_range("2026-01-01", periods=days, freq="D")
+    return {d: pd.Series({sp: flat for sp in range(1, 49)}) for d in dates}
+
+
+def _auctions_priced(price, days=3):
+    dates = pd.date_range("2026-01-01", periods=days, freq="D")
+    return pd.DataFrame([
+        {"EFA Date": d, "Service": "DRH", "EFA": efa,
+         "Clearing Price": price, "Cleared Volume": 100.0}
+        for d in dates for efa in range(1, 7)
+    ])
+
+
+def test_allocation_never_commits_negative_mw():
+    """A block whose services net out negative must not yield negative MW.
+
+    The proportional split divides by (fr_value + arb_value); an unclamped
+    negative fr_value gives a negative fraction, and the committed MW flows
+    into the dispatch LP's power bounds.
+    """
+    from src.analysis.revenue_stack import compute_daily_fr_schedule
+
+    battery = BatterySpec(power_mw=50.0)
+    sched = compute_daily_fr_schedule(
+        _auctions_priced(-5.0), _forecast(), battery, services=["DRH"]
+    )
+    assert (sched >= 0).all(), f"negative MW committed: min={sched.min()}"
+
+
+def test_allocation_commits_nothing_to_fr_at_negative_prices():
+    """Blocks clearing negative overall should be released to arbitrage."""
+    from src.analysis.revenue_stack import compute_daily_fr_schedule
+
+    battery = BatterySpec(power_mw=50.0)
+    sched = compute_daily_fr_schedule(
+        _auctions_priced(-5.0), _forecast(), battery, services=["DRH"]
+    )
+    assert (sched == 0).all(), (
+        "a negative-clearing block was committed to FR — the degenerate branch "
+        "used to commit 100% here"
+    )
+
+
+def test_allocation_is_bounded_by_installed_power():
+    from src.analysis.revenue_stack import compute_daily_fr_schedule
+
+    battery = BatterySpec(power_mw=50.0)
+    for price in (-20.0, -0.01, 0.0, 0.01, 25.0):
+        sched = compute_daily_fr_schedule(
+            _auctions_priced(price), _forecast(), battery, services=["DRH"]
+        )
+        assert (sched >= 0).all() and (sched <= battery.power_mw + 1e-9).all(), (
+            f"allocation out of bounds at clearing price {price}"
+        )
+
+
+def test_positive_prices_still_commit_to_fr():
+    from src.analysis.revenue_stack import compute_daily_fr_schedule
+
+    battery = BatterySpec(power_mw=50.0)
+    sched = compute_daily_fr_schedule(
+        _auctions_priced(20.0), _forecast(), battery, services=["DRH"]
+    )
+    assert (sched > 0).all()

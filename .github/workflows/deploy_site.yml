@@ -1,0 +1,61 @@
+name: Build & Deploy Site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'data/processed/**'
+      - 'data/cache/**'
+      - '.github/workflows/deploy_site.yml'
+  workflow_dispatch:
+
+# Never let two deploys race; a later push supersedes an in-flight build.
+concurrency:
+  group: deploy-site
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The site's data loaders are Python and read the committed parquets, so
+      # the build runs here rather than in Cloudflare's build image — pandas and
+      # pyarrow are awkward to provision there, and this keeps the data pipeline
+      # and the site build on the same runtime.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Python dependencies
+        run: pip install pandas pyarrow
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: site/package-lock.json
+
+      - name: Install Node dependencies
+        run: npm ci --prefix site
+
+      - name: Guard against a torn cache
+        # precompute_cache.py writes the three strategy parquets sequentially
+        # over ~20 minutes and the manifest last. A build that lands mid-run
+        # would mix strategies from different runs and publish blended results.
+        run: python scripts/check_cache_consistency.py
+
+      - name: Build site
+        run: npm run build --prefix site
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy site/dist --project-name=halfcell --branch=main

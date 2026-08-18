@@ -140,7 +140,9 @@ def _recompute_summary(monthly: pd.DataFrame, power_mw: float) -> dict:
     ann_per_mw    = ann_net     / power_mw      if power_mw > 0 else 0.0
 
     breakdown = {**svc_totals, "Arbitrage": imb_rev}
-    breakdown = {k: v for k, v in breakdown.items() if v > 0}
+    # Streams are kept even when negative — FR services can clear below zero and
+    # dropping them here would hide that from the breakdown and the chart.
+    breakdown = {k: v for k, v in breakdown.items() if v != 0}
     top_service = max(breakdown, key=breakdown.get) if breakdown else ""
 
     return {

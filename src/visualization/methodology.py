@@ -180,6 +180,46 @@ st.markdown(
 st.divider()
 
 # ---------------------------------------------------------------------------
+# Negative clearing prices
+# ---------------------------------------------------------------------------
+
+st.header("Negative clearing prices")
+st.markdown(
+    """
+GB frequency response auctions clear below zero more often than is widely appreciated:
+**13.5% of auction records in this dataset (8,134 of 60,054) have a negative clearing
+price**, concentrated in DR High (5,205 records) and DM High (2,816). As the storage
+fleet has grown, procurement volumes have been outpaced and the High-side services in
+particular have tipped into oversupply.
+
+**These are included in revenue.** Negative prices are a real feature of a maturing
+flexibility market, and excluding them overstates FR income — by roughly 12% of total
+modelled revenue on this dataset. Earlier versions floored clearing prices at zero,
+which silently removed those records; the floor is now opt-in via the `min_price`
+parameter rather than a default.
+
+**Capacity allocation treats them differently, and deliberately so.** The Stage 1
+allocator splits each EFA block's capacity in proportion to the value of each stream.
+Capacity cannot rationally be allocated *toward* negative expected value, so the FR
+signal used for the split is clamped at zero. Two consequences:
+
+- A block whose services net out negative receives **no** FR commitment — the capacity
+  is released to arbitrage instead. It earns nothing from FR either way, and committing
+  it would bind the dispatch LP to the FR SoC band for no return.
+- A block that nets out positive but contains a negative leg (5,178 of 10,773 blocks)
+  **is** committed, and the negative leg is netted into revenue. This models an operator
+  bidding a service stack that is profitable overall while carrying one loss-making
+  component — rather than one that cherry-picks each leg after the fact.
+
+Without the clamp the proportional split is not well defined: a negative numerator
+produces negative committed MW, which propagates into the LP's power bounds, and the
+denominator can cross zero and make the fraction unbounded.
+"""
+)
+
+st.divider()
+
+# ---------------------------------------------------------------------------
 # Availability factor
 # ---------------------------------------------------------------------------
 

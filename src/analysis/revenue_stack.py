@@ -358,17 +358,22 @@ def calc_ancillary_revenue(
     services: list,
     start_date=None,
     end_date=None,
-    min_price: float = 0.0,
+    min_price: float | None = None,
     fr_mw: float = None,
     fr_schedule: "pd.Series | None" = None,
 ) -> pd.DataFrame:
     """
     Monthly availability revenue from frequency response auctions.
 
-    Negative clearing prices occur in oversupplied GB markets (notably DR High).
-    The min_price floor (default 0.0) models an operator who sets a bid price
-    floor and opts out of any EFA block clearing below that threshold — a
-    rational strategy any real participant would adopt.
+    Negative clearing prices occur in oversupplied GB markets (notably DR High
+    and DM High) and are included by default: they are a real feature of a
+    flexibility market with a growing storage fleet, and excluding them
+    overstates FR income.
+
+    min_price optionally floors the clearing price, modelling an operator who
+    sets a bid floor and opts out of blocks clearing below it. This defaulted to
+    0.0 historically, which silently removed 13.5% of auction records — worth
+    roughly 12% of total modelled revenue — so it is now opt-in.
 
     Parameters
     ----------
@@ -386,7 +391,8 @@ def calc_ancillary_revenue(
     """
     df = _filter_dates(auctions.copy(), "EFA Date", start_date, end_date)
     df = df[df["Service"].isin(services)]
-    df = df[df["Clearing Price"] >= min_price]
+    if min_price is not None:
+        df = df[df["Clearing Price"] >= min_price]
 
     if df.empty:
         return pd.DataFrame(columns=["month", "service", "revenue_gbp"])
@@ -880,7 +886,8 @@ def compute_daily_fr_schedule(
     # EAC auctions clear day-ahead for each EFA block independently.
     df_a = _filter_dates(auctions.copy(), "EFA Date", start_date, end_date)
     df_a = df_a[df_a["Service"].isin(services)]
-    df_a = df_a[df_a["Clearing Price"] >= 0.0]
+    # Negative legs are kept here and netted into the block's signal below;
+    # the clamp that keeps the allocation well-defined is applied per block.
 
     # Sum clearing prices (×EFA_HOURS) across services for each (EFA Date, EFA block)
     if not df_a.empty:
@@ -923,8 +930,23 @@ def compute_daily_fr_schedule(
             else:
                 arb_value = 0.0
 
-            total       = fr_value + arb_value
-            fr_fraction = (fr_value / total) if total > 0 else 1.0
+            # Capacity cannot rationally be allocated toward negative expected
+            # value, so the FR signal is clamped at zero for the split. Without
+            # this a block whose services net out negative yields a negative
+            # fr_fraction (negative committed MW, which then flows into the LP
+            # power bounds), or an unbounded one as the denominator crosses zero.
+            fr_signal = max(0.0, fr_value)
+            total     = fr_signal + arb_value
+
+            if total <= 0:
+                # Neither stream has positive expected value for this block.
+                # Commit nothing to FR rather than everything: FR earns nothing
+                # here either way, and a commitment would bind the LP to the FR
+                # SoC band for no return.
+                fr_fraction = 0.0
+            else:
+                fr_fraction = fr_signal / total
+
             schedule[(date_ts, efa)] = fr_fraction * battery.power_mw
 
     if not schedule:

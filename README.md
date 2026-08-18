@@ -34,7 +34,7 @@ This project provides:
 
 1. **Navigate to the project directory**:
 ```bash
-cd gb-bess-market-analysis
+cd halfcell
 ```
 
 2. **Create a virtual environment**:
@@ -123,6 +123,38 @@ streamlit run app.py
 
 Or visit the live deployment: [halfcell.streamlit.app](https://halfcell.streamlit.app)
 
+## Static site
+
+The dashboard is also built as a static site under `site/`, using
+[Observable Framework](https://observablehq.com/framework/). Python data loaders read the
+committed parquets at build time, so the offline pipeline stays the single source of truth
+and the published site needs no server — no cold starts, no sleeping, no runtime compute.
+
+```bash
+npm --prefix site install     # once
+npm --prefix site run dev     # local preview on :3000
+npm --prefix site run build   # writes site/dist
+```
+
+### Deployment
+
+`.github/workflows/deploy_site.yml` builds and deploys to Cloudflare Pages on every push to
+`main` that touches `site/`, `data/processed/` or `data/cache/`. The build runs in GitHub
+Actions rather than Cloudflare's build image, because the data loaders need pandas and
+pyarrow against the repo's parquet files.
+
+First-time setup:
+
+1. Create a Cloudflare Pages project named `halfcell` (Workers & Pages → Create → Pages →
+   **Direct Upload**; the workflow uploads a prebuilt `dist/`, so do not connect the repo).
+2. Create an API token with the **Cloudflare Pages: Edit** permission.
+3. Add two repository secrets: `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
+
+The workflow runs `scripts/check_cache_consistency.py` before building. `precompute_cache.py`
+writes the three strategy parquets sequentially over ~20 minutes, so a build landing mid-run
+would otherwise publish a blend of strategies from different runs — plausible-looking numbers
+that are not comparable to each other.
+
 ## Key Markets Analyzed
 
 - **Dynamic Containment (DC)**: Fast-acting frequency response (High and Low)
@@ -162,9 +194,16 @@ The project will implement and compare multiple forecasting approaches:
 
 ## Testing
 
-Run the test suite:
+Run the unit suite (no network, runs on a bare checkout):
 ```bash
-pytest tests/
+pytest -m "not integration"
+```
+
+Integration tests hit the live NESO and Elexon APIs and are deselected by default. They
+guard the two upstream behaviours that have caused silent data loss here — NESO's annual
+EAC resource rotation each April, and Elexon's date-parameter semantics:
+```bash
+pytest -m integration
 ```
 
 Run with coverage:
