@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "halfcell-site",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "site", "run", "dev", "--", "--port", "3000", "--no-open"],
+      "port": 3000
+    }
+  ]
+}

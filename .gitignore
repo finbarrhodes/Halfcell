@@ -100,3 +100,10 @@ Thumbs.db
 memory/
 TODOS.md
 .claude/CLAUDE.md
+.claude/settings.local.json
+
+# Observable Framework static site
+site/node_modules/
+site/dist/
+site/.observablehq/cache/
+site/src/.observablehq/
