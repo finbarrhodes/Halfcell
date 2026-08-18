@@ -21,6 +21,9 @@ PROCESSED = ROOT / "data" / "processed"
 CACHE    = ROOT / "data" / "cache"
 OUT_FILE = CACHE / "latest_kpis.json"
 
+# A full day is 48 settlement periods; 46 admits the BST spring-forward day.
+MIN_PERIODS_PER_DAY = 46
+
 # Plausibility bounds — reject values outside these before writing
 BOUNDS = {
     "dch_latest":    (-10, 200),   # £/MW/h
@@ -58,11 +61,22 @@ def _compute() -> dict:
     if apx.empty:
         raise ValueError("No APXMIDP rows found in market_index.parquet")
 
+    # Only use days with a full settlement-period count. A partially-published
+    # day (the current day, or a truncated API response) yields a spuriously
+    # small peak-to-trough spread that still passes the plausibility bounds
+    # below — so it has to be excluded here rather than caught downstream.
+    # 46 rather than 48 to admit the BST spring-forward day.
+    periods_per_day = apx.groupby("settlementDate")["price"].size()
+    complete_days   = periods_per_day[periods_per_day >= MIN_PERIODS_PER_DAY].index
+
     spread = (
-        apx.groupby("settlementDate")["price"]
+        apx[apx["settlementDate"].isin(complete_days)]
+        .groupby("settlementDate")["price"]
         .agg(lambda x: x.max() - x.min())
     )
     spread      = spread[spread > 0].sort_index()
+    if spread.empty:
+        raise ValueError("No complete settlement days found in market_index.parquet")
     latest_mkt  = spread.index.max()
     cut30m      = latest_mkt - pd.Timedelta(days=30)
     cut90m      = latest_mkt - pd.Timedelta(days=90)
