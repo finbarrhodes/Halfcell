@@ -40,6 +40,12 @@ export default {
 
   // Custom stylesheet rather than a stock theme — see src/style.css
   style: "style.css",
+
+  // Framework loads Source Serif 4 from Google Fonts by default. The palette in
+  // style.css uses local system serifs instead, so that request fetched a font
+  // nothing rendered with — a third-party round trip on every page load for
+  // nothing. Empty array removes it.
+  globalStylesheets: [],
   toc: false,
   pager: false,
   footer: () =>
