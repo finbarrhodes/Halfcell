@@ -1,8 +1,8 @@
 # Halfcell
 
-[![Live Demo](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://halfcell.streamlit.app)
+**[halfcell.pages.dev](https://halfcell.pages.dev)** — live site
 
-Halfcell is a tool for analysing GB Battery Energy Storage System (BESS) markets — covering historical trends, price dynamics, and revenue modelling across ancillary services. Built on public NESO and Elexon data, with a Streamlit frontend. A personal project to explore and surface insights from the UK BESS landscape; some features are still in progress.
+Halfcell is a tool for analysing GB Battery Energy Storage System (BESS) markets — covering historical trends, price dynamics, and revenue modelling across ancillary services. Built on public NESO and Elexon data, published as a static site. A personal project to explore and surface insights from the UK BESS landscape; some features are still in progress.
 
 ## Project Overview
 
@@ -116,12 +116,12 @@ python src/forecasting/train_models.py
 
 ### 4. Launch Dashboard
 
-Start the interactive Streamlit app (market dashboard + revenue backtester):
+The published site is static — see [Static site](#static-site) below. A Streamlit
+version of the same pages is also kept in the repo and reads the same pre-computed cache:
+
 ```bash
 streamlit run app.py
 ```
-
-Or visit the live deployment: [halfcell.streamlit.app](https://halfcell.streamlit.app)
 
 ## Static site
 

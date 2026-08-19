@@ -220,6 +220,59 @@ denominator can cross zero and make the fraction unbounded.
 st.divider()
 
 # ---------------------------------------------------------------------------
+# Why DR High clears negative
+# ---------------------------------------------------------------------------
+
+st.header("Why DR High clears negative")
+st.markdown(
+    """
+DR High is the clearest example of why negative prices had to be included rather than
+floored. Taken alone it looks like a loss-making service; in context it is not.
+
+| Year | DRH mean | DRL mean | DRH negative | DR pair (H+L) |
+|---|---|---|---|---|
+| 2022 | +£11.53 | +£13.00 | 0% | +£24.52 |
+| 2023 | +£1.10 | +£10.66 | 14% | +£11.75 |
+| 2024 | −£4.80 | +£8.18 | 88% | +£3.38 |
+| 2025 | −£2.42 | +£13.21 | 77% | +£10.79 |
+| 2026 | −£8.31 | +£16.41 | 92% | +£8.10 |
+
+*All figures £/MW/h.*
+
+DRH has cleared negative in the large majority of blocks since 2024, reaching 92% in 2026 —
+while DRL has strengthened over the same period. **The pair, however, remains reliably
+positive**: +£8.10/MW/h in 2026, with fewer than 11% of blocks negative as a pair.
+
+Two pieces of evidence indicate the market prices DR as a package rather than as two
+independent services:
+
+- **Cleared volumes are matched.** DRH and DRL clear within 5% of each other on 77% of
+  blocks since 2025 (median difference 20 MW), against 52% for DM and 49% for DC.
+- **The two legs are negatively correlated** (ρ = −0.21) — the split moves while the sum
+  stays comparatively stable, the signature of a package price divided between two legs.
+
+The mechanism is the 60-minute sustained delivery requirement, against 15 minutes for DC
+and 30 for DM. A provider holding a DR position must keep SoC near the midpoint to honour
+either direction for the full window, so committing to one leg commits the asset's SoC
+posture to both, and the market clears the package asymmetrically.
+
+**Reading the revenue breakdown.** A negative DR High figure is not a service to drop —
+dropping it means not participating in DR at all. The service selector allows DRH and DRL
+to be toggled independently, which is useful for attribution but does not correspond to a
+strategy an operator could run.
+
+One correlation cuts against the intuitive explanation: DRH prices are *positively*
+correlated with daily renewable share (ρ = +0.43) while DRL is weakly negative (ρ = −0.18).
+Higher renewable output displaces synchronous generation and reduces system inertia, which
+raises the value of fast downward-frequency containment — the discharge leg. The naive
+reading, that high renewables make charging more valuable and discharging less, is not what
+the data shows.
+"""
+)
+
+st.divider()
+
+# ---------------------------------------------------------------------------
 # Availability factor
 # ---------------------------------------------------------------------------
 
