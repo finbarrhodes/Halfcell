@@ -2,10 +2,11 @@
 
 Grid-scale batteries earn from several markets at once. This model covers the **day-ahead
 decision layer**: given yesterday's auction results and price data, how should an operator
-split capacity between frequency response and wholesale arbitrage — and how much does
-forecast quality actually change the outcome?
+split capacity between frequency response & wholesale arbitrage, and how much does forecast
+quality actually change the outcome?
 
-Scroll through one worked day to see how the model decides.
+The walkthrough below follows a single winter day — 8 January 2026 — from the raw price
+curve through to the dispatch the model settles on. Scroll, or select any step directly.
 
 ```js
 import {SERVICE_COLOURS, SERVICE_LABELS, STRATEGY_LABELS, gbp} from "./components/theme.js";

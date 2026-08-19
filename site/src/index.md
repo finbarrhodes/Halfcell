@@ -37,11 +37,19 @@ const fmtGbp = (v) =>
   </div>
 </div>
 
-## Modelled revenue by strategy
+## Where data science meets the clean energy transition
 
-Cumulative net revenue for the reference 50 MW / 2 h asset, across the three
-forecasting strategies. Perfect Foresight is the ceiling; Naive D-1 is the
-zero-skill floor; the ML model sits between them.
+Halfcell asks what data science can actually contribute to clean tech, using a concrete
+case: a grid-scale battery deciding, every day, how to divide its capacity between
+frequency response and wholesale arbitrage. That decision rests on a forecast of tomorrow's
+prices — so it is a modelling problem before it is an engineering one, and different
+strategies produce measurably different outcomes.
+
+The chart below runs three of them through the same dispatch engine on the same asset.
+**Perfect Foresight** knows tomorrow's prices and marks the ceiling. **Naive** reuses
+yesterday's and marks the zero-skill floor — the bar any real model has to clear. A
+**Random Forest** trained on lagged prices, generation mix and cyclical time features sits
+between the two, and the gap it closes is the value the modelling adds.
 
 ```js
 const cumulative = (() => {
