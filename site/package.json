@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "observable preview",
-    "build": "observable build",
+    "build": "observable build && node scripts/copy-static.mjs",
     "clean": "rimraf src/.observablehq/cache"
   },
   "dependencies": {

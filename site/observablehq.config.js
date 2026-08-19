@@ -2,6 +2,10 @@
 // Static build of the GB BESS market analysis previously served via Streamlit.
 
 const title = "Halfcell";
+
+// Absolute, because unfurlers do not resolve relative og:image paths.
+// Regenerate the card with scripts/make_og_image.py after a data refresh.
+const siteUrl = "https://halfcell.pages.dev";
 const description =
   "Analysis of GB battery storage markets — frequency response clearing prices, " +
   "wholesale arbitrage, and a day-ahead forecasting and MPC dispatch model.";
@@ -24,7 +28,13 @@ export default {
 <meta property="og:title" content="${title} — GB battery storage market analysis">
 <meta property="og:description" content="${description}">
 <meta property="og:type" content="website">
+<meta property="og:url" content="${siteUrl}/">
+<meta property="og:image" content="${siteUrl}/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Halfcell — cumulative modelled revenue for three forecasting strategies on a GB grid-scale battery">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="${siteUrl}/og-image.png">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>%F0%9F%94%8B</text></svg>">
 `,
 

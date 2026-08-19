@@ -33,7 +33,7 @@ jobs:
           cache: 'pip'
 
       - name: Install Python dependencies
-        run: pip install pandas pyarrow
+        run: pip install pandas pyarrow matplotlib
 
       - uses: actions/setup-node@v4
         with:
@@ -49,6 +49,11 @@ jobs:
         # over ~20 minutes and the manifest last. A build that lands mid-run
         # would mix strategies from different runs and publish blended results.
         run: python scripts/check_cache_consistency.py
+
+      # Regenerated from the cache each deploy so the figures on the link
+      # preview card cannot drift away from the site it advertises.
+      - name: Render Open Graph card
+        run: python scripts/make_og_image.py
 
       - name: Build site
         run: npm run build --prefix site
