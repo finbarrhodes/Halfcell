@@ -120,7 +120,10 @@ Where the traces diverge is the cost of forecast error. The analysis below quant
 </div></div>
 
 </div>
-<div class="scrolly-graphic" id="walkthrough-graphic"></div>
+<div class="scrolly-graphic">
+<div class="scrolly-rail" id="walkthrough-rail"></div>
+<div id="walkthrough-figure"></div>
+</div>
 </div>
 
 ```js
@@ -203,9 +206,10 @@ function buildFigure(s) {
 
 {
   const root = document.getElementById("walkthrough");
-  const target = document.getElementById("walkthrough-graphic");
+  const target = document.getElementById("walkthrough-figure");
+  const rail = document.getElementById("walkthrough-rail");
   if (root && target) {
-    const stop = watchSteps(root, (i) => target.replaceChildren(buildFigure(i)));
+    const stop = watchSteps(root, (i) => target.replaceChildren(buildFigure(i)), {rail});
     invalidation.then(stop);
   }
 }

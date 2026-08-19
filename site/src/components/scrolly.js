@@ -6,15 +6,48 @@
 // and falls back to "all steps visible" behaviour when the observer is
 // unavailable or the reader prefers reduced motion.
 
-export function watchSteps(root, onChange) {
+export function watchSteps(root, onChange, {rail} = {}) {
   const steps = Array.from(root.querySelectorAll(".step"));
   if (!steps.length) return () => {};
+
+  // Progress indicator: built from the steps themselves so the count cannot
+  // drift out of step with the prose. Dots are buttons, so the walkthrough can
+  // be navigated without scrolling.
+  let dots = [];
+  let counter = null;
+  if (rail) {
+    counter = document.createElement("span");
+    counter.className = "scrolly-rail-count";
+
+    const track = document.createElement("div");
+    track.className = "scrolly-rail-track";
+    dots = steps.map((_, i) => {
+      const dot = document.createElement("button");
+      dot.type = "button";
+      dot.className = "scrolly-dot";
+      dot.setAttribute("aria-label", `Go to step ${i + 1} of ${steps.length}`);
+      dot.addEventListener("click", () => {
+        setActive(i);
+        steps[i].scrollIntoView({behavior: "smooth", block: "center"});
+      });
+      track.append(dot);
+      return dot;
+    });
+
+    rail.replaceChildren(counter, track);
+  }
 
   let active = -1;
   const setActive = (i) => {
     if (i === active) return;
     active = i;
     steps.forEach((el, j) => el.classList.toggle("is-active", j === i));
+    dots.forEach((dot, j) => {
+      dot.classList.toggle("is-active", j === i);
+      dot.classList.toggle("is-done", j < i);
+      dot.setAttribute("aria-current", j === i ? "step" : "false");
+    });
+    if (counter) counter.textContent = `Step ${i + 1} of ${steps.length}`;
     onChange(i);
   };
 

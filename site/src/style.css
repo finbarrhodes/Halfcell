@@ -219,3 +219,47 @@ form.oi input[type="checkbox"], form.oi input[type="radio"] { accent-color: var(
   border-left-color: var(--hc-orange);
   box-shadow: 0 0 0 2px rgba(201, 64, 10, 0.25);
 }
+
+/* Walkthrough progress indicator */
+.scrolly-rail {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding-bottom: 0.8rem;
+  margin-bottom: 0.4rem;
+  border-bottom: 1px solid var(--hc-rule);
+}
+
+.scrolly-rail-count {
+  font-family: var(--sans-serif);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--hc-ink-soft);
+  white-space: nowrap;
+}
+
+.scrolly-rail-track { display: flex; gap: 0.4rem; align-items: center; }
+
+.scrolly-dot {
+  width: 26px;
+  height: 4px;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: var(--hc-rule);
+  cursor: pointer;
+  transition: background 0.25s ease, transform 0.25s ease;
+}
+.scrolly-dot:hover { background: var(--hc-ink-faint); }
+.scrolly-dot.is-done { background: var(--hc-teal); opacity: 0.45; }
+.scrolly-dot.is-active { background: var(--hc-teal); transform: scaleY(1.75); }
+.scrolly-dot:focus-visible {
+  outline: 2px solid var(--hc-orange);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scrolly-dot { transition: none; }
+}
