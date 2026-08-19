@@ -1,5 +1,16 @@
 # Market Overview
 
+Great Britain is retiring the machines that used to hold its grid steady. Coal is gone,
+gas is in decline, and wind and solar now supply a large and growing share of generation.
+Those sources are cheap and clean, but they connect through power electronics rather than
+spinning turbines — so as they displace conventional plant, the system loses **inertia**,
+the physical flywheel effect that used to resist sudden changes in frequency.
+
+Grid frequency has to stay within a whisker of 50 Hz. With less inertia it moves faster
+when something breaks, which means the response has to be faster too. Batteries are
+unusually well suited to this: they can go from idle to full output in under a second, in
+either direction. That capability is what the frequency response markets buy.
+
 ```js
 import {MARKET_COLOURS, EFA_BLOCKS, rollingMean} from "./components/theme.js";
 
@@ -12,6 +23,101 @@ const sysPrices = (await FileAttachment("data/system-prices-daily.parquet").parq
 const generation = (await FileAttachment("data/generation-daily.parquet").parquet())
   .toArray().map((d) => ({...d, date: new Date(d.date)}));
 ```
+
+## The shift that created the market
+
+The generation mix is the clearest way to see why these markets exist and why they have
+grown. Wind and solar rise; gas and coal fall; the system carries less and less inertia.
+
+GB generation by fuel group. The mix matters for BESS because it shapes the underlying risk
+of frequency deviation: high wind with low demand pushes frequency high (requiring charge /
+Low-side response), while low wind with high demand can cause dips (requiring discharge /
+High-side response).
+
+```js
+const genRolling = (() => {
+  const out = [];
+  for (const [fuel, rows] of d3.group(generation, (d) => d.fuel_group)) {
+    const sorted = d3.sort(rows, (d) => d.date).map((d) => ({date: d.date, value: d.generation}));
+    for (const r of rollingMean(sorted, 14)) out.push({...r, fuel});
+  }
+  return out;
+})();
+
+const fuelOrder = Array.from(
+  d3.rollup(generation, (v) => d3.sum(v, (d) => d.generation), (d) => d.fuel_group)
+).sort((a, b) => d3.descending(a[1], b[1])).map((d) => d[0]);
+
+display(Plot.plot({
+  height: 460, marginLeft: 60,
+  x: {label: null},
+  y: {label: "Avg generation (MW)", grid: true},
+  color: {legend: true, domain: fuelOrder},
+  marks: [
+    Plot.ruleY([0], {strokeOpacity: 0.3}),
+    Plot.line(genRolling, {x: "date", y: "value", stroke: "fuel", strokeWidth: 1.4}),
+  ],
+}));
+```
+
+14-day rolling mean, smoothing day-to-day noise while still resolving seasonal swings.
+Click legend entries to isolate a fuel group.
+
+### Average share by fuel group
+
+```js
+const shares = Array.from(
+  d3.rollup(generation, (v) => d3.mean(v, (d) => d.generation), (d) => d.fuel_group),
+  ([fuel, mean]) => ({fuel, mean})
+).filter((d) => d.mean > 0).sort((a, b) => d3.descending(a.mean, b.mean));
+
+const total = d3.sum(shares, (d) => d.mean);
+
+display(Plot.plot({
+  height: 320, marginLeft: 110,
+  x: {label: "Share of generation (%)", grid: true},
+  y: {label: null, domain: shares.map((d) => d.fuel)},
+  marks: [
+    Plot.barX(shares, {x: (d) => (d.mean / total) * 100, y: "fuel", fill: "#0D7680"}),
+    Plot.text(shares, {
+      x: (d) => (d.mean / total) * 100, y: "fuel", dx: 4, textAnchor: "start",
+      text: (d) => `${((d.mean / total) * 100).toFixed(1)}%`,
+    }),
+  ],
+}));
+```
+
+## How a battery earns from it
+
+A grid-scale battery in GB has two main routes to revenue, and this page covers the market
+data behind both.
+
+**Frequency response — contracted availability.** NESO runs daily auctions for capacity
+that must react within seconds when frequency strays from 50 Hz. Win one and you are paid
+a **£/MW/h availability fee** for every hour you are committed, whether or not you are
+actually called. Predictable, contracted income — but the committed capacity has to keep
+enough charge and enough headroom to deliver in either direction.
+
+There are three services, split by how fast and how long they must respond:
+
+| Service | Frequency band | Response | Sustained for |
+|---|---|---|---|
+| **DC** — Dynamic Containment | ±0.2–0.5 Hz | ~1 second | 15 min |
+| **DR** — Dynamic Regulation | ±0.015–0.2 Hz | continuous | 60 min |
+| **DM** — Dynamic Moderation | ±0.1–0.5 Hz | ~1 second | 30 min |
+
+Each runs as two separate auctions: **High**, which responds to *falling* frequency by
+discharging, and **Low**, which responds to *rising* frequency by charging. Auctions clear
+per **EFA block** — six four-hour windows covering the day — so a battery's commitment can
+differ across the day.
+
+**Wholesale arbitrage — opportunistic trading.** Separately, the battery can buy energy
+when it is cheap and sell when it is expensive. The profit is the price spread less
+round-trip losses and the wear cost of cycling.
+
+The tension between the two is the subject of the
+[Forecasting & Dispatch](./backtester) page: capacity committed to frequency response
+cannot be freely traded, so the operator must decide each day how to split it.
 
 ```js
 const allServices = d3.sort(new Set(auctions.map((d) => d.service)));
@@ -328,7 +434,7 @@ display(Inputs.table(
 ));
 ```
 
-## Grid & settlement prices
+## Wholesale & settlement prices
 
 **System Buy Price (SBP)** and **System Sell Price (SSP)** are the cash-out prices used to
 settle imbalance in the GB Balancing Mechanism. Parties that are *short* pay the SBP; parties
@@ -374,62 +480,3 @@ display(Plot.plot({
 
 Thin line is the daily spread; heavy line is a 28-day rolling average.
 
-## Generation mix
-
-GB generation by fuel group. The mix matters for BESS because it shapes the underlying risk
-of frequency deviation: high wind with low demand pushes frequency high (requiring charge /
-Low-side response), while low wind with high demand can cause dips (requiring discharge /
-High-side response).
-
-```js
-const genRolling = (() => {
-  const out = [];
-  for (const [fuel, rows] of d3.group(generation, (d) => d.fuel_group)) {
-    const sorted = d3.sort(rows, (d) => d.date).map((d) => ({date: d.date, value: d.generation}));
-    for (const r of rollingMean(sorted, 14)) out.push({...r, fuel});
-  }
-  return out;
-})();
-
-const fuelOrder = Array.from(
-  d3.rollup(generation, (v) => d3.sum(v, (d) => d.generation), (d) => d.fuel_group)
-).sort((a, b) => d3.descending(a[1], b[1])).map((d) => d[0]);
-
-display(Plot.plot({
-  height: 460, marginLeft: 60,
-  x: {label: null},
-  y: {label: "Avg generation (MW)", grid: true},
-  color: {legend: true, domain: fuelOrder},
-  marks: [
-    Plot.ruleY([0], {strokeOpacity: 0.3}),
-    Plot.line(genRolling, {x: "date", y: "value", stroke: "fuel", strokeWidth: 1.4}),
-  ],
-}));
-```
-
-14-day rolling mean, smoothing day-to-day noise while still resolving seasonal swings.
-Click legend entries to isolate a fuel group.
-
-### Average share by fuel group
-
-```js
-const shares = Array.from(
-  d3.rollup(generation, (v) => d3.mean(v, (d) => d.generation), (d) => d.fuel_group),
-  ([fuel, mean]) => ({fuel, mean})
-).filter((d) => d.mean > 0).sort((a, b) => d3.descending(a.mean, b.mean));
-
-const total = d3.sum(shares, (d) => d.mean);
-
-display(Plot.plot({
-  height: 320, marginLeft: 110,
-  x: {label: "Share of generation (%)", grid: true},
-  y: {label: null, domain: shares.map((d) => d.fuel)},
-  marks: [
-    Plot.barX(shares, {x: (d) => (d.mean / total) * 100, y: "fuel", fill: "#0D7680"}),
-    Plot.text(shares, {
-      x: (d) => (d.mean / total) * 100, y: "fuel", dx: 4, textAnchor: "start",
-      text: (d) => `${((d.mean / total) * 100).toFixed(1)}%`,
-    }),
-  ],
-}));
-```

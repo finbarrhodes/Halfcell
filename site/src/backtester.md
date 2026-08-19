@@ -1,24 +1,11 @@
 # Day-Ahead Forecasting & Dispatch Model
 
-Grid-scale batteries earn revenue by participating in multiple markets simultaneously.
-This model focuses on the **day-ahead decision layer**: given yesterday's auction results
-and market price data, how should a BESS operator allocate capacity between frequency
-response commitment and spot arbitrage — and how much does the quality of the price
-forecast actually affect the outcome?
+Grid-scale batteries earn from several markets at once. This model covers the **day-ahead
+decision layer**: given yesterday's auction results and price data, how should an operator
+split capacity between frequency response and wholesale arbitrage — and how much does
+forecast quality actually change the outcome?
 
-The framework has three components: a **per-EFA-block FR/arbitrage capacity allocator**
-that compares confirmed auction clearing prices against a forecast-based shadow arbitrage
-value; an **MPC dispatch engine** (rolling 48-hour LP) that plans charge/discharge at
-half-hourly resolution while enforcing FR SoC constraints as hard bounds; and a **price
-forecasting pipeline** that benchmarks three strategies against each other.
-
-<div class="note">
-<b>Scope note:</b> this model covers the day-ahead planning layer only. Intraday
-re-optimisation, Balancing Mechanism participation, and real-time dispatch are not
-modelled — these require operational settlement data not available publicly, and are the
-primary reason figures here differ from industry estimates. The focus is the forecasting
-and optimisation methodology rather than comprehensive revenue capture.
-</div>
+Scroll through one worked day to see how the model decides.
 
 ```js
 import {SERVICE_COLOURS, SERVICE_LABELS, STRATEGY_LABELS, gbp} from "./components/theme.js";
@@ -43,6 +30,187 @@ const bounds = (() => {
   return [new Date(d3.min(starts)), new Date(d3.max(ends))];
 })();
 ```
+
+
+```js
+import {watchSteps} from "./components/scrolly.js";
+const sampleDay = (await FileAttachment("data/sample-day.parquet").parquet()).toArray();
+```
+
+<div class="scrolly" id="walkthrough">
+<div class="scrolly-steps">
+
+<div class="step"><div class="step-inner">
+<span class="step-num">Step 1</span>
+
+### A day of wholesale prices
+
+Half-hourly APXMIDP prices for **8 January 2026**, a representative GB winter day. Prices
+run from £73 to £291/MWh — an overnight trough, a morning rise, and the evening peak when
+demand is highest and wind typically eases.
+
+That spread is the raw arbitrage opportunity: buy low, sell high.
+</div></div>
+
+<div class="step"><div class="step-inner">
+<span class="step-num">Step 2</span>
+
+### Charge cheap, discharge dear
+
+The obvious play. Charge through the overnight trough, discharge into the evening peak.
+
+The catch is that a 2-hour battery can only shift so much energy, and every cycle costs
+something in degradation — so the model has to pick *which* periods are worth trading, not
+simply trade the extremes.
+</div></div>
+
+<div class="step"><div class="step-inner">
+<span class="step-num">Step 3</span>
+
+### But frequency response pays for sitting still
+
+NESO pays a **£/MW/h availability fee** for capacity held ready to respond within seconds,
+whether or not it is ever called. That income is contracted and known a day ahead, because
+the EAC auction for day D clears on D-1.
+
+Committing to it constrains the asset: FR-committed capacity must keep charge *and*
+headroom to respond in either direction, which limits how freely it can trade.
+</div></div>
+
+<div class="step"><div class="step-inner">
+<span class="step-num">Step 4</span>
+
+### Stage 1 — split the capacity
+
+For each of the six EFA blocks the model compares two numbers: the **confirmed FR clearing
+price**, and a **shadow arbitrage value** — what that MW of headroom would earn trading the
+block, estimated from the price forecast.
+
+Capacity is allocated in proportion, `fr_fraction = fr_value / (fr_value + arb_value)`, so
+it flows toward whichever stream looks better that block without all-or-nothing switching.
+</div></div>
+
+<div class="step"><div class="step-inner">
+<span class="step-num">Step 5</span>
+
+### Stage 2 — dispatch under constraint
+
+Within the arbitrage allocation, a **linear programme** plans charge and discharge at
+half-hourly resolution over a rolling 48-hour horizon, re-solving every period and
+executing only the first — model predictive control.
+
+The state-of-charge trace shows the result. The shaded band is the **[10%, 90%] FR
+feasibility constraint**, enforced as a hard bound: the battery must pre-position its SoC
+to honour tomorrow's commitments, which is why it sometimes charges when prices are not
+obviously attractive.
+</div></div>
+
+<div class="step"><div class="step-inner">
+<span class="step-num">Step 6</span>
+
+### Forecast quality is the variable under test
+
+All three strategies run the *same* dispatch engine. Only the price signal differs:
+**Perfect Foresight** sees actual day-D prices, **Naive** reuses yesterday's, and the
+**ML model** — a Random Forest on lagged prices, generation mix and cyclical time features
+— predicts them from information available at the end of D-1.
+
+Where the traces diverge is the cost of forecast error. The analysis below quantifies it.
+</div></div>
+
+</div>
+<div class="scrolly-graphic" id="walkthrough-graphic"></div>
+</div>
+
+```js
+const dayPrices = sampleDay.filter((d) => d.strategy === "ml_mpc")
+  .map((d) => ({sp: d.sp, price: d.price}));
+
+const cheap = [...dayPrices].sort((a, b) => a.price - b.price).slice(0, 8).map((d) => d.sp);
+const dear  = [...dayPrices].sort((a, b) => b.price - a.price).slice(0, 8).map((d) => d.sp);
+
+const traceFor = (key) => sampleDay.filter((d) => d.strategy === key)
+  .map((d) => ({sp: d.sp, soc: d.soc_frac, strategy: STRATEGY_LABELS[key]}));
+
+const spAxis = {label: "Settlement period", ticks: [1, 12, 24, 36, 48], domain: [1, 48]};
+```
+
+```js
+// The walkthrough graphic is rendered imperatively rather than reactively: the
+// step observer calls renderStep directly. Routing it through a reactive value
+// meant the figure cell did not re-evaluate on change, and an explicit call is
+// easier to follow than the dependency it replaced.
+function buildFigure(s) {
+  if (s <= 0) {
+    return Plot.plot({height: 380, marginLeft: 55, x: spAxis,
+      y: {label: "£/MWh", grid: true},
+      marks: [Plot.ruleY([0]),
+              Plot.line(dayPrices, {x: "sp", y: "price", stroke: "#0D7680", strokeWidth: 2})]});
+  }
+
+  if (s === 1) {
+    return Plot.plot({height: 380, marginLeft: 55, x: spAxis,
+      y: {label: "£/MWh", grid: true},
+      marks: [
+        Plot.ruleY([0]),
+        Plot.line(dayPrices, {x: "sp", y: "price", stroke: "#33302E", strokeWidth: 1.5}),
+        Plot.dot(dayPrices.filter((d) => cheap.includes(d.sp)),
+          {x: "sp", y: "price", fill: "#0D7680", r: 5, symbol: "square"}),
+        Plot.dot(dayPrices.filter((d) => dear.includes(d.sp)),
+          {x: "sp", y: "price", fill: "#C9400A", r: 5}),
+        Plot.text([{sp: cheap[0], price: d3.min(dayPrices, (d) => d.price)}],
+          {x: "sp", y: "price", text: ["charge"], dy: 20, fill: "#0D7680", fontWeight: 600}),
+        Plot.text([{sp: dear[0], price: d3.max(dayPrices, (d) => d.price)}],
+          {x: "sp", y: "price", text: ["discharge"], dy: -14, fill: "#C9400A", fontWeight: 600}),
+      ]});
+  }
+
+  if (s === 2 || s === 3) {
+    // FR availability is flat within a block and known a day ahead; the contrast
+    // with the volatile spot curve is the point.
+    return Plot.plot({height: 380, marginLeft: 55, x: spAxis,
+      y: {label: "£/MWh (spot)", grid: true},
+      marks: [
+        Plot.ruleY([0]),
+        Plot.line(dayPrices, {x: "sp", y: "price", stroke: "#33302E",
+                              strokeWidth: 1.2, strokeOpacity: 0.45}),
+        Plot.ruleX([8.5, 16.5, 24.5, 32.5, 40.5],
+          {stroke: "#9C948E", strokeDasharray: "3 3"}),
+        Plot.text(d3.range(6).map((i) => ({x: i * 8 + 4.5, label: `EFA ${i + 1}`})),
+          {x: "x", y: d3.max(dayPrices, (d) => d.price) * 0.96,
+           text: "label", fill: "#66605C", fontSize: 10}),
+      ]});
+  }
+
+  const traces = s >= 5
+    ? ["pf_mpc", "naive_mpc", "ml_mpc"].flatMap(traceFor)
+    : traceFor("ml_mpc");
+
+  return Plot.plot({
+    height: 380, marginLeft: 55, x: spAxis,
+    y: {label: "State of charge", domain: [0, 1], tickFormat: ".0%", grid: true},
+    color: {legend: s >= 5, domain: Object.values(STRATEGY_LABELS),
+            range: ["#4E8A3C", "#C9400A", "#0D7680"]},
+    marks: [
+      Plot.rect([{y1: 0.1, y2: 0.9}], {y1: "y1", y2: "y2", fill: "#0D7680", fillOpacity: 0.07}),
+      Plot.ruleY([0.1, 0.9], {stroke: "#0D7680", strokeDasharray: "4 3"}),
+      Plot.line(traces, {x: "sp", y: "soc",
+                         stroke: s >= 5 ? "strategy" : () => "#0D7680", strokeWidth: 2}),
+    ],
+  });
+}
+
+{
+  const root = document.getElementById("walkthrough");
+  const target = document.getElementById("walkthrough-graphic");
+  if (root && target) {
+    const stop = watchSteps(root, (i) => target.replaceChildren(buildFigure(i)));
+    invalidation.then(stop);
+  }
+}
+```
+
+## The model in full
 
 ## Controls
 
@@ -119,10 +287,10 @@ const summary = summarise(monthly, powerMw);
 ## Results
 
 <div class="grid grid-cols-4">
-<div class="card"><h2>Total net revenue</h2><span class="big">${summary ? gbp(summary.net) : "—"}</span></div>
-<div class="card"><h2>Annualised net</h2><span class="big">${summary ? gbp(summary.annualised) : "—"}</span><div class="muted">per year</div></div>
-<div class="card"><h2>Revenue per MW</h2><span class="big">${summary ? "£" + (summary.perMw / 1e3).toFixed(1) + "k" : "—"}</span><div class="muted">per MW per year</div></div>
-<div class="card"><h2>Top revenue stream</h2><span class="big">${summary ? (SERVICE_LABELS[summary.top] ?? summary.top) : "—"}</span></div>
+<div class="card kpi"><h2>Total net revenue</h2><span class="big">${summary ? gbp(summary.net) : "—"}</span></div>
+<div class="card kpi"><h2>Annualised net</h2><span class="big">${summary ? gbp(summary.annualised) : "—"}</span><div class="muted">per year</div></div>
+<div class="card kpi"><h2>Revenue per MW</h2><span class="big">${summary ? "£" + (summary.perMw / 1e3).toFixed(1) + "k" : "—"}</span><div class="muted">per MW per year</div></div>
+<div class="card kpi"><h2>Top revenue stream</h2><span class="big">${summary ? (SERVICE_LABELS[summary.top] ?? summary.top) : "—"}</span></div>
 </div>
 
 Modelling a **${powerMw} MW / ${(powerMw * DURATION_H).toFixed(0)} MWh** asset

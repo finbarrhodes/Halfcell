@@ -18,43 +18,20 @@ const fmtGbp = (v) =>
   Math.abs(v) >= 1e6 ? `£${(v / 1e6).toFixed(2)}M` : `£${(v / 1e3).toFixed(0)}k`;
 ```
 
-<div class="grid grid-cols-4">
-  <div class="card">
-    <h2>DC High — latest</h2>
-    <span class="big">£${kpis.dch_latest.toFixed(2)}</span>
-    <div class="muted">£/MW/h · 30d avg £${kpis.dch_30d_avg.toFixed(2)}</div>
-  </div>
-  <div class="card">
-    <h2>Wholesale spread — latest</h2>
-    <span class="big">£${kpis.spread_latest.toFixed(2)}</span>
-    <div class="muted">£/MWh peak-to-trough · 30d avg £${kpis.spread_30d_avg.toFixed(2)}</div>
-  </div>
-  <div class="card">
-    <h2>Modelled revenue — ML strategy</h2>
-    <span class="big">£${(ml.summary.annualised_per_mw / 1e3).toFixed(0)}k</span>
-    <div class="muted">per MW per year · 50 MW / 2h reference asset</div>
-  </div>
-  <div class="card">
-    <h2>Data through</h2>
-    <span class="big">${ml.params.end_date}</span>
-    <div class="muted">${ml.summary.years_covered} years backtested</div>
-  </div>
-</div>
-
 ## What's in this tool
 
 <div class="grid grid-cols-3">
-  <div class="card">
+  <div class="card nav">
     <h2><a href="./dashboard">Market Overview →</a></h2>
     <p>GB frequency response auction clearing prices (DC, DR, DM), High vs Low spread
     dynamics, system settlement prices, and generation mix trends.</p>
   </div>
-  <div class="card">
+  <div class="card nav">
     <h2><a href="./backtester">Forecasting & Dispatch →</a></h2>
     <p>A day-ahead modelling framework for FR/arbitrage capacity allocation and MPC
     dispatch, benchmarking three price forecasting strategies.</p>
   </div>
-  <div class="card">
+  <div class="card nav">
     <h2><a href="./methodology">Methodology & Data →</a></h2>
     <p>Modelling assumptions, data sources, and known limitations of the backtester.</p>
   </div>
@@ -100,3 +77,31 @@ display(Plot.plot({
   ],
 }));
 ```
+
+## Market snapshot
+
+Where the GB frequency response and wholesale markets sit right now, against their
+recent averages. Figures update whenever the data pipeline is re-run.
+
+<div class="grid grid-cols-4">
+  <div class="card kpi">
+    <h2>DC High — latest</h2>
+    <span class="big">£${kpis.dch_latest.toFixed(2)}</span>
+    <div class="muted">£/MW/h · 30d avg £${kpis.dch_30d_avg.toFixed(2)}</div>
+  </div>
+  <div class="card kpi">
+    <h2>Wholesale spread — latest</h2>
+    <span class="big">£${kpis.spread_latest.toFixed(2)}</span>
+    <div class="muted">£/MWh peak-to-trough · 30d avg £${kpis.spread_30d_avg.toFixed(2)}</div>
+  </div>
+  <div class="card kpi">
+    <h2>Modelled revenue — ML strategy</h2>
+    <span class="big">£${(ml.summary.annualised_per_mw / 1e3).toFixed(0)}k</span>
+    <div class="muted">per MW per year · 50 MW / 2h reference asset</div>
+  </div>
+  <div class="card kpi">
+    <h2>Data through</h2>
+    <span class="big">${ml.params.end_date}</span>
+    <div class="muted">${ml.summary.years_covered} years backtested</div>
+  </div>
+</div>

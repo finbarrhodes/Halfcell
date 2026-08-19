@@ -1,0 +1,221 @@
+/* Halfcell — FT-inspired palette, carried over from the Streamlit build so the
+   two frontends read as one project. Warm paper ground, teal primary, warm
+   orange accent, serif display type against a sans body. */
+
+@import url("observablehq:default.css");
+
+:root {
+  --hc-paper:        #FFF1E5;  /* FT pink-beige */
+  --hc-paper-deep:   #F2E5D7;  /* card / inset ground */
+  --hc-ink:          #33302E;  /* body text */
+  --hc-ink-soft:     #66605C;
+  --hc-ink-faint:    #9C948E;
+  --hc-rule:         #E0D3C4;
+  --hc-teal:         #0D7680;  /* primary */
+  --hc-teal-deep:    #095A62;
+  --hc-orange:       #C9400A;  /* accent / links */
+
+  --theme-foreground:          var(--hc-ink);
+  --theme-foreground-muted:    var(--hc-ink-soft);
+  --theme-foreground-faint:    var(--hc-ink-faint);
+  --theme-foreground-fainter:  var(--hc-rule);
+  --theme-foreground-faintest: #EDE1D3;
+  --theme-background:          var(--hc-paper);
+  --theme-background-alt:      var(--hc-paper-deep);
+  --theme-foreground-focus:    var(--hc-teal);
+
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+  --sans-serif: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+
+body {
+  background: var(--hc-paper);
+  color: var(--hc-ink);
+  font-family: var(--sans-serif);
+}
+
+/* Display type: serif headings against the sans body, FT-style */
+h1, h2, h3, h4 {
+  font-family: var(--serif);
+  color: var(--hc-ink);
+  letter-spacing: -0.01em;
+}
+
+h1 {
+  font-size: 2.6rem;
+  line-height: 1.1;
+  margin-bottom: 0.4rem;
+}
+
+/* Section rules give the long pages a scannable rhythm */
+h2 {
+  font-size: 1.6rem;
+  margin-top: 3rem;
+  padding-top: 1.2rem;
+  border-top: 1px solid var(--hc-rule);
+}
+
+h3 { font-size: 1.2rem; margin-top: 2rem; }
+
+a { color: var(--hc-orange); }
+a:hover { color: var(--hc-teal); }
+
+/* Sidebar: slightly deeper than the page so the nav reads as chrome */
+#observablehq-sidebar {
+  background: var(--hc-paper-deep);
+  border-right: 1px solid var(--hc-rule);
+}
+#observablehq-sidebar li a:hover { background: rgba(13, 118, 128, 0.09); }
+#observablehq-sidebar li.observablehq-link-active a {
+  background: rgba(13, 118, 128, 0.14);
+  color: var(--hc-teal-deep);
+  font-weight: 600;
+}
+
+/* Cards */
+.card {
+  background: var(--hc-paper-deep);
+  border: 1px solid var(--hc-rule);
+  border-radius: 3px;
+}
+.card h2 {
+  border-top: none;
+  margin-top: 0;
+  padding-top: 0;
+  font-size: 1.05rem;
+}
+
+/* Only stat cards get the small-caps label treatment; navigation cards keep a
+   normal heading so they read as links rather than field labels. */
+.card.kpi h2 {
+  font-family: var(--sans-serif);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--hc-ink-soft);
+}
+
+/* Navigation cards: whole card reacts, not just the link text */
+.card.nav { transition: border-color 0.15s ease, background 0.15s ease; }
+.card.nav:hover {
+  border-color: var(--hc-teal);
+  background: rgba(13, 118, 128, 0.05);
+}
+.card.nav h2 a { text-decoration: none; }
+.card.nav p { color: var(--hc-ink-soft); margin-bottom: 0; }
+.big {
+  font-family: var(--serif);
+  font-size: 2rem;
+  line-height: 1.1;
+  color: var(--hc-teal-deep);
+}
+.muted { color: var(--hc-ink-soft); font-size: 0.8rem; }
+
+/* Charts sit on the paper ground, not on white */
+figure, .observablehq figure { background: transparent; }
+svg { color: var(--hc-ink); }
+
+/* Callout used for scope notes and caveats */
+.note {
+  background: rgba(13, 118, 128, 0.06);
+  border-left: 3px solid var(--hc-teal);
+  padding: 0.9rem 1.1rem;
+  margin: 1.5rem 0;
+  border-radius: 0 3px 3px 0;
+}
+.note p:first-child { margin-top: 0; }
+.note p:last-child { margin-bottom: 0; }
+
+/* Tables: horizontal rules only, FT-style */
+table { font-size: 0.88rem; }
+thead th {
+  border-bottom: 1px solid var(--hc-ink-faint);
+  color: var(--hc-ink-soft);
+  font-weight: 600;
+}
+tbody tr { border-bottom: 1px solid var(--hc-rule); }
+
+/* Framework's Inputs */
+form.oi input[type="range"] { accent-color: var(--hc-teal); }
+form.oi input[type="checkbox"], form.oi input[type="radio"] { accent-color: var(--hc-teal); }
+
+/* ------------------------------------------------------------------ */
+/* Scrollytelling: sticky graphic, steps scroll past it                */
+/* ------------------------------------------------------------------ */
+
+.scrolly {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  gap: 2.5rem;
+  margin: 2rem 0 3rem;
+  align-items: start;
+}
+
+.scrolly-steps { display: flex; flex-direction: column; }
+
+.scrolly-graphic {
+  position: sticky;
+  top: 4rem;
+  min-height: 420px;
+  padding: 1rem 0;
+}
+
+.step {
+  min-height: 68vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  opacity: 0.35;
+  transition: opacity 0.35s ease;
+}
+.step.is-active { opacity: 1; }
+
+.step-inner {
+  background: var(--hc-paper-deep);
+  border: 1px solid var(--hc-rule);
+  border-left: 3px solid var(--hc-rule);
+  border-radius: 0 3px 3px 0;
+  padding: 1.1rem 1.3rem;
+  transition: border-left-color 0.35s ease;
+}
+.step.is-active .step-inner { border-left-color: var(--hc-teal); }
+
+.step h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1.15rem;
+}
+.step p { margin: 0.5rem 0 0; color: var(--hc-ink-soft); }
+.step p:first-of-type { color: var(--hc-ink); }
+
+.step-num {
+  font-family: var(--sans-serif);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--hc-teal);
+  display: block;
+  margin-bottom: 0.35rem;
+}
+
+/* Single column on narrow screens: the graphic leads, steps follow */
+@media (max-width: 900px) {
+  .scrolly { grid-template-columns: 1fr; gap: 1rem; }
+  .scrolly-graphic { position: sticky; top: 0; background: var(--hc-paper);
+                     z-index: 2; min-height: 320px; padding-top: 0.5rem;
+                     border-bottom: 1px solid var(--hc-rule); }
+  .step { min-height: 55vh; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .step { opacity: 1; transition: none; }
+  .step-inner { transition: none; }
+}
+
+/* Steps are focusable and clickable, not just scroll targets */
+.step { cursor: pointer; outline: none; }
+.step:focus-visible .step-inner {
+  border-left-color: var(--hc-orange);
+  box-shadow: 0 0 0 2px rgba(201, 64, 10, 0.25);
+}

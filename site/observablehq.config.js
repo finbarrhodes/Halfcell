@@ -28,7 +28,8 @@ export default {
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>%F0%9F%94%8B</text></svg>">
 `,
 
-  theme: "air",
+  // Custom stylesheet rather than a stock theme — see src/style.css
+  style: "style.css",
   toc: false,
   pager: false,
   footer: () =>
