@@ -30,6 +30,10 @@
   /* Reading measure for running prose. Headings, their section rules, figures
      and card grids all span the full content column instead. */
   --hc-measure: 42rem;
+
+  /* Space between a heading and the body text it introduces. Matches the 1rem
+     the rest of the page already uses between blocks. */
+  --hc-heading-gap: 1rem;
 }
 
 body {
@@ -60,6 +64,18 @@ h2 {
 }
 
 h3 { font-size: 1.2rem; margin-top: 2rem; }
+
+/* Framework's global.css zeroes `margin-top` on a <p> or <table> that directly
+   follows an h2/h3/h4, leaving only the heading's own 0.25rem — a 4px gap. Every
+   other adjacency here already sits at ~16px: h1 + p, h2 + ul, heading + .grid,
+   heading + chart block, and Framework's own `.card h2 ~ p`. So the one glued
+   case reads as an error, and more so in this build than in stock Framework —
+   h2 is a 1.6rem serif sitting under a section rule, which needs room beneath it
+   rather than less. Restore the normal gap so the whole page shares one rhythm. */
+h2 + p, h3 + p, h4 + p,
+h2 + table, h3 + table, h4 + table {
+  margin-top: var(--hc-heading-gap);
+}
 
 /* Framework's global.css caps p, h1-h6, figure and table at a flat 640px, but
    leaves plain <div> — and therefore .grid — at the full width of the main
@@ -214,8 +230,11 @@ form.oi input[type="checkbox"], form.oi input[type="radio"] { accent-color: var(
 }
 .step.is-active .step-inner { border-left-color: var(--hc-teal); }
 
+/* Walkthrough steps set their own margins, so Framework's zeroing never reached
+   them — but at 0.5rem they were tight for the same reason. Heading-to-body
+   takes the shared gap; paragraph-to-paragraph stays denser inside the box. */
 .step h3 {
-  margin: 0 0 0.5rem;
+  margin: 0 0 var(--hc-heading-gap);
   font-size: 1.15rem;
 }
 .step p { margin: 0.5rem 0 0; color: var(--hc-ink-soft); }
