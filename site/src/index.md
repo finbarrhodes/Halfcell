@@ -7,8 +7,17 @@ operate, how they make money, and how market conditions and data science are
 impacting BESS' role in the grid.
 
 ```js
-const kpis = await FileAttachment("data/kpis.json").json();
-const manifest = await FileAttachment("data/manifest.json").json();
+// Kept in its own cell, and ahead of the parquet load below. Every variable a
+// Framework cell declares resolves together, so bundling these 6 KB of JSON with
+// the parquet made the Market snapshot cards wait on parquet-wasm — a 6 MB WASM
+// module they do not need. Split, the cards paint as soon as the JSON lands.
+const [kpis, manifest] = await Promise.all([
+  FileAttachment("data/kpis.json").json(),
+  FileAttachment("data/manifest.json").json(),
+]);
+```
+
+```js
 const revenue = await FileAttachment("data/revenue-monthly.parquet").parquet();
 ```
 
@@ -41,15 +50,18 @@ const fmtGbp = (v) =>
 
 Halfcell asks what data science can actually contribute to clean tech, using a concrete
 case: a grid-scale battery deciding, every day, how to divide its capacity between
-frequency response and wholesale arbitrage. That decision rests on a forecast of tomorrow's
-prices — so it is a modelling problem before it is an engineering one, and different
-strategies produce measurably different outcomes.
+frequency response and wholesale arbitrage. This capacity allocation decision rests on a
+forecast of tomorrow's prices, introducing a modelling problem and an opportunity for data
+science methods to provide real value in BESS operations.
 
-The chart below runs three of them through the same dispatch engine on the same asset.
-**Perfect Foresight** knows tomorrow's prices and marks the ceiling. **Naive** reuses
-yesterday's and marks the zero-skill floor — the bar any real model has to clear. A
-**Random Forest** trained on lagged prices, generation mix and cyclical time features sits
-between the two, and the gap it closes is the value the modelling adds.
+The chart below runs three different strategies through the same dispatch engine on the
+same asset. When modelling battery revenues in a price forecasting setting, it is useful to
+compare any machine learning implementation to a reasonable floor & ceiling.
+**Perfect Foresight** knows tomorrow's prices and marks the ceiling, and the **Naive** model
+takes the predictions out of the question and uses today's price as the prediction for
+tomorrow, marking the floor and a bar any real model has to clear. A **Random Forest**
+trained on lagged prices, generation mix and cyclical time features sits between the two,
+and the gap it closes is the value the modelling adds.
 
 ```js
 const cumulative = (() => {
@@ -73,7 +85,8 @@ const labels = {pf_mpc: "Perfect Foresight", naive_mpc: "Naive (D-1)", ml_mpc: "
 ```
 
 ```js
-display(Plot.plot({
+display(resize((width) => Plot.plot({
+  width,
   height: 340,
   marginLeft: 60,
   x: {label: null},
@@ -83,7 +96,7 @@ display(Plot.plot({
     Plot.ruleY([0]),
     Plot.line(cumulative, {x: "month", y: "total", stroke: "strategy", strokeWidth: 2}),
   ],
-}));
+})));
 ```
 
 ## Market snapshot
