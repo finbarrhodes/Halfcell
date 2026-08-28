@@ -376,14 +376,14 @@ with sub_auction:
         with st.expander("Key takeaways — Clearing Price Trends"):
             st.markdown(
                 """
-                - **2022 peak then sharp compression.** DCH clearing prices peaked at £15–20/MW/h
+                - **2022 peak then sharp compression.** DCL clearing prices peaked at £15–20/MW/h
                   in 2022 as NESO expanded DC procurement ahead of renewable growth. From late 2022
                   a rapid wave of new GB BESS capacity entered the frequency response markets,
                   outpacing NESO's procurement volumes and driving prices steeply lower across all
                   services — a trend that is clearly visible in the chart.
-                - **Discharge (High) services generally clear above charge (Low) services.**
+                - **Discharge (Low) services generally clear above charge (High) services.**
                   Fleet-wide charge headroom tends to be more available than discharge headroom —
-                  particularly during high-wind periods — so the Low-side auctions typically clear
+                  particularly during high-wind periods — so the High-side auctions typically clear
                   at lower prices.
                 - **DRH and DRL behave differently from DC and DM.** DR's sustained 60-minute
                   delivery requirement couples the two sides operationally, which is why the DRL
@@ -406,9 +406,9 @@ with sub_auction:
             fig.update_layout(height=400, template="plotly_white", paper_bgcolor="#FFF1E5", plot_bgcolor="#FFF1E5", showlegend=False)
             st.plotly_chart(fig, use_container_width=True)
             st.caption(
-                "DCH shows the widest spread of outcomes, reflecting its role as the primary "
+                "DCL shows the widest spread of outcomes, reflecting its role as the primary "
                 "fast-discharge service and its early-market dominance at elevated prices. "
-                "Low-side services (DCL, DRL, DML) cluster at lower prices as charge headroom "
+                "High-side services (DCH, DRH, DMH) cluster at lower prices as charge headroom "
                 "has generally been more plentiful than discharge headroom across the fleet."
             )
 
@@ -560,17 +560,15 @@ with sub_spread:
                     "rule. See NESO's "
                     "[Dynamic Response Services Provider Guidance](https://www.neso.energy/document/276606/download) "
                     "for the formal terms.)*\n\n"
-                    "The practical consequence is that DRL — the charge-side service — ends up "
-                    "structurally scarcer than DRH. The most intuitive way to think about it: "
-                    "during periods of high renewable output, batteries providing DR tend to "
-                    "fill up. A nearly-full battery simply has less room to absorb more energy, "
-                    "so fewer assets across the fleet can realistically offer DRL at any given "
-                    "time. On top of that, operators are cautious about committing the little "
-                    "remaining charge headroom they do have — accepting more charge now could "
-                    "leave them unable to discharge when the grid needs it later. With DRL supply "
-                    "squeezed from both sides and operators needing more compensation to provide "
-                    "it, DRL clearing prices are regularly pushed above DRH — flipping the "
-                    "spread negative."
+                    "The practical consequence is that DRL — the discharge-side service — ends "
+                    "up structurally scarcer than DRH. Across the fleet, charge headroom is "
+                    "generally more plentiful than discharge headroom: a battery must already be "
+                    "holding energy to offer discharge at all, and committing it to a 60-minute "
+                    "DR window means not selling it into the wholesale peak. Room to absorb is "
+                    "easier to come by, particularly during high renewable output when prices "
+                    "are low and taking energy is cheap. With DRH supply abundant and DRL supply "
+                    "squeezed, DRL clearing prices sit persistently above DRH — pushing the "
+                    "H − L spread negative."
                 )
 
             # ---- Chart 2: spread distribution per market ----
@@ -828,8 +826,10 @@ with sub_gen:
             """
             GB grid generation broken down by fuel group. The mix matters for BESS because it
             shapes the underlying risk of frequency deviation: high wind + low demand tends to
-            push system frequency high (requiring charge / Low-side response), while low wind +
-            high demand can cause frequency dips (requiring discharge / High-side response).
+            push system frequency high, which the High-side services answer by charging, while
+            low wind + high demand can cause frequency dips, which the Low-side services answer
+            by discharging. The High and Low name the frequency excursion being corrected, not
+            the direction the battery moves power.
             Tracking the long-run shift from fossil to renewable generation gives context for
             why frequency response procurement requirements have grown over time.
             """

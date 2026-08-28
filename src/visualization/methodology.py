@@ -140,7 +140,11 @@ st.markdown(
 - Revenue = `clearing_price (£/MW/h) × MW committed to FR × 4 hours per EFA block`
 - Services of different response speeds (DC, DR, DM) can be stacked on the same physical MW
   in the GB market — each earns a separate availability payment.
-- High (discharge) and Low (charge) services are modelled as independent and simultaneous,
+- **High and Low name the frequency excursion, not the battery's power direction.** A Low
+  service (DCL, DRL, DML) answers a *low*-frequency event by injecting power — the battery
+  discharges. A High service (DCH, DRH, DMH) answers a *high*-frequency event by absorbing
+  power — the battery charges.
+- High (charge) and Low (discharge) services are modelled as independent and simultaneous,
   assuming the battery maintains sufficient SoC headroom to respond in both directions.
 - Clearing prices sourced from NESO Data Portal (legacy DC/DR/DM auctions Sep 2021–Nov 2023,
   EAC service Nov 2023–present). NESO publishes EAC results as one resource per
@@ -261,12 +265,13 @@ dropping it means not participating in DR at all. The service selector allows DR
 to be toggled independently, which is useful for attribution but does not correspond to a
 strategy an operator could run.
 
-One correlation cuts against the intuitive explanation: DRH prices are *positively*
-correlated with daily renewable share (ρ = +0.43) while DRL is weakly negative (ρ = −0.18).
-Higher renewable output displaces synchronous generation and reduces system inertia, which
-raises the value of fast downward-frequency containment — the discharge leg. The naive
-reading, that high renewables make charging more valuable and discharging less, is not what
-the data shows.
+The correlation with renewable output runs the way the mechanism predicts: DRH prices are
+*positively* correlated with daily renewable share (ρ = +0.43) while DRL is weakly negative
+(ρ = −0.18). DRH is the charge leg — the service that answers an over-frequency excursion —
+and heavy renewable output is precisely what pushes the system toward surplus and
+over-frequency, so the charge leg gains value on windy days even while clearing from a
+negative base. Demand for the discharge leg does not track wind the same way, which is what
+DRL's mild negative correlation reflects.
 """
 )
 

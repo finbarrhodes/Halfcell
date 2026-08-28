@@ -19,8 +19,11 @@ Models the historical revenue a BESS asset could have earned from:
      accounting for round-trip efficiency losses and cycling wear cost.
 
 Key assumptions:
-  - Battery maintains sufficient SoC headroom to provide both H (discharge)
-    and L (charge) ancillary services simultaneously.
+  - Battery maintains sufficient SoC headroom to provide both H (charge) and
+    L (discharge) ancillary services simultaneously. H/L name the frequency
+    excursion the service corrects, not the direction the battery moves power:
+    a Low service answers a low-frequency event by discharging, a High service
+    answers a high-frequency event by charging.
   - Ancillary cycling cost (energy delivery during frequency events) is minor
     relative to availability payments and is not separately modelled.
   - Cycling wear cost applies to imbalance arbitrage trades only.
@@ -49,7 +52,7 @@ EFA_PERIODS = {
 }
 
 # FR SoC band: battery must stay within [lower, upper] × energy_mwh
-# to maintain headroom for both DC High (discharge) and DC Low (charge) delivery.
+# to maintain headroom for both DC High (charge) and DC Low (discharge) delivery.
 FR_SOC_LOWER = 0.10
 FR_SOC_UPPER = 0.90
 

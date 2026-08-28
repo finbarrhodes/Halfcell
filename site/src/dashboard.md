@@ -1,15 +1,19 @@
 # Market Overview
 
-Great Britain is retiring the machines that used to hold its grid steady. Coal is gone,
-gas is in decline, and wind and solar now supply a large and growing share of generation.
-Those sources are cheap and clean, but they connect through power electronics rather than
-spinning turbines — so as they displace conventional plant, the system loses **inertia**,
-the physical flywheel effect that used to resist sudden changes in frequency.
+The energy transition in Great Britain is well under way. Fossil fuels are on the out, 
+and each year renewables make up a larger proportion of the power mix; in 2025, 44% of 
+Great Britain's electricity was generated using renewables. Renewables are of course
+cheap and clean, but one consequence of a more renewables-focused power mix is that 
+there is less system **inertia**, the physical flywheel effect that is used to resist 
+sudden changes in frequency.
 
-Grid frequency has to stay within a whisker of 50 Hz. With less inertia it moves faster
-when something breaks, which means the response has to be faster too. Batteries are
-unusually well suited to this: they can go from idle to full output in under a second, in
-either direction. That capability is what the frequency response markets buy.
+Grid frequency has to stay within a whisker of 50 Hz. Matching supply to demand, all 
+else equal, is slightly harder when there are less heavy turbines to provide inertia 
+on the supply-side of the grid. Less inertia means things move faster when something 
+breaks, and requires faster responses to avert disaster. This problem is perfectly 
+suited for batteries: they can go from idle to full output in under a second, in
+either direction. That capability is what the frequency response markets buy and why 
+batteries' roles in the grids of the future will continue to grow. 
 
 ```js
 import {MARKET_COLOURS, EFA_BLOCKS, rollingMean} from "./components/theme.js";
@@ -30,9 +34,10 @@ The generation mix is the clearest way to see why these markets exist and why th
 grown. Wind and solar rise; gas and coal fall; the system carries less and less inertia.
 
 GB generation by fuel group. The mix matters for BESS because it shapes the underlying risk
-of frequency deviation: high wind with low demand pushes frequency high (requiring charge /
-Low-side response), while low wind with high demand can cause dips (requiring discharge /
-High-side response).
+of frequency deviation: high wind with low demand pushes frequency high, which the High-side
+services answer by charging, while low wind with high demand can cause dips, which the
+Low-side services answer by discharging. The High and Low in DCH, DCL and the rest name the
+frequency excursion being corrected, not the direction the battery moves power.
 
 ```js
 const genRolling = (() => {
@@ -216,13 +221,13 @@ display(Plot.plot({
 <details>
 <summary>Key takeaways — clearing price trends</summary>
 
-- **2022 peak then sharp compression.** DCH clearing prices peaked at £15–20/MW/h in 2022
+- **2022 peak then sharp compression.** DCL clearing prices peaked at £15–20/MW/h in 2022
   as NESO expanded DC procurement ahead of renewable growth. From late 2022 a rapid wave of
   new GB BESS capacity entered the frequency response markets, outpacing NESO's procurement
   volumes and driving prices steeply lower across all services.
-- **Discharge (High) services generally clear above charge (Low) services.** Fleet-wide
+- **Discharge (Low) services generally clear above charge (High) services.** Fleet-wide
   charge headroom tends to be more available than discharge headroom — particularly during
-  high-wind periods — so Low-side auctions typically clear lower.
+  high-wind periods — so High-side auctions typically clear lower.
 - **DRH and DRL behave differently from DC and DM.** DR's sustained 60-minute delivery
   requirement couples the two sides operationally, which is why the DRL spread sometimes
   inverts relative to DCL and DML.
@@ -256,7 +261,7 @@ display(Plot.plot({
   }</div>
 </div>
 
-DCH shows the widest spread of outcomes, reflecting its role as the primary fast-discharge
+DCL shows the widest spread of outcomes, reflecting its role as the primary fast-discharge
 service and its early-market dominance at elevated prices. Evening blocks (EFA 5–6,
 15:00–23:00) attract higher premia as demand peaks and wind output often eases; the
 overnight block (EFA 1) is typically cheapest to procure.
