@@ -4,8 +4,28 @@
     {
       "name": "halfcell-site",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "site", "run", "dev", "--", "--port", "3000", "--no-open"],
+      "runtimeArgs": [
+        "--prefix",
+        "site",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "3000",
+        "--no-open"
+      ],
       "port": 3000
+    },
+    {
+      "name": "halfcell-dist",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "site",
+        "run",
+        "preview:dist"
+      ],
+      "port": 4173
     }
   ]
 }

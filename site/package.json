@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "observable preview",
     "build": "observable build && node scripts/copy-static.mjs",
-    "clean": "rimraf src/.observablehq/cache"
+    "clean": "rimraf src/.observablehq/cache",
+    "preview:dist": "npm run build && node scripts/serve-dist.mjs"
   },
   "dependencies": {
     "@observablehq/framework": "^1.13.4"
