@@ -109,10 +109,11 @@ There are three services, split by how fast and how long they must respond:
 |---|---|---|---|
 | **DC** — Dynamic Containment | ±0.2–0.5 Hz | ~1 second | 15 min |
 | **DR** — Dynamic Regulation | ±0.015–0.2 Hz | continuous | 60 min |
-| **DM** — Dynamic Moderation | ±0.1–0.5 Hz | ~1 second | 30 min |
+| **DM** — Dynamic Moderation | ±0.1–0.2 Hz | ~1 second | 30 min |
 
-Each runs as two separate auctions: **High**, which responds to *falling* frequency by
-discharging, and **Low**, which responds to *rising* frequency by charging. Auctions clear
+Each runs as two separate auctions: **High**, which responds to *rising* frequency by
+charging, and **Low**, which responds to *falling* frequency by discharging — the name is the
+frequency excursion being corrected, not the direction the battery moves power. Auctions clear
 per **EFA block** — six four-hour windows covering the day — so a battery's commitment can
 differ across the day.
 
@@ -152,14 +153,14 @@ const filtered = auctions.filter(
 
 GB frequency response is procured through three
 [**dynamic** services](https://www.neso.energy/industry-information/balancing-services/frequency-response-services/dynamic-services-dcdmdr),
-each split into **High** (discharge — activated when frequency falls below 50 Hz) and
-**Low** (charge — activated when frequency rises above 50 Hz) auctions.
+each split into **High** (charge — activated when frequency rises above 50 Hz) and
+**Low** (discharge — activated when frequency falls below 50 Hz) auctions.
 
 | Service | Frequency band | Role |
 |---------|---------------|------|
 | **DC** – Dynamic Containment | ±0.2–0.5 Hz | Arrests large deviations within ~1 second |
 | **DR** – Dynamic Regulation | ±0.015–0.2 Hz | Maintains frequency in normal operation |
-| **DM** – Dynamic Moderation | ±0.1–0.5 Hz | Moderates frequency during stressed conditions |
+| **DM** – Dynamic Moderation | ±0.1–0.2 Hz | Moderates frequency during stressed conditions |
 
 Auctions run daily for each **EFA block** (six 4-hour windows covering the full day).
 The clearing price is the marginal accepted bid for that block and service.
@@ -289,12 +290,13 @@ display(Inputs.table(
 
 ## High vs Low spread
 
-Each service runs two separate auctions: **High** (falling frequency — BESS discharges) and
-**Low** (rising frequency — BESS charges). Clearing prices differ because available discharge
-and charge headroom across the fleet is rarely symmetric.
+Each service runs two separate auctions: **High** (rising frequency — BESS charges) and
+**Low** (falling frequency — BESS discharges). Clearing prices differ because available
+discharge and charge headroom across the fleet is rarely symmetric.
 
-**Spread = H clearing price − L clearing price.** Positive means discharge capacity was
-scarcer; negative means charge capacity was scarcer.
+**Spread = H clearing price − L clearing price.** Positive means charge capacity was scarcer;
+negative means discharge capacity was scarcer. All three markets average negative, so the
+discharge leg is consistently the scarcer of the two.
 
 ```js
 const PAIRS = [["DC", "DCH", "DCL"], ["DR", "DRH", "DRL"], ["DM", "DMH", "DML"]];
@@ -377,11 +379,12 @@ is a practical consequence of the sustained delivery requirement, not an explici
   </div>
 </div>
 
-DC shows the widest range of spread outcomes — its higher median reflects the relative
-scarcity of fast-discharge capacity. DR sits firmly negative across both charts, confirming
-the structural inversion described above. DM occupies the middle ground. Evening blocks
-(EFA 5–6) show the most pronounced spreads, as demand peaks and the balance between
-available charge and discharge headroom is tightest.
+DC shows the widest range of spread outcomes and the median closest to zero, so its two
+legs are priced the most symmetrically of the three. DR sits firmly negative across both
+charts — positive in only 7% of blocks — confirming the structural inversion described above.
+DM occupies the middle ground. All three average negative, so discharge capacity is the
+scarcer side throughout. Evening blocks (EFA 5–6) show the most pronounced spreads, as demand
+peaks and the balance between available charge and discharge headroom is tightest.
 
 ### H − L spread heatmap: EFA block × month
 
@@ -418,7 +421,7 @@ display(Plot.plot({
 ```
 
 Each cell is the average H − L spread for that market, EFA block and calendar month.
-Red = discharge capacity scarcer (H > L); blue = charge capacity scarcer (L > H).
+Red = charge capacity scarcer (H > L); blue = discharge capacity scarcer (L > H).
 
 ```js
 display(Inputs.table(

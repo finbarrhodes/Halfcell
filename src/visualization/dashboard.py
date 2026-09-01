@@ -309,14 +309,14 @@ with sub_auction:
         st.markdown(
             """
             GB frequency response is procured through three [**dynamic** services](https://www.neso.energy/industry-information/balancing-services/frequency-response-services/dynamic-services-dcdmdr),
-            each split into **High** (discharge — activated when frequency falls below 50 Hz) and
-            **Low** (charge — activated when frequency rises above 50 Hz) auctions:
+            each split into **High** (charge — activated when frequency rises above 50 Hz) and
+            **Low** (discharge — activated when frequency falls below 50 Hz) auctions:
 
             | Service | Frequency band | Role |
             |---------|---------------|------|
             | **DC** – Dynamic Containment | ±0.2–0.5 Hz | Arrests large deviations within ~1 second |
             | **DR** – Dynamic Regulation | ±0.015–0.2 Hz | Maintains frequency in normal operation |
-            | **DM** – Dynamic Moderation | ±0.1–0.5 Hz | Moderates frequency during stressed conditions |
+            | **DM** – Dynamic Moderation | ±0.1–0.2 Hz | Moderates frequency during stressed conditions |
 
             Auctions are run daily for each **EFA block** (six 4-hour windows covering the full day).
             The clearing price is the marginal accepted bid for that block and service.
@@ -490,12 +490,13 @@ with sub_spread:
         st.markdown(
             """
             Each frequency response service runs two separate auctions: **High** (responds to
-            falling frequency — BESS discharges) and **Low** (responds to rising frequency —
-            BESS charges). The clearing prices can differ because the amount of available
+            rising frequency — BESS charges) and **Low** (responds to falling frequency —
+            BESS discharges). The clearing prices can differ because the amount of available
             discharge vs charge headroom across the fleet is rarely symmetric.
 
-            **Spread = H clearing price − L clearing price.** Positive = discharge capacity
-            scarcer (H > L). Negative = charge capacity scarcer (L > H).
+            **Spread = H clearing price − L clearing price.** Positive = charge capacity
+            scarcer (H > L). Negative = discharge capacity scarcer (L > H). All three markets
+            average negative, so the discharge leg is consistently the scarcer one.
             """
         )
 
@@ -615,14 +616,16 @@ with sub_spread:
                 st.plotly_chart(fig, use_container_width=True)
 
             st.markdown(
-                "DC shows the widest range of spread outcomes — its higher median reflects the "
-                "relative scarcity of fast-discharge capacity, while the tail of outliers "
-                "captures periods when that scarcity was acute. DR sits firmly in negative "
-                "territory across both charts, confirming the structural inversion described "
-                "above. DM occupies the middle ground, broadly positive but with a narrower "
-                "spread than DC. In the EFA block view, evening blocks (EFA 5–6: 15:00–23:00) "
-                "tend to show the most pronounced spreads as demand peaks and the balance "
-                "between available charge and discharge headroom is at its tightest."
+                "DC shows the widest range of spread outcomes and the median closest to zero, "
+                "so its two legs are priced the most symmetrically of the three, while the tail "
+                "of outliers captures periods when that symmetry broke down. DR sits firmly in "
+                "negative territory across both charts — positive in only 7% of blocks — "
+                "confirming the structural inversion described above. DM occupies the middle "
+                "ground, also negative on average but with a narrower spread than DC. All three "
+                "average negative, so discharge capacity is the scarcer side throughout. In the "
+                "EFA block view, evening blocks (EFA 5–6: 15:00–23:00) tend to show the most "
+                "pronounced spreads as demand peaks and the balance between available charge "
+                "and discharge headroom is at its tightest."
             )
 
             # ---- Chart 3: heatmap — EFA block × month ----
@@ -651,8 +654,8 @@ with sub_spread:
             st.plotly_chart(fig, use_container_width=True)
             st.caption(
                 "Each cell shows the average H − L spread for that market, EFA block, and "
-                "calendar month. Red = discharge capacity was scarcer than charge (H > L); "
-                "blue = charge capacity was scarcer (L > H). Use the selector above to switch "
+                "calendar month. Red = charge capacity was scarcer than discharge (H > L); "
+                "blue = discharge capacity was scarcer (L > H). Use the selector above to switch "
                 "between DC, DR, and DM. Gaps indicate months with no auction data."
             )
 
