@@ -93,7 +93,7 @@ def main() -> None:
         fig.text(panel_x, y, value, fontsize=30, color=TEAL, family="serif")
         fig.text(panel_x, y - 0.052, caption, fontsize=12, color=INK_SOFT)
 
-    fig.text(0.055, 0.085, "halfcell.pages.dev", fontsize=15, color=ORANGE, weight="bold")
+    fig.text(0.055, 0.085, "halfcell.uk", fontsize=15, color=ORANGE, weight="bold")
     fig.text(0.945, 0.085, "NESO · Elexon · DESNZ open data",
              fontsize=12, color=INK_SOFT, ha="right")
 

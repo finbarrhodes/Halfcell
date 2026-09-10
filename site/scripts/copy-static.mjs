@@ -16,7 +16,7 @@ console.log(`copied ${names.length} static asset(s) -> dist/: ${names.join(", ")
 // Generated rather than static so it cannot fall out of step with the page list
 // in observablehq.config.js, and so lastmod reflects the deploy.
 const {default: config} = await import(join(root, "observablehq.config.js"));
-const site = "https://halfcell.pages.dev";
+const site = "https://halfcell.uk";
 const today = new Date().toISOString().slice(0, 10);
 const paths = ["/", ...config.pages.map((p) => p.path)];
 

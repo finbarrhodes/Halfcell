@@ -1,6 +1,6 @@
 # Halfcell
 
-**[halfcell.pages.dev](https://halfcell.pages.dev)** — live site
+**[halfcell.uk](https://halfcell.uk)** — live site
 
 Halfcell is a tool for analysing GB Battery Energy Storage System (BESS) markets — covering historical trends, price dynamics, and revenue modelling across ancillary services. Built on public NESO and Elexon data, published as a static site. A personal project to explore and surface insights from the UK BESS landscape; some features are still in progress.
 
