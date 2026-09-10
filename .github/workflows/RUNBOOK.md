@@ -17,30 +17,40 @@ effect, so its gates matter — see *Recovery* below.
 
 ## Before the first scheduled refresh
 
-As of 2026-09-10, two things are worth clearing so the first run's output is signal
-rather than noise.
-
-- **The REPD warning already fires.** The fleet series is measured through 2026-03-01
-  with five projected months after it, over the 3-month tolerance. DESNZ published the
-  **July 2026** extract on 3 August 2026, which would move the frontier to roughly June
-  and drop the tail to ~2 months. Download it from the
-  [REPD quarterly extract page](https://www.gov.uk/government/publications/renewable-energy-planning-database-monthly-extract)
-  into `data/raw/`, then:
+- **The committed parquets lack the 13-row settlement correction** from commit `6b600aa`.
+  `prepare_data.py` now resolves overlapping pulls to the most recent one, and both
+  methodology surfaces describe that rule, but the committed data still carries the older
+  values — 3 system prices on 2026-03-18 and 10 embedded solar/wind rows across
+  2026-02-15→19. No revenue figure is affected (`market_index` is untouched). A local full
+  rebuild lands it:
 
   ```
-  python src/data_collection/repd_collector.py data/raw/<extract>.xlsx
-  python scripts/prepare_data.py            # full rebuild, local only
+  python scripts/prepare_data.py            # full rebuild, needs the local data/raw
   python scripts/precompute_cache.py        # ~30 min
   python scripts/compute_kpis.py
   python scripts/check_cache_consistency.py
   ```
 
-  Doing this locally also lands the 13-row settlement correction described in commit
-  `6b600aa`, which the committed parquets do not yet carry.
+  Otherwise the first scheduled refresh will land it mixed in with new data, making that
+  diff harder to read.
 
-- **Confirm you receive failure emails.** For scheduled workflows GitHub notifies the
-  user who last modified the cron. The entire value of the freshness gate and the
-  contract tests depends on somebody reading a red run.
+- ~~Confirm you receive failure emails~~ — **confirmed** (2026-09-10), from the era of the
+  Streamlit keep-alive job.
+
+### What the REPD tail is not
+
+Checked 2026-09-10 so it does not get re-investigated: the fleet series shows five
+projected months, and that is the **normal steady state**, not a missed download.
+
+`data/raw/REPD_Publication_Q2_2026.xlsx` is byte-identical to the file currently on the
+DESNZ page (5,185,558 bytes, the July 2026 publication, last modified 2026-07-31). Its
+latest *confirmed operational* battery project is 2026-03-23. Two lags stack: REPD
+publishes a quarter behind, and within any extract a project's operational date only
+appears once confirmed, which trails further. So `check_repd_freshness.py` tolerates 6
+months, not the 3 it originally used — at 3 it would have warned permanently.
+
+One trap if you ever do compare files: publications are named by **data quarter**, so a
+newer release can arrive under a filename you already have. Compare by size, not name.
 
 ## Triage: `refresh_data.yml`
 

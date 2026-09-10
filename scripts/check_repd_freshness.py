@@ -8,10 +8,15 @@ update it: `bess_fleet_capacity.parquet` keeps its measured months and its tail
 stays projected, widening by one month with every refresh until a new extract is
 downloaded into data/raw by hand.
 
-Roughly a quarter of projection is the normal steady state, because REPD is
-published a quarter behind. Materially more than that means a drop was missed and
-the fleet series — which feeds the Market Impact page and the ML feature set — is
-drifting further from measured reality each month.
+The projected tail is normally around five months, not one quarter. Two lags stack:
+REPD is published a quarter behind, and within any published extract a project's
+operational date only appears once confirmed, which trails further still. The July
+2026 extract's latest confirmed operational battery project was 2026-03-23 — five
+months of projection with the extract fully up to date.
+
+So a long tail is usually upstream's business, not a missed download. The tolerance
+is set to flag only a tail longer than that steady state, which is worth a look but
+is still more often a slower quarter than an actionable error.
 
 Warns rather than fails by default: a stale planning database is not a reason to
 block a market data refresh. Pass --strict to exit non-zero instead.
@@ -31,9 +36,10 @@ import pandas as pd
 ROOT = Path(__file__).parent.parent
 DEFAULT_PARQUET = ROOT / "data" / "processed" / "bess_fleet_capacity.parquet"
 
-# REPD trails by about a quarter, so three projected months is the expected
-# steady state, not a problem.
-DEFAULT_MAX_MONTHS = 3
+# Publication lag plus operational-confirmation lag ran to 5 months in 2026 with a
+# fully current extract, so 3 would warn permanently. One month of headroom past the
+# observed steady state.
+DEFAULT_MAX_MONTHS = 6
 
 
 def trailing_extrapolated_months(df: pd.DataFrame) -> int:
@@ -93,9 +99,11 @@ def main() -> None:
 
     msg = (
         f"REPD projected tail is {projected} months, over the {args.max_months}-month "
-        f"tolerance — a quarterly extract has probably been missed. Download the latest "
-        f"from the DESNZ REPD page into data/raw/, re-run repd_collector.py, then "
-        f"prepare_data.py."
+        f"tolerance. Most likely upstream simply has not confirmed newer operational "
+        f"dates, in which case there is nothing to do. Worth ruling out a missed "
+        f"download: compare data/raw/REPD_Publication_*.xlsx against the current file on "
+        f"the DESNZ page by SIZE, not name — publications are named by data quarter, so a "
+        f"newer release can reuse a filename you already have."
     )
     # GitHub renders these in the job summary; harmless noise elsewhere.
     if os.environ.get("GITHUB_ACTIONS"):

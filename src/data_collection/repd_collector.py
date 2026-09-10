@@ -28,10 +28,13 @@ Notes
 - Technology type strings vary across quarterly releases. The BATTERY_TECH_KEYWORDS
   set handles the observed variants. If a future release introduces a new type string,
   a warning is logged with a sample of unmatched values so it can be caught promptly.
-- The REPD lags the current date by roughly one quarter. Trailing months are
-  linearly extrapolated using a 12-month OLS trend (numpy.polyfit degree=1).
-  Extrapolation covers a ≤3 month gap in practice and is conservative relative
-  to GB fleet growth rates.
+- The REPD lags the current date by roughly one quarter, and a project's operational
+  date only appears in the extract once confirmed, which trails further. The two lags
+  stack: measured 2026-09-10, a fully current extract (July 2026 publication) held no
+  confirmed operational battery project after 2026-03-23, so about five months of the
+  series is projected in the steady state — not the ~3 this note previously claimed.
+  Trailing months are linearly extrapolated using a 12-month OLS trend
+  (numpy.polyfit degree=1), anchored at the last measured value.
 """
 
 import warnings
@@ -320,7 +323,7 @@ class REPDCollector:
         month (the fleet only grows). Months before the first recorded project
         are back-filled with 0.
 
-        Months after the last REPD entry (typically the trailing ~3 months) are
+        Months after the last REPD entry (typically the trailing ~5 months) are
         linearly extrapolated using a 12-month OLS trend. This is a conservative
         straight-line projection — GB fleet growth has been roughly linear in
         MW/month terms. Extrapolated months are flagged with is_extrapolated=True;
