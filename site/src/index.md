@@ -99,6 +99,24 @@ display(resize((width) => Plot.plot({
 })));
 ```
 
+## How the market got here
+
+Six years that took frequency response from a new product to a saturated one. The
+compression visible in the charts above is the story this table tells in words.
+
+| Year | Event |
+|---|---|
+| **2020** | NESO launches Dynamic Containment (DC) — BESS becomes the dominant provider within months, displacing gas peakers |
+| **2021** | Dynamic Regulation (DR) and Dynamic Moderation (DM) introduced; revenue stacking across all three services becomes standard |
+| **2022** | Revenue peak — DC High averaging £15–20/MW/h; leading assets earning ~£156k/MW/year |
+| **Late 2022** | Rapid capacity influx saturates frequency response markets; clearing prices begin a sharp, sustained decline |
+| **2023** | Revenue compression accelerates; wholesale arbitrage and Capacity Market grow significantly in relative importance |
+| **2024–25** | Stack diversification — operators blend FR, arbitrage, and BM participation; long-duration projects begin to emerge |
+
+Figures in this table are hand-compiled market context, not computed from the datasets
+below — unlike every other number on this site, they are not reproducible from the
+pipeline.
+
 ## Market snapshot
 
 Where the GB frequency response and wholesale markets sit right now, against their
