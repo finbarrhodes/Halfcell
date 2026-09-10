@@ -236,15 +236,14 @@ const toPick = view(Inputs.date({label: "To", value: bounds[1], min: bounds[0], 
 ```
 
 ```js
-// Revenue scales linearly with power at fixed duration, so display scaling is exact —
-// the same post-filter the Streamlit app applied to the cached monthly table.
+// Revenue scales linearly with power at fixed duration, so scaling the cached monthly
+// table by the power ratio is exact rather than an approximation.
 const scale = powerMw / BASE_POWER_MW;
 const chosen = new Set(servicePick);
 
 // The cached table is monthly, and the cache bounds are mid-month dates
 // (2021-09-16 / 2026-08-17). Comparing a month-start against a mid-month bound
-// would silently drop the first and last months, so widen to whole months —
-// matching the period-level filter the Streamlit app applied.
+// would silently drop the first and last months, so widen to whole months.
 const fromMonth = d3.utcMonth.floor(fromPick);
 const toMonth = d3.utcMonth.floor(toPick);
 const inRange = (d) => d.month_dt >= fromMonth && d.month_dt <= toMonth;

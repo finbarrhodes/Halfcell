@@ -10,7 +10,7 @@ This project provides:
 - **Data Collection**: Automated scraping from National Grid ESO and Elexon BMRS APIs
 - **Market Analysis**: Trend analysis across DC, DR, DM, BM, and FR markets
 - **Price Forecasting**: Multiple ML and statistical models for price prediction
-- **Visualization**: Interactive Plotly dashboards and Streamlit web app
+- **Visualization**: Static site built with Observable Framework, published to Cloudflare Pages
 - **Reporting**: Automated report generation with key insights
 
 ## Key Features
@@ -67,7 +67,6 @@ halfcell/
 │   │   └── collect_data.py        # Main collection script
 │   ├── analysis/         # Market trend analysis
 │   ├── forecasting/      # Prediction models
-│   ├── visualization/    # Plotting and dashboard code
 │   └── utils.py          # Utility functions
 ├── notebooks/            # Jupyter notebooks for exploration
 ├── reports/              # Generated reports and figures
@@ -114,13 +113,14 @@ Train and evaluate forecasting models (coming soon):
 python src/forecasting/train_models.py
 ```
 
-### 4. Launch Dashboard
+### 4. View the Dashboard
 
-The published site is static — see [Static site](#static-site) below. A Streamlit
-version of the same pages is also kept in the repo and reads the same pre-computed cache:
+The dashboard is a static site — see [Static site](#static-site) below. To run it locally
+with hot reload:
 
 ```bash
-streamlit run app.py
+npm install --prefix site
+npm run dev --prefix site
 ```
 
 ## Static site

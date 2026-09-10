@@ -1,1 +1,0 @@
-"""Visualization modules for Halfcell."""

@@ -146,8 +146,8 @@ const toPick = view(Inputs.date({
 ```
 
 ```js
-// All filtering happens here, in the browser — the same three keys the
-// Streamlit sidebar filtered on, applied to the full-grain auction table.
+// All filtering happens here, in the browser: service, date range and EFA block,
+// applied to the full-grain auction table.
 const services = new Set(servicePick);
 const filtered = auctions.filter(
   (d) => services.has(d.service) && d.date >= fromPick && d.date <= toPick
@@ -306,7 +306,8 @@ discharge leg is consistently the scarcer of the two.
 ```js
 const PAIRS = [["DC", "DCH", "DCL"], ["DR", "DRH", "DRL"], ["DM", "DMH", "DML"]];
 
-// Join H against L on (date, EFA block) — the same inner join the Streamlit page did
+// Join H against L on (date, EFA block); an inner join, so a block missing either
+// leg contributes no spread rather than a half-defined one
 const spreads = (() => {
   const out = [];
   const key = (d) => `${+d.date}|${d.efa}`;

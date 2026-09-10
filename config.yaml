@@ -81,21 +81,6 @@ forecasting:
   tune_hyperparameters: true
   n_trials: 50  # for grid search
 
-# Visualization settings
-visualization:
-  # Color scheme
-  color_palette: "plotly"
-  
-  # Plot defaults
-  figure_width: 1200
-  figure_height: 600
-  
-  # Streamlit settings
-  streamlit:
-    page_title: "Halfcell"
-    page_icon: "🔋"
-    layout: "wide"
-
 # Logging
 logging:
   level: "INFO"  # DEBUG, INFO, WARNING, ERROR

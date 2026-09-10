@@ -3,10 +3,8 @@ pandas>=2.0.0
 numpy>=1.24.0
 pyarrow>=14.0.0
 
-# Visualization & app
+# Visualization
 matplotlib>=3.8.0  # Open Graph card rendering (scripts/make_og_image.py)
-streamlit>=1.36.0
-plotly>=5.17.0
 
 # API and web requests (data collection scripts)
 requests>=2.31.0

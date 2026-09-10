@@ -5,8 +5,8 @@ Pre-compute Backtest Cache
 Runs all three MPC strategy backtests with a fixed 50 MW / 2h battery
 configuration and writes results to data/cache/ as Parquet files.
 
-The Streamlit app is a pure viewer that reads from this cache — no live
-computation at app startup.
+The site is a pure viewer that reads from this cache — its Python data loaders
+read the committed parquets at build time, so nothing is computed on page load.
 
 Usage:
     python scripts/precompute_cache.py
@@ -261,7 +261,7 @@ def main() -> None:
     print("   soc_pf_mpc.parquet  soc_naive_mpc.parquet  soc_ml_mpc.parquet")
     print("   manifest.json")
     print("\nCommit data/cache/ to the repository to make results available on")
-    print("Streamlit Cloud without any compute step at deploy time.")
+    print("the site available without any compute step at deploy time.")
 
 
 if __name__ == "__main__":
