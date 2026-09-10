@@ -17,25 +17,35 @@ effect, so its gates matter — see *Recovery* below.
 
 ## Before the first scheduled refresh
 
-- **The committed parquets lack the 13-row settlement correction** from commit `6b600aa`.
-  `prepare_data.py` now resolves overlapping pulls to the most recent one, and both
-  methodology surfaces describe that rule, but the committed data still carries the older
-  values — 3 system prices on 2026-03-18 and 10 embedded solar/wind rows across
-  2026-02-15→19. No revenue figure is affected (`market_index` is untouched). A local full
-  rebuild lands it:
-
-  ```
-  python scripts/prepare_data.py            # full rebuild, needs the local data/raw
-  python scripts/precompute_cache.py        # ~30 min
-  python scripts/compute_kpis.py
-  python scripts/check_cache_consistency.py
-  ```
-
-  Otherwise the first scheduled refresh will land it mixed in with new data, making that
-  diff harder to read.
+Nothing outstanding. Both items that were here are resolved:
 
 - ~~Confirm you receive failure emails~~ — **confirmed** (2026-09-10), from the era of the
   Streamlit keep-alive job.
+- ~~Land the 13-row settlement correction locally first~~ — **deliberately deferred**
+  (2026-09-10) to the first scheduled run. See below so its diff is not mistaken for a
+  bug.
+
+### Expect 13 unexplained-looking rows in the first refresh diff
+
+The first scheduled run will change **13 rows that are not new data**, alongside the
+weeks it actually collects. This is expected and was chosen rather than pre-empted.
+
+Commit `6b600aa` taught `prepare_data.py` to resolve overlapping pulls to the most
+recently collected one, because the trailing days of any pull are provisional — Elexon
+moves system prices through several settlement runs and NESO restates embedded solar and
+wind. The previous filename-ordered dedup kept the stale tail. Both methodology surfaces
+already describe the corrected rule, but the committed parquets predate it.
+
+What will move, and only this:
+
+| File | Rows | Where |
+|---|---|---|
+| `system_prices.parquet` | 3 | 2026-03-18, SP 35–37 (e.g. £90.76 → £164.00) |
+| `generation_daily.parquet` | 10 | embedded Solar and Wind, 2026-02-15→19 |
+
+`market_index.parquet` is untouched, so **no revenue figure moves** — APXMIDP is the
+arbitrage reference. Anything beyond these 13 rows in a non-collected date range is worth
+investigating; these 13 are not.
 
 ### What the REPD tail is not
 
