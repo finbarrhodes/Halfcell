@@ -100,33 +100,33 @@ display(Plot.plot({
 
 ## How batteries capitalise
 
-A grid-scale battery in GB has three main routes to revenue: frequency response (ancillary services), wholsale arbitrage, and capacity markets. As capacity markets are longer-horizon auctions (one or four years out from delivery) with more site-specifc physical limitations, this page covers the market for both the shorter term markets: frequency response and wholesale arbitrage.
+A grid-scale battery in GB has three main routes to revenue: frequency response (ancillary services), wholesale arbitrage, and capacity markets. As capacity markets are longer-horizon auctions (one or four years out from delivery) with more site-specific physical limitations, this page covers the market for both the shorter term markets: frequency response and wholesale arbitrage.
 
 **Frequency response: contracted availability.** NESO runs daily auctions for capacity
 that must react within seconds when frequency strays from 50 Hz. Win one and you are paid
 a **£/MW/h availability fee** for every hour you are committed, whether or not you are
-actually called. Predictable, contracted income — but the committed capacity has to keep
-enough charge and enough headroom to deliver in either direction.
+actually called. Predictable, contracted income, but the committed capacity has to keep
+enough charge and enough headroom to deliver in either direction (charging or discharging). 
 
 There are three services, split by how fast and how long they must respond:
 
 | Service | Frequency band | Response | Sustained for |
 |---|---|---|---|
 | **DC** — Dynamic Containment | ±0.2–0.5 Hz | ~1 second | 15 min |
-| **DR** — Dynamic Regulation | ±0.015–0.2 Hz | continuous | 60 min |
 | **DM** — Dynamic Moderation | ±0.1–0.2 Hz | ~1 second | 30 min |
+| **DR** — Dynamic Regulation | ±0.015–0.2 Hz | continuous | 60 min |
 
 Each runs as two separate auctions: **High**, which responds to *rising* frequency by
-charging, and **Low**, which responds to *falling* frequency by discharging — the name is the
-frequency excursion being corrected, not the direction the battery moves power. Auctions clear
+charging, and **Low**, which responds to *falling* frequency by discharging. Auctions clear
 per **EFA block** — six four-hour windows covering the day — so a battery's commitment can
-differ across the day.
+differ across a given day.
 
-**Wholesale arbitrage: opportunistic trading.** Separately, the battery can buy energy
-when it is cheap and sell when it is expensive. The profit is the price spread less
-round-trip losses and the wear cost of cycling.
+**Wholesale arbitrage: opportunistic trading.** Spot energy prices are dependant on many factors, 
+which can lead to a instances of high peaks and low (and even negative) troughs for batteries 
+to capitalise on. Simply, batteries can buy energy when it is cheap and sell when it is expensive, 
+taking the spread minus round-trip losses & wear cost of cycling as profit.
 
-The tension between the two is the subject of the
+The tension between these two is the subject of the
 [Forecasting & Dispatch](./backtester) page: capacity committed to frequency response
 cannot be freely traded, so the operator must decide each day how to split it.
 

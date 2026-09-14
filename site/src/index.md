@@ -32,7 +32,7 @@ const fmtGbp = (v) =>
 <div class="grid grid-cols-3">
   <div class="card nav">
     <h2><a href="./dashboard">Market Overview →</a></h2>
-    <p>GB frequency response auction clearing prices (DC, DR, DM), High vs Low spread
+    <p>What markets do batteries operate in? A look into frequency response auctions (DC, DR, DM), High vs Low spread
     dynamics, system settlement prices, and generation mix trends.</p>
   </div>
   <div class="card nav">
