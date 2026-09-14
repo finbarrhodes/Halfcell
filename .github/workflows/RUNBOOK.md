@@ -8,12 +8,19 @@ needed while diagnosing a failed run belongs here.
 
 | Workflow | Trigger | Duration | Writes to the repo? |
 |---|---|---|---|
-| `tests.yml` | push, PR, **Mondays 06:00 UTC** | ~1 min | no |
-| `refresh_data.yml` | **2nd of month 04:00 UTC**, manual | ~35–45 min | yes — commits to `main` |
+| `tests.yml` | push, PR, **Mondays 06:23 UTC** | ~1 min | no |
+| `refresh_data.yml` | **2nd of month 04:41 UTC**, manual | ~35–45 min | yes — commits to `main` |
 | `deploy_site.yml` | push touching `site/`, `data/processed/`, `data/cache/`; manual | ~1 min | no |
 
 `refresh_data.yml` is the only one that commits. It publishes to the live site as a side
 effect, so its gates matter — see *Recovery* below.
+
+**A scheduled time is when a run becomes eligible, not when it starts.** GitHub delays
+scheduled runs under load and can drop them outright. The first weekly `tests.yml` run,
+due 06:00 UTC on 2026-09-14 while the crons were still on the hour, started at 11:13. So
+an absent run at its due time is not yet a failure — give it a few hours. If the monthly
+refresh has not started by the evening of the 2nd, dispatch it by hand:
+`gh workflow run refresh_data.yml --ref main`.
 
 ## Before the first scheduled refresh
 

@@ -56,13 +56,16 @@ data/processed/*.pkl
 !data/processed/.gitkeep
 !data/cache/.gitkeep
 
-# Processed Parquet files ARE committed — pre-aggregated and small (~1.5 MB total).
-# Required for Streamlit Community Cloud (no access to local raw CSVs at runtime).
+# Processed Parquet files ARE committed — pre-aggregated, ~5 MB total. Keep it that
+# way. data/raw is ignored and exists only on the machine that collected it, so these
+# are the only copy of the history a CI runner ever sees: refresh_data.yml extends
+# them in place with `prepare_data.py --append`, and the site build reads them.
+# Stop committing them and the monthly refresh has nothing to append to.
 !data/processed/*.parquet
 
-# Cache Parquet files ARE committed — pre-computed backtest results (~50–100 KB each).
-# Ensures Streamlit Cloud has results available with zero compute at deploy time.
-# Re-generate with: python scripts/precompute_cache.py
+# Cache Parquet files ARE committed — pre-computed backtest results the site build
+# reads directly. Computing them takes ~30 min, far too slow to do on every deploy.
+# refresh_data.yml regenerates them monthly; locally: python scripts/precompute_cache.py
 
 # Reports
 reports/*.html
@@ -90,8 +93,6 @@ models/*.pkl
 models/*.joblib
 *.h5
 
-# Streamlit
-.streamlit/secrets.toml
 
 # OS
 Thumbs.db

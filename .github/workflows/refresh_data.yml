@@ -24,12 +24,17 @@ name: Monthly Data Refresh
 
 on:
   schedule:
-    # 04:00 UTC on the 2nd of each month. Monthly rather than weekly because each
+    # 04:41 UTC on the 2nd of each month. Monthly rather than weekly because each
     # refresh commits ~6.8 MB of parquet that git cannot delta-compress: monthly is
     # ~80 MB/yr of history growth against ~350 MB/yr weekly, and GB market data does
     # not move fast enough to justify the difference. The 2nd, not the 1st, so
     # month-end settlement has a day to settle.
-    - cron: '0 4 2 * *'
+    #
+    # Minute 41, not 0: GitHub delays top-of-the-hour schedules and can drop them.
+    # A dropped monthly run costs a month of data, and the freshness gate below
+    # cannot catch a job that never starts. tests.yml's weekly check, also on the
+    # hour, started its first run more than five hours late.
+    - cron: '41 4 2 * *'
   workflow_dispatch:
     inputs:
       lookback_days:

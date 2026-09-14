@@ -10,8 +10,12 @@ on:
   # The EAC freshness assertion in test_integration_apis.py is the tripwire for
   # NESO's April resource rotation — the failure mode it guards is silent, and a
   # push-triggered check only fires if something happens to be pushed. Weekly.
+  #
+  # Minute 23, not 0. GitHub delays scheduled runs under load, the top of the hour
+  # is the busiest time, and delayed runs can be dropped outright. The first run,
+  # due 06:00 on 2026-09-14, started at 11:13 — over five hours late.
   schedule:
-    - cron: '0 6 * * 1'
+    - cron: '23 6 * * 1'
 
 jobs:
   unit:
