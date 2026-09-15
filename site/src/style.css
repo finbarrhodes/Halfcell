@@ -425,3 +425,11 @@ form.oi input[type="checkbox"], form.oi input[type="radio"] { accent-color: var(
   margin-bottom: 0.6rem;
 }
 .chart-head h3 { margin: 0; }
+
+/* Card headings sit at the top of the card, not 2rem down like page headings */
+.card h3 { margin-top: 0; font-size: 1.05rem; }
+
+/* Heatmap strips: one per market, stacked */
+.heat-strip + .heat-strip { margin-top: 0.9rem; }
+.heat-strip .chart-head { margin-bottom: 0.2rem; }
+.heat-strip h4 { margin: 0; font-size: 1rem; }

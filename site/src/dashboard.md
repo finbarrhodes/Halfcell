@@ -16,7 +16,9 @@ either direction. That capability is what the frequency response markets buy and
 batteries' roles in the grids of the future will continue to grow. 
 
 ```js
-import {MARKET_COLOURS, EFA_BLOCKS, rollingMean} from "./components/theme.js";
+import {MARKET_COLOURS, EFA_BLOCKS, SERVICE_COLOURS, rollingMean} from "./components/theme.js";
+import {choiceGroup} from "./components/controls.js";
+import {watchSteps} from "./components/scrolly.js";
 
 const auctions = (await FileAttachment("data/auctions-daily.parquet").parquet())
   .toArray().map((d) => ({...d, date: new Date(d.date)}));
@@ -26,6 +28,11 @@ const sysPrices = (await FileAttachment("data/system-prices-daily.parquet").parq
   .toArray().map((d) => ({...d, date: new Date(d.date)}));
 const generation = (await FileAttachment("data/generation-daily.parquet").parquet())
   .toArray().map((d) => ({...d, date: new Date(d.date)}));
+
+const SERVICE_ORDER = ["DCH", "DCL", "DMH", "DML", "DRH", "DRL"];
+// The two auction rule changes that split the history (see Frequency Response)
+const EAC_GO_LIVE = new Date("2023-11-02");
+const RESERVE_RULE = new Date("2024-11-15");
 ```
 
 ## The shift that created the market
@@ -112,11 +119,16 @@ counts against the battery's rating on that side, whichever service it is sold i
 
 There are three services, split by how fast and how long they must respond:
 
-| Service | Frequency band | Response | Sustained for |
-|---|---|---|---|
-| **DC** — Dynamic Containment | ±0.2–0.5 Hz | ~1 second | 15 min |
-| **DM** — Dynamic Moderation | ±0.1–0.2 Hz | ~1 second | 30 min |
-| **DR** — Dynamic Regulation | ±0.015–0.2 Hz | continuous | 60 min |
+| Service | Acts on | Full response within | Sustained for | Opposite-side reserve¹ |
+|---|---|---|---|---|
+| **DC** — Dynamic Containment | Large deviations, ±0.2–0.5 Hz | 1 second | 15 min | 10% |
+| **DM** — Dynamic Moderation | Moderate deviations, ±0.1–0.2 Hz | 1 second | 30 min | 20% |
+| **DR** — Dynamic Regulation | Small, everyday deviations, ±0.015–0.2 Hz | 10 seconds | 60 min | 40% |
+
+<p class="muted">¹ Since 15 November 2024, each MW contracted also keeps a share of the
+battery's power free on the opposite side for recovering energy: a battery selling 10 MW of
+DR Low must keep 4 MW of charging capacity spare. Response times and delivery windows are
+from NESO's <a href="https://www.neso.energy/document/384606/download">Response Service Terms</a>.</p>
 
 Each runs as two separate auctions: **High**, which responds to *rising* frequency by
 charging, and **Low**, which responds to *falling* frequency by discharging. Auctions clear
@@ -132,45 +144,20 @@ The tension between these two is the subject of the
 [Forecasting & Dispatch](./backtester) page: capacity committed to frequency response
 cannot be freely traded, so the operator must decide each day how to split it.
 
-```js
-const allServices = d3.sort(new Set(auctions.map((d) => d.service)));
-const dateExtent = d3.extent(auctions, (d) => d.date);
-
-const servicePick = view(Inputs.checkbox(allServices, {
-  label: "DC/DR/DM services", value: allServices,
-}));
-const fromPick = view(Inputs.date({
-  label: "From", value: dateExtent[0], min: dateExtent[0], max: dateExtent[1],
-}));
-const toPick = view(Inputs.date({
-  label: "To", value: dateExtent[1], min: dateExtent[0], max: dateExtent[1],
-}));
-```
-
-```js
-// All filtering happens here, in the browser: service, date range and EFA block,
-// applied to the full-grain auction table.
-const services = new Set(servicePick);
-const filtered = auctions.filter(
-  (d) => services.has(d.service) && d.date >= fromPick && d.date <= toPick
-);
-```
-
 ## Frequency Response
 
-GB frequency response is procured through three
-[**dynamic** services](https://www.neso.energy/industry-information/balancing-services/frequency-response-services/dynamic-services-dcdmdr),
-each split into **High** (charge — activated when frequency rises above 50 Hz) and
-**Low** (discharge — activated when frequency falls below 50 Hz) auctions.
+Each service is bought through daily
+[auctions](https://www.neso.energy/industry-information/balancing-services/frequency-response-services/dynamic-services-dcdmdr),
+one for every product (the High and Low of each service) in every EFA block. The clearing
+price is the price of the marginal accepted offer for that product and block.
 
-| Service | Frequency band | Role |
-|---------|---------------|------|
-| **DC** – Dynamic Containment | ±0.2–0.5 Hz | Arrests large deviations within ~1 second |
-| **DR** – Dynamic Regulation | ±0.015–0.2 Hz | Maintains frequency in normal operation |
-| **DM** – Dynamic Moderation | ±0.1–0.2 Hz | Moderates frequency during stressed conditions |
+Two changes to the auctions divide the history in this data:
 
-Auctions run daily for each **EFA block** (six 4-hour windows covering the full day).
-The clearing price is the marginal accepted bid for that block and service.
+- **Legacy auctions**, up to 1 November 2023. A unit could offer only one of DC, DM and DR in
+  a block, and prices never went below zero.
+- **Enduring Auction Capability (EAC)**, from 2 November 2023. A unit can split its capacity
+  across all three services in the same block and offer several products in one order, and
+  prices can go negative. The opposite-side reserve has applied since 15 November 2024.
 
 <details>
 <summary>EFA block timings</summary>
@@ -183,16 +170,16 @@ ${Inputs.table(
 EFA Block 1 spans midnight (23:00 the previous calendar day to 03:00). All times are local GB time.
 </details>
 
-### Clearing prices — 28-day rolling average by service
+### Clearing prices — 28-day rolling average by product
 
-Individual auction results are first averaged to a daily figure per service, then
-smoothed with a 28-day rolling window, so the trend for each of the six services is
-readable without daily noise obscuring the signal.
+Individual auction results are averaged to a daily figure per product, then smoothed with a
+28-day rolling window. Scroll through the story, or pick an auction era on the chart to explore
+it yourself.
 
 ```js
 const rollingByService = (() => {
   const out = [];
-  for (const [service, rows] of d3.group(filtered, (d) => d.service)) {
+  for (const [service, rows] of d3.group(auctions, (d) => d.service)) {
     const daily = d3.sort(
       Array.from(d3.rollup(rows, (v) => d3.mean(v, (d) => d.clearing_price), (d) => +d.date),
         ([date, value]) => ({date: new Date(date), value})),
@@ -202,84 +189,190 @@ const rollingByService = (() => {
   }
   return out;
 })();
-
-// Order the legend by mean level so the highest-value service reads first
-const serviceOrder = Array.from(
-  d3.rollup(rollingByService, (v) => d3.mean(v, (d) => d.value), (d) => d.service)
-).sort((a, b) => d3.descending(a[1], b[1])).map((d) => d[0]);
 ```
+
+<div class="scrolly" id="clearing-story">
+<div class="scrolly-steps">
+
+<div class="step"><div class="step-inner">
+<span class="step-num">2021–22</span>
+
+### The early peak
+
+DC Low averaged **£17.51/MW/h** across 2022, the highest annual average of any product in
+this data, with DR High not far behind at £11.53. Few batteries were yet competing for what
+NESO needed to buy.
+</div></div>
+
+<div class="step"><div class="step-inner">
+<span class="step-num">2023</span>
+
+### Then DC collapsed
+
+New battery capacity arrived faster than NESO's requirement grew. DC Low averaged £2.70/MW/h
+in 2023, down 85% on 2022, and DR High fell to £1.10. The Low products of DM and DR held up far
+better, and have strengthened since.
+</div></div>
+
+<div class="step"><div class="step-inner">
+<span class="step-num">Throughout</span>
+
+### Low usually clears above High
+
+In most blocks a service's Low product clears above its High product: ${lowAbove.DC}% of DC
+blocks, ${lowAbove.DM}% of DM and ${lowAbove.DR}% of DR. Across the fleet, spare capacity to
+absorb power has generally been easier to find than spare capacity to inject it.
+</div></div>
+
+<div class="step"><div class="step-inner">
+<span class="step-num">Since November 2023</span>
+
+### High products go negative
+
+EAC allowed prices below zero, and the High products went there almost immediately. Since
+go-live, DR High has cleared negative in ${eacNegative.DRH}% of blocks and DM High in
+${eacNegative.DMH}%, while the Low products almost never have. A provider can offer DR High and
+DR Low in one order, accepted on its combined value, so a negative High leg can sit inside a
+package that still pays.
+</div></div>
+
+</div>
+<div class="scrolly-graphic">
+<div class="scrolly-rail" id="clearing-rail"></div>
+<div class="chart-head"><span class="muted">28-day rolling average, £/MW/h</span><span id="clearing-era"></span></div>
+<div id="clearing-figure"></div>
+</div>
+</div>
 
 ```js
-display(Plot.plot({
-  height: 420, marginLeft: 55,
-  x: {label: null},
-  y: {label: "Rolling avg (£/MW/h)", grid: true},
-  color: {legend: true, domain: serviceOrder},
-  marks: [
-    Plot.ruleY([0], {stroke: "currentColor", strokeOpacity: 0.3}),
-    Plot.line(rollingByService, {x: "date", y: "value", stroke: "service", strokeWidth: 1.6}),
-    Plot.tip(rollingByService, Plot.pointerX({
-      x: "date", y: "value", stroke: "service",
-      title: (d) => `${d.service}\n${d.date.toDateString()}\n£${d.value?.toFixed(2)}/MW/h`,
-    })),
-  ],
-}));
+const ERAS = {
+  all: {label: "All", domain: d3.extent(rollingByService, (d) => d.date)},
+  legacy: {label: "Legacy auctions", domain: [d3.min(rollingByService, (d) => d.date), EAC_GO_LIVE]},
+  eac: {label: "EAC", domain: [EAC_GO_LIVE, d3.max(rollingByService, (d) => d.date)]},
+};
+
+// What each step of the story puts on the chart: an era, and the products to
+// bring forward (null leaves every line at full strength)
+const STORY = [
+  {era: "legacy", focus: ["DCL", "DRH"]},
+  {era: "all", focus: null},
+  {era: "all", focus: ["DCL", "DML", "DRL"]},
+  {era: "eac", focus: ["DMH", "DRH"], zero: true},
+];
+
+const RULE_MARKERS = [
+  {date: EAC_GO_LIVE, label: "EAC go-live"},
+  {date: RESERVE_RULE, label: "Reserve rule"},
+];
+
+function clearingChart({era, focus, zero}, width) {
+  const [x0, x1] = ERAS[era].domain;
+  const rows = rollingByService.filter((d) => d.date >= x0 && d.date <= x1);
+  const inFocus = (d) => !focus || focus.includes(d.service);
+  const markers = RULE_MARKERS.filter((d) => d.date > x0 && d.date < x1);
+  return Plot.plot({
+    width, height: 420, marginLeft: 45, marginRight: 10, marginTop: 24,
+    x: {label: null, domain: [x0, x1]},
+    y: {label: "£/MW/h", grid: true},
+    color: {legend: true, domain: SERVICE_ORDER, range: SERVICE_ORDER.map((s) => SERVICE_COLOURS[s])},
+    marks: [
+      Plot.ruleY([0], zero
+        ? {stroke: "#C9400A", strokeWidth: 1.5}
+        : {stroke: "currentColor", strokeOpacity: 0.3}),
+      Plot.ruleX(markers, {x: "date", stroke: "#9C948E", strokeDasharray: "3 3"}),
+      Plot.text(markers, {x: "date", text: "label", frameAnchor: "top", dy: -14, dx: 4,
+                          textAnchor: "start", fill: "#66605C", fontSize: 10}),
+      Plot.line(rows.filter((d) => !inFocus(d)),
+        {x: "date", y: "value", z: "service", stroke: "service", strokeWidth: 1, strokeOpacity: 0.18}),
+      Plot.line(rows.filter(inFocus),
+        {x: "date", y: "value", z: "service", stroke: "service", strokeWidth: 1.8}),
+      Plot.tip(rows, Plot.pointerX({
+        x: "date", y: "value", stroke: "service",
+        title: (d) => `${d.service}\n${d.date.toDateString()}\n£${d.value?.toFixed(2)}/MW/h`,
+      })),
+    ],
+  });
+}
+
+// Rendered imperatively, as on the dispatch page: the step observer and the era
+// picker both drive one render function, and the picker follows the story.
+{
+  const root = document.getElementById("clearing-story");
+  const target = document.getElementById("clearing-figure");
+  const eraSlot = document.getElementById("clearing-era");
+  const rail = document.getElementById("clearing-rail");
+  if (root && target && eraSlot) {
+    const state = {step: 0, era: STORY[0].era};
+    const eraPicker = choiceGroup(Object.keys(ERAS), {
+      value: state.era, format: (k) => ERAS[k].label, label: "Auction era",
+    });
+    eraSlot.replaceChildren(eraPicker);
+
+    const render = () => {
+      const width = Math.max(320, target.getBoundingClientRect().width || 640);
+      target.replaceChildren(clearingChart({...STORY[state.step], era: state.era}, width));
+    };
+
+    eraPicker.addEventListener("input", () => {
+      state.era = eraPicker.value;
+      render();
+    });
+    const stop = watchSteps(root, (i) => {
+      state.step = i;
+      state.era = STORY[i].era;
+      eraPicker.value = state.era;
+      render();
+    }, {rail});
+
+    window.addEventListener("resize", render);
+    invalidation.then(() => {
+      stop();
+      window.removeEventListener("resize", render);
+    });
+  }
+}
 ```
-
-<details>
-<summary>Key takeaways — clearing price trends</summary>
-
-- **2022 peak then sharp compression.** DCL clearing prices peaked at £15–20/MW/h in 2022
-  as NESO expanded DC procurement ahead of renewable growth. From late 2022 a rapid wave of
-  new GB BESS capacity entered the frequency response markets, outpacing NESO's procurement
-  volumes and driving prices steeply lower across all services.
-- **Discharge (Low) services generally clear above charge (High) services.** Fleet-wide
-  charge headroom tends to be more available than discharge headroom — particularly during
-  high-wind periods — so High-side auctions typically clear lower.
-- **High products have cleared negative since EAC went live.** From November 2023, when the
-  new auction allowed negative prices, DR High has cleared below zero in most blocks and DM
-  High in around half, while the Low products have held up. That is why the DR spread sits
-  well below DC's and DM's.
-</details>
 
 ### Price distribution
 
 <div class="grid grid-cols-2">
-  <div class="card">${
-    resize((width) => Plot.plot({
-      width, height: 380, marginLeft: 50,
+  <div class="card">
+    <h3>By product</h3>
+    ${resize((width) => Plot.plot({
+      width, height: 360, marginLeft: 50,
+      x: {label: null, domain: SERVICE_ORDER},
       y: {label: "£/MW/h", grid: true},
-      color: {domain: allServices, legend: false},
+      color: {domain: SERVICE_ORDER, range: SERVICE_ORDER.map((s) => SERVICE_COLOURS[s])},
       marks: [
         Plot.ruleY([0], {strokeOpacity: 0.3}),
-        Plot.boxY(filtered, {x: "service", y: "clearing_price", fill: "service"}),
+        Plot.boxY(auctions, {x: "service", y: "clearing_price", fill: "service"}),
       ],
-    }))
-  }</div>
-  <div class="card">${
-    resize((width) => Plot.plot({
-      width, height: 380, marginLeft: 50, marginBottom: 45,
+    }))}
+    <p class="card-caption">DC Low has the widest spread of outcomes: it cleared highest in the
+    early market, and near the bottom since 2023.</p>
+  </div>
+  <div class="card">
+    <h3>By EFA block</h3>
+    ${resize((width) => Plot.plot({
+      width, height: 360, marginLeft: 50, marginBottom: 45,
       x: {label: "EFA block", tickFormat: (d) => `EFA ${d}`},
       y: {label: "£/MW/h", grid: true},
-      color: {domain: allServices, legend: true},
+      color: {domain: SERVICE_ORDER, range: SERVICE_ORDER.map((s) => SERVICE_COLOURS[s]), legend: true},
       marks: [
         Plot.ruleY([0], {strokeOpacity: 0.3}),
-        Plot.boxY(filtered, {x: "efa", y: "clearing_price", fill: "service"}),
+        Plot.boxY(auctions, {x: "efa", y: "clearing_price", fill: "service"}),
       ],
-    }))
-  }</div>
+    }))}
+    <p class="card-caption">The Low products clear highest in EFA 5 (15:00–19:00), across the
+    evening peak. Overnight EFA 1 is the cheapest block overall.</p>
+  </div>
 </div>
-
-DCL shows the widest spread of outcomes, reflecting its role as the primary fast-discharge
-service and its early-market dominance at elevated prices. Evening blocks (EFA 5–6,
-15:00–23:00) attract higher premia as demand peaks and wind output often eases; the
-overnight block (EFA 1) is typically cheapest to procure.
 
 ### Summary statistics
 
 ```js
 display(Inputs.table(
-  Array.from(d3.group(filtered, (d) => d.service), ([service, v]) => ({
+  Array.from(d3.group(auctions, (d) => d.service), ([service, v]) => ({
     Service: service,
     "Avg price (£/MW/h)": d3.mean(v, (d) => d.clearing_price),
     "Median": d3.median(v, (d) => d.clearing_price),
@@ -298,8 +391,8 @@ display(Inputs.table(
 
 ## High vs Low spread
 
-Each service runs two separate auctions: **High** (rising frequency — BESS charges) and
-**Low** (falling frequency — BESS discharges). Clearing prices differ because available
+Each service runs two separate auctions: **High** (rising frequency → BESS charges) and
+**Low** (falling frequency → BESS discharges). Clearing prices differ because available
 discharge and charge headroom across the fleet is rarely symmetric.
 
 **Spread = H clearing price − L clearing price.** Positive means charge capacity was scarcer;
@@ -325,6 +418,15 @@ const spreads = (() => {
 })();
 
 const drMean = d3.mean(spreads.filter((d) => d.market === "DR"), (d) => d.spread);
+
+// Shares of blocks quoted in the text, recomputed on every refresh
+const shareOf = (rows, test) => Math.round(d3.mean(rows, (d) => (test(d) ? 1 : 0)) * 100);
+const lowAbove = Object.fromEntries(PAIRS.map(([m]) =>
+  [m, shareOf(spreads.filter((d) => d.market === m), (d) => d.spread < 0)]));
+const highAbove = Object.fromEntries(PAIRS.map(([m]) =>
+  [m, shareOf(spreads.filter((d) => d.market === m), (d) => d.spread > 0)]));
+const eacNegative = Object.fromEntries(SERVICE_ORDER.map((s) =>
+  [s, shareOf(auctions.filter((d) => d.service === s && d.date >= EAC_GO_LIVE), (d) => d.clearing_price < 0)]));
 ```
 
 ### Daily average H − L spread over time
@@ -375,6 +477,9 @@ also reserves 40% of its MW on the opposite side for energy recovery.</p>
         Plot.boxY(spreads, {x: "market", y: "spread", fill: "market"}),
       ],
     }))}
+    <p class="card-caption">DC's spreads sit closest to zero and most tightly around it, so its
+    two legs are priced most symmetrically. DR sits firmly negative, with High above Low in only
+    ${highAbove.DR}% of blocks; DM falls in between.</p>
   </div>
   <div class="card">
     <h3>Average spread by EFA block</h3>
@@ -388,52 +493,66 @@ also reserves 40% of its MW on the opposite side for energy recovery.</p>
         Plot.barY(spreads, Plot.groupX({y: "mean"}, {x: "efa", y: "spread", fill: "market"})),
       ],
     }))}
+    <p class="card-caption">Spreads are most pronounced in EFA 5 (15:00–19:00), then EFA 6, as
+    demand peaks and charge and discharge headroom are least balanced.</p>
   </div>
 </div>
 
-DC shows the widest range of spread outcomes and the median closest to zero, so its two
-legs are priced the most symmetrically of the three. DR sits firmly negative across both
-charts — positive in only 7% of blocks — confirming the structural inversion described above.
-DM occupies the middle ground. All three average negative, so discharge capacity is the
-scarcer side throughout. Evening blocks (EFA 5–6) show the most pronounced spreads, as demand
-peaks and the balance between available charge and discharge headroom is tightest.
-
-### H − L spread heatmap: EFA block × month
+### H − L spread by month and EFA block
 
 ```js
-const heatMarket = view(Inputs.radio(["DC", "DR", "DM"], {label: "Market", value: "DC"}));
+const heatDomain = [
+  d3.min(spreads, (d) => d3.utcMonth.floor(d.date)),
+  d3.utcMonth.offset(d3.max(spreads, (d) => d3.utcMonth.floor(d.date)), 1),
+];
+
+const heatStrips = PAIRS.map(([market]) => {
+  const cells = Array.from(
+    d3.rollup(spreads.filter((d) => d.market === market), (v) => d3.mean(v, (d) => d.spread),
+      (d) => +d3.utcMonth.floor(d.date), (d) => d.efa),
+    ([month, m]) => Array.from(m, ([efa, spread]) => ({month: new Date(month), efa, spread}))
+  ).flat();
+  // Colours saturate at the 95th percentile of |spread|, so a handful of extreme
+  // months don't wash out every other cell
+  const lim = Math.ceil(d3.quantile(cells, 0.95, (d) => Math.abs(d.spread)));
+  return {market, cells, lim};
+});
+
+const heatColour = (lim) => ({type: "diverging", scheme: "RdBu", domain: [-lim, lim], reverse: true, clamp: true});
+
+function heatStrip({market, cells, lim}, width) {
+  return Plot.plot({
+    width, height: 140, marginLeft: 50, marginRight: 10, marginTop: 4, marginBottom: 22,
+    x: {type: "utc", domain: heatDomain, label: null},
+    y: {domain: [0.5, 6.5], reverse: true, ticks: [1, 2, 3, 4, 5, 6], tickFormat: (d) => `EFA ${d}`,
+        label: null, tickSize: 0},
+    color: heatColour(lim),
+    marks: [
+      Plot.rect(cells, {
+        x1: "month", x2: (d) => d3.utcMonth.offset(d.month, 1),
+        y1: (d) => d.efa - 0.5, y2: (d) => d.efa + 0.5,
+        fill: "spread", inset: 0.5,
+      }),
+      Plot.ruleX([EAC_GO_LIVE], {stroke: "#33302E", strokeDasharray: "3 3", strokeOpacity: 0.7}),
+      Plot.tip(cells, Plot.pointer({
+        x: (d) => new Date(+d.month + 14 * 864e5), y: "efa",
+        title: (d) => `${market} · EFA ${d.efa} (${EFA_BLOCKS[d.efa]})\n${d3.utcFormat("%B %Y")(d.month)}\n£${d.spread.toFixed(2)}/MW/h`,
+      })),
+    ],
+  });
+}
+
+display(resize((width) => html`<div class="heat-strips">${heatStrips.map((strip) => html`<div class="heat-strip">
+  <div class="chart-head"><h4>${strip.market}</h4>${Plot.legend({color: {...heatColour(strip.lim), label: "£/MW/h"}, width: 240})}</div>
+  ${heatStrip(strip, width)}
+</div>`)}</div>`));
 ```
 
-```js
-const heat = Array.from(
-  d3.rollup(
-    spreads.filter((d) => d.market === heatMarket),
-    (v) => d3.mean(v, (d) => d.spread),
-    (d) => d3.utcFormat("%Y-%m")(d.date),
-    (d) => d.efa
-  ),
-  ([month, m]) => Array.from(m, ([efa, spread]) => ({month, efa, spread}))
-).flat();
-
-const lim = d3.max(heat, (d) => Math.abs(d.spread));
-
-display(Plot.plot({
-  height: 460, marginLeft: 70, marginBottom: 45,
-  x: {label: "EFA block", tickFormat: (d) => `EFA ${d}`, type: "band"},
-  y: {label: "Month", type: "band", tickFormat: (d) => (d.endsWith("-01") ? d.slice(0, 4) : "")},
-  color: {scheme: "RdBu", domain: [lim, -lim], legend: true, label: "£/MW/h"},
-  marks: [
-    Plot.cell(heat, {x: "efa", y: "month", fill: "spread", inset: 0.5}),
-    Plot.tip(heat, Plot.pointer({
-      x: "efa", y: "month",
-      title: (d) => `${heatMarket} · EFA ${d.efa} (${EFA_BLOCKS[d.efa]})\n${d.month}\n£${d.spread.toFixed(2)}/MW/h`,
-    })),
-  ],
-}));
-```
-
-Each cell is the average H − L spread for that market, EFA block and calendar month.
-Red = charge capacity scarcer (H > L); blue = discharge capacity scarcer (L > H).
+Each cell is the average H − L spread for a calendar month and EFA block. Red means charge
+capacity was scarcer (H > L); blue means discharge capacity was scarcer (L > H). Each strip's
+colours saturate at its 95th percentile (DC ±£${heatStrips[0].lim}, DR ±£${heatStrips[1].lim},
+DM ±£${heatStrips[2].lim}), so a handful of extreme months don't wash out the rest; hover a cell
+for its exact value. The dashed line marks EAC go-live.
 
 ```js
 display(Inputs.table(
@@ -456,28 +575,66 @@ display(Inputs.table(
 
 ## Wholesale & settlement prices
 
-**System Buy Price (SBP)** and **System Sell Price (SSP)** are the cash-out prices used to
-settle imbalance in the GB Balancing Mechanism. Parties that are *short* pay the SBP; parties
-that are *long* receive the SSP. The gap between them incentivises self-balancing rather than
-relying on the system operator.
+Two prices matter for a battery trading energy. The **market index** (APXMIDP) is the
+half-hourly wholesale reference that the dispatch model on this site trades against. The
+**imbalance price** is what a party pays or receives for being out of balance in a
+settlement period.
 
 ```js
-const spLong = sysPrices.flatMap((d) => [
-  {date: d.date, series: "Avg SSP", price: d.ssp_mean},
-  {date: d.date, series: "Avg SBP", price: d.sbp_mean},
-]);
+const sysMismatches = d3.sum(sysPrices, (d) => d.sell_buy_mismatches);
+const sysHalfHours = d3.sum(sysPrices, (d) => d.n);
+const singlePriceNote = sysMismatches === 0
+  ? `They match in all ${d3.format(",")(sysHalfHours)} half-hours of this data, so one line covers both.`
+  : `They differ in ${d3.format(",")(sysMismatches)} of ${d3.format(",")(sysHalfHours)} half-hours here; the chart shows the sell price.`;
+```
+
+Since Elexon's [P305](https://www.elexon.co.uk/bsc/mod-proposal/p305/) took effect in November
+2015, GB has settled imbalance at a single price: the System Sell Price and System Buy Price
+are the same number. ${singlePriceNote}
+
+### Market index and imbalance price
+
+```js
+function rollingBand(rows, series, meanKey, minKey, maxKey) {
+  const sorted = d3.sort(rows, (d) => d.date);
+  const mean = rollingMean(sorted, 28, "date", meanKey);
+  const low = rollingMean(sorted, 28, "date", minKey);
+  const high = rollingMean(sorted, 28, "date", maxKey);
+  return mean.map((d, i) => ({series, date: d.date, mean: d[meanKey], low: low[i][minKey], high: high[i][maxKey]}));
+}
+
+const PRICE_SERIES = ["Market index (APXMIDP)", "Imbalance price"];
+const priceBands = [
+  ...rollingBand(marketDaily, PRICE_SERIES[0], "mean", "min", "max"),
+  ...rollingBand(sysPrices, PRICE_SERIES[1], "price_mean", "price_min", "price_max"),
+];
 
 display(Plot.plot({
   height: 420, marginLeft: 55,
   x: {label: null},
   y: {label: "£/MWh", grid: true},
-  color: {legend: true, domain: ["Avg SSP", "Avg SBP"], range: ["#C9400A", "#0D7680"]},
+  color: {legend: true, domain: PRICE_SERIES, range: ["#0D7680", "#C9400A"]},
   marks: [
     Plot.ruleY([0], {strokeOpacity: 0.3}),
-    Plot.line(spLong, {x: "date", y: "price", stroke: "series", strokeWidth: 1.1}),
+    Plot.areaY(priceBands, {x: "date", y1: "low", y2: "high", z: "series", fill: "series", fillOpacity: 0.12}),
+    Plot.line(priceBands, {x: "date", y: "mean", z: "series", stroke: "series", strokeWidth: 1.6}),
+    Plot.tip(priceBands, Plot.pointerX({
+      x: "date", y: "mean", stroke: "series",
+      title: (d) => `${d.series}\n${d.date.toDateString()}\n28-day avg £${d.mean.toFixed(0)}/MWh\ntypical day £${d.low.toFixed(0)}–£${d.high.toFixed(0)}`,
+    })),
   ],
 }));
+
+const dailyRange = (rows, lo, hi) => d3.mean(rows, (d) => d[hi] - d[lo]);
+const negativeShare = (rows) => (d3.sum(rows, (d) => d.negative) / d3.sum(rows, (d) => d.n)) * 100;
 ```
+
+Lines are 28-day rolling averages of each day's mean price; the shaded bands run from the
+average daily low to the average daily high over the same window. The two prices move together
+on average, but the imbalance price swings further within a day: its daily range averages
+£${dailyRange(sysPrices, "price_min", "price_max").toFixed(0)}/MWh against
+£${dailyRange(marketDaily, "min", "max").toFixed(0)} for the market index, and it is negative in
+${negativeShare(sysPrices).toFixed(1)}% of half-hours against ${negativeShare(marketDaily).toFixed(1)}%.
 
 ### Wholesale price spread
 
@@ -499,4 +656,3 @@ display(Plot.plot({
 ```
 
 Thin line is the daily spread; heavy line is a 28-day rolling average.
-
