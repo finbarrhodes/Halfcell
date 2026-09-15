@@ -3,8 +3,8 @@ scripts/check_cache_consistency.py
 ==================================
 Fail fast if data/cache/ holds a torn set of backtest results.
 
-precompute_cache.py writes the three strategy parquets sequentially over roughly
-twenty minutes, writing the manifest last. Anything that reads the cache while
+precompute_cache.py writes the strategy and scenario parquets sequentially over
+roughly half an hour, writing the manifest last. Anything that reads the cache while
 that is in flight — a site build, a commit — can pick up a mix of strategies
 from different runs. The numbers still look plausible, which is what makes it
 dangerous: strategies are only comparable if they came from the same source data.
@@ -27,6 +27,9 @@ MANIFEST = CACHE / "manifest.json"
 
 STRATEGIES = ("pf_mpc", "naive_mpc", "ml_mpc")
 
+# FR-only scenarios need no price forecast, so one copy serves every strategy
+SHARED_FILES = ("fr_only.parquet", "fr_only_always_dc.parquet")
+
 # Strategies from one run finish within minutes of each other; a wider spread
 # means the cache was assembled from separate runs.
 MAX_SPREAD_HOURS = 6.0
@@ -47,10 +50,12 @@ def main() -> None:
     if missing:
         _fail(f"manifest missing strategies: {', '.join(missing)}")
 
+    names = list(SHARED_FILES)
     for strategy in STRATEGIES:
-        for name in (f"{strategy}.parquet", f"soc_{strategy}.parquet"):
-            if not (CACHE / name).exists():
-                _fail(f"cache file missing: data/cache/{name}")
+        names += [f"{strategy}.parquet", f"soc_{strategy}.parquet", f"{strategy}_arb_only.parquet"]
+    for name in names:
+        if not (CACHE / name).exists():
+            _fail(f"cache file missing: data/cache/{name}")
 
     # Every strategy must have been computed from the same source data.
     mtimes = {s: manifest[s].get("data_mtimes") for s in STRATEGIES}
@@ -81,7 +86,8 @@ def main() -> None:
     # Params that define the asset and window must agree, or the strategies are
     # not comparable even if they ran together.
     shared_keys = ("power_mw", "duration_h", "efficiency_rt", "cycling_cost_per_mwh",
-                   "availability_factor", "start_date", "end_date", "dispatch_method")
+                   "availability_factor", "start_date", "end_date", "dispatch_method",
+                   "pre_eac_rule")
     ref_params = manifest[STRATEGIES[0]]["params"]
     for strategy in STRATEGIES[1:]:
         params = manifest[strategy]["params"]

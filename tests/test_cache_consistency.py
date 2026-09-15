@@ -23,7 +23,7 @@ def _entry(when, mtimes, **params):
     base = {"power_mw": 50.0, "duration_h": 2.0, "efficiency_rt": 0.9,
             "cycling_cost_per_mwh": 3.0, "availability_factor": 0.95,
             "start_date": "2021-09-16", "end_date": "2026-08-17",
-            "dispatch_method": "mpc"}
+            "dispatch_method": "mpc", "pre_eac_rule": "d1"}
     base.update(params)
     return {"computed_at": when.isoformat(), "git_sha": "abc123",
             "data_mtimes": mtimes, "params": base, "summary": {}}
@@ -33,8 +33,10 @@ def _build_cache(tmp_path, spread_minutes=10, mismatch=None, drop_importances=Fa
     cache = tmp_path / "data" / "cache"
     cache.mkdir(parents=True)
     for s in STRATEGIES:
-        (cache / f"{s}.parquet").write_bytes(b"x")
-        (cache / f"soc_{s}.parquet").write_bytes(b"x")
+        for name in (f"{s}.parquet", f"soc_{s}.parquet", f"{s}_arb_only.parquet"):
+            (cache / name).write_bytes(b"x")
+    for name in ("fr_only.parquet", "fr_only_always_dc.parquet"):
+        (cache / name).write_bytes(b"x")
 
     t0 = datetime(2026, 8, 18, 11, 0, tzinfo=timezone.utc)
     mtimes = {"auctions.parquet": 1.0, "market_index.parquet": 2.0}
@@ -103,6 +105,14 @@ def test_rejects_missing_parquet(tmp_path):
     result = _run(root)
     assert result.returncode == 1
     assert "cache file missing" in result.stderr
+
+
+def test_rejects_missing_scenario_parquet(tmp_path):
+    root = _build_cache(tmp_path)
+    (root / "data" / "cache" / "fr_only.parquet").unlink()
+    result = _run(root)
+    assert result.returncode == 1
+    assert "fr_only.parquet" in result.stderr
 
 
 def test_rejects_missing_manifest(tmp_path):

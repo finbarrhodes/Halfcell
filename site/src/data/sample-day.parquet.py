@@ -7,7 +7,8 @@ evening peak and a ~£218/MWh peak-to-trough spread — illustrative without bei
 the kind of outlier that misrepresents a normal day.
 
 Charge/discharge power is derived from the change in state of charge between
-periods, which is what the dispatch LP actually decides.
+periods, which is what the dispatch LP actually decides. soc_min_frac and
+soc_max_frac are the range that day's FR contracts required.
 """
 import io
 import sys
@@ -50,7 +51,8 @@ energy_mwh = params["power_mw"] * params["duration_h"]
 frames = []
 for key in STRATEGIES:
     soc = pd.read_parquet(ROOT / f"data/cache/soc_{key}.parquet")
-    soc = soc[pd.to_datetime(soc["date"]) == SAMPLE_DATE][["sp", "soc_frac"]].sort_values("sp")
+    soc = (soc[pd.to_datetime(soc["date"]) == SAMPLE_DATE]
+           [["sp", "soc_frac", "soc_min_frac", "soc_max_frac"]].sort_values("sp"))
     if soc.empty:
         continue
     df = prices.merge(soc, on="sp", how="left")

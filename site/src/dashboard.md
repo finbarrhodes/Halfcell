@@ -105,8 +105,10 @@ A grid-scale battery in GB has three main routes to revenue: frequency response 
 **Frequency response: contracted availability.** NESO runs daily auctions for capacity
 that must react within seconds when frequency strays from 50 Hz. Win one and you are paid
 a **£/MW/h availability fee** for every hour you are committed, whether or not you are
-actually called. Predictable, contracted income, but the committed capacity has to keep
-enough charge and enough headroom to deliver in either direction (charging or discharging). 
+actually called. Predictable, contracted income, but each contract ties up part of the battery. A Low
+contract needs enough energy in store to discharge for its full delivery window, a High
+contract needs the same again as headroom to charge, and every MW sold in one direction
+counts against the battery's rating on that side, whichever service it is sold into. 
 
 There are three services, split by how fast and how long they must respond:
 
@@ -234,9 +236,10 @@ display(Plot.plot({
 - **Discharge (Low) services generally clear above charge (High) services.** Fleet-wide
   charge headroom tends to be more available than discharge headroom — particularly during
   high-wind periods — so High-side auctions typically clear lower.
-- **DRH and DRL behave differently from DC and DM.** DR's sustained 60-minute delivery
-  requirement couples the two sides operationally, which is why the DRL spread sometimes
-  inverts relative to DCL and DML.
+- **High products have cleared negative since EAC went live.** From November 2023, when the
+  new auction allowed negative prices, DR High has cleared below zero in most blocks and DM
+  High in around half, while the Low products have held up. That is why the DR spread sits
+  well below DC's and DM's.
 </details>
 
 ### Price distribution
@@ -345,16 +348,19 @@ display(Plot.plot({
 ```
 
 ```js
-display(drMean < 0 ? html`<div class="note">
+if (drMean < 0) display(html`<div class="note">
 <p><b>Why is the DR spread consistently negative (avg ${drMean.toFixed(2)} £/MW/h)?</b></p>
-<p>DR operates continuously in the normal frequency band, and NESO's energy management rules
-require providers to sustain their contracted position for a full <b>60-minute</b> delivery
-window — much longer than DC (15 min) or DM (30 min). Providers holding both DRH and DRL
-positions need to keep SoC near the midpoint to honour either commitment for the full hour.
-That longer window effectively couples the two sides in a way DC and DM do not.</p>
-<p><i>DRH and DRL are technically separate auctions and can be bid independently; the coupling
-is a practical consequence of the sustained delivery requirement, not an explicit rule.</i></p>
-</div>` : html``);
+<p>Because DR High clears below zero in most blocks while DR Low does not. That started the
+month the Enduring Auction Capability (EAC) went live: no DR High block cleared negative in
+October 2023, and 87% did in November. The legacy auctions never cleared below zero. EAC
+allows negative prices, and lets a provider offer several products in one order at a single
+price, accepted when the order as a whole is in the money, so a DR High leg can clear
+negative inside a package that still pays.</p>
+<p>High and Low remain separate products with separate prices, and nothing requires a
+provider to hold both. The battery links them physically instead: each MW of DR Low needs an
+hour of energy in store, each MW of DR High an hour of headroom, and since November 2024 each
+also reserves 40% of its MW on the opposite side for energy recovery.</p>
+</div>`);
 ```
 
 <div class="grid grid-cols-2">
