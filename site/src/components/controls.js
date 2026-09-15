@@ -4,9 +4,9 @@
 // "input" when the reader picks an option, so it works with view() and
 // Generators.input() exactly like the built-in Inputs.
 
-export function choiceGroup(options, {value, format = String, describe, label, vertical = false} = {}) {
+export function choiceGroup(options, {value, format = String, label} = {}) {
   const root = document.createElement("div");
-  root.className = `choice-group${vertical ? " is-vertical" : ""}`;
+  root.className = "choice-group";
   root.setAttribute("role", "radiogroup");
   if (label) root.setAttribute("aria-label", label);
 
@@ -18,18 +18,7 @@ export function choiceGroup(options, {value, format = String, describe, label, v
     button.className = "choice";
     button.setAttribute("role", "radio");
 
-    const title = document.createElement("span");
-    title.className = "choice-label";
-    title.textContent = format(option);
-    button.append(title);
-
-    const detail = describe?.(option);
-    if (detail) {
-      const sub = document.createElement("span");
-      sub.className = "choice-detail";
-      sub.textContent = detail;
-      button.append(sub);
-    }
+    button.textContent = format(option);
 
     button.addEventListener("click", () => select(option, true));
     root.append(button);

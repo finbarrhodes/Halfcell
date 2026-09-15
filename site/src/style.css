@@ -376,7 +376,7 @@ form.oi input[type="checkbox"], form.oi input[type="radio"] { accent-color: var(
 /* Choice controls (components/controls.js)                            */
 /* ------------------------------------------------------------------ */
 
-/* Horizontal: a pill-shaped segmented control that sits on a chart */
+/* A pill-shaped segmented control that sits on a chart */
 .choice-group {
   display: inline-flex;
   flex-wrap: wrap;
@@ -401,56 +401,8 @@ form.oi input[type="checkbox"], form.oi input[type="radio"] { accent-color: var(
 .choice.is-active { background: var(--hc-teal); color: #fff; }
 .choice:focus-visible { outline: 2px solid var(--hc-orange); outline-offset: 2px; }
 
-.choice-detail {
-  display: block;
-  margin-top: 0.15rem;
-  font-weight: 400;
-  font-size: 0.72rem;
-  color: var(--hc-ink-faint);
-}
-
-/* Vertical: a list of options beside a chart, styled like the walkthrough steps */
-.choice-group.is-vertical {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  padding: 0;
-  border: none;
-  border-radius: 0;
-  background: none;
-}
-.choice-group.is-vertical .choice {
-  text-align: left;
-  padding: 0.55rem 0.8rem;
-  font-size: 0.82rem;
-  color: var(--hc-ink);
-  background: var(--hc-paper-deep);
-  border: 1px solid var(--hc-rule);
-  border-left: 3px solid var(--hc-rule);
-  border-radius: 0 3px 3px 0;
-}
-.choice-group.is-vertical .choice:hover { border-left-color: var(--hc-ink-faint); }
-.choice-group.is-vertical .choice.is-active {
-  color: var(--hc-teal-deep);
-  background: rgba(13, 118, 128, 0.1);
-  border-left-color: var(--hc-teal);
-}
-
 @media (prefers-reduced-motion: reduce) {
   .choice { transition: none; }
-}
-
-/* A chart with a picker beside it; the picker drops below on narrow screens */
-.soc-view {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 14rem;
-  gap: 1rem;
-  align-items: start;
-  margin: 1rem 0;
-}
-.soc-view > .card { margin: 0; }
-@media (max-width: 760px) {
-  .soc-view { grid-template-columns: 1fr; }
 }
 
 /* A caption that belongs to one card, so it wraps with its own chart rather

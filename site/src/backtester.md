@@ -10,7 +10,6 @@ curve through to the dispatch the model settles on. Scroll, or select any step d
 
 ```js
 import {SERVICE_COLOURS, SERVICE_LABELS, STRATEGY_LABELS, gbp} from "./components/theme.js";
-import {choiceGroup} from "./components/controls.js";
 
 const manifest = await FileAttachment("data/manifest.json").json();
 const revenueAll = (await FileAttachment("data/revenue-monthly.parquet").parquet())
@@ -387,11 +386,7 @@ Each bar shows gross revenue by stream for that month (positive) and cycling wea
 (negative, dark red). Net revenue is the algebraic sum of all segments — months with
 heavier arbitrage dispatch carry larger cycling deductions.
 
-### State of charge: the average week against real days
-
-```js
-const socDaysTable = await FileAttachment("data/soc-days.parquet").parquet();
-```
+### Average weekly SoC profile
 
 ```js
 // Recombine the pre-aggregated sufficient statistics over the selected months.
@@ -413,139 +408,41 @@ const socWeek = (() => {
     ([p, s]) => ({period: p, ...s})
   ).sort((a, b) => a.period - b.period);
 })();
-const weekByPeriod = new Map(socWeek.map((d) => [d.period, d]));
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const STRATEGY_CODES = ["pf_mpc", "naive_mpc", "ml_mpc"];   // as encoded by soc-days.parquet.py
-const SOC_STEPS = 250;
-const socCol = socDaysTable.getChild("soc").toArray();
-const loCol = socDaysTable.getChild("lo").toArray();
-const hiCol = socDaysTable.getChild("hi").toArray();
 
-// How far each day in the selection strays from the average week: the RMS gap,
-// half-hour by half-hour, between its path and the mean for the same weekday.
-const dayDistances = (() => {
-  const code = STRATEGY_CODES.indexOf(strategyPick);
-  const strategies = socDaysTable.getChild("strategy").toArray();
-  const days = socDaysTable.getChild("day").toArray();
-  const out = [];
-  for (let i = 0; i + 47 < days.length; i += 48) {
-    if (strategies[i] !== code) continue;
-    const date = new Date(days[i] * 864e5);
-    const month = d3.utcMonth.floor(date);
-    if (month < fromMonth || month > toMonth) continue;
-    const dow = (date.getUTCDay() + 6) % 7;   // Monday first, as in the week profile
-    let sq = 0, n = 0;
-    for (let k = 0; k < 48; k++) {
-      const avg = weekByPeriod.get(dow * 48 + k);
-      if (!avg) continue;
-      const gap = socCol[i + k] / SOC_STEPS - avg.mean;
-      sq += gap * gap;
-      n++;
-    }
-    if (n) out.push({date, dow, start: i, rmse: Math.sqrt(sq / n)});
-  }
-  return d3.sort(out, (d) => d.rmse);
-})();
-const medianDistance = d3.median(dayDistances, (d) => d.rmse);
-
-const fmtDay = d3.utcFormat("%a %-d %b %Y");
-const socViews = [
-  {label: "Average week"},
-  ...(dayDistances.length ? [
-    {label: "Closest day", day: dayDistances[0]},
-    {label: "Typical day", day: dayDistances[Math.floor((dayDistances.length - 1) / 2)]},
-    {label: "Furthest day", day: dayDistances[dayDistances.length - 1]},
-  ] : []),
-];
-const socViewPicker = choiceGroup(socViews, {
-  vertical: true, label: "State of charge view",
-  format: (d) => d.label,
-  describe: (d) => d.day
-    ? `${fmtDay(d.day.date)} · ${(d.day.rmse * 100).toFixed(1)} pp from average`
-    : "Mean and spread across every week",
-});
-const socView = Generators.input(socViewPicker);
+display(scenarioPick !== "full"
+  ? html`<i>The state-of-charge profile is shown for the FR + arbitrage run, where dispatch is simulated.</i>`
+  : Plot.plot({
+  height: 340, marginLeft: 55, marginRight: 55,
+  x: {label: "Day of week", ticks: d3.range(7).map((d) => d * 48),
+      tickFormat: (d) => DAYS[d / 48], domain: [0, 336]},
+  y: {label: "State of charge", domain: [0, 1], tickFormat: ".0%", grid: true},
+  marks: [
+    // Average range the FR contracts required at each point in the week
+    Plot.areaY(socWeek, {x: "period", y1: "reqLo", y2: "reqHi", fill: "#0D7680", fillOpacity: 0.08}),
+    Plot.line(socWeek, {x: "period", y: "reqLo", stroke: "#0D7680", strokeDasharray: "4 3", strokeWidth: 1}),
+    Plot.line(socWeek, {x: "period", y: "reqHi", stroke: "#0D7680", strokeDasharray: "4 3", strokeWidth: 1}),
+    Plot.ruleX(d3.range(1, 7).map((d) => d * 48), {stroke: "grey", strokeOpacity: 0.3, strokeDasharray: "2 3"}),
+    Plot.areaY(socWeek, {x: "period", y1: "lo", y2: "hi", fill: "#C9400A", fillOpacity: 0.12}),
+    Plot.line(socWeek, {x: "period", y: "mean", stroke: "#C9400A", strokeWidth: 2}),
+    Plot.tip(socWeek, Plot.pointerX({
+      x: "period", y: "mean",
+      title: (d) => `${DAYS[Math.floor(d.period / 48)]} SP ${(d.period % 48) + 1}\nmean ${(d.mean * 100).toFixed(1)}%\n±1 sd ${(d.lo * 100).toFixed(1)}–${(d.hi * 100).toFixed(1)}%\nrequired ${(d.reqLo * 100).toFixed(0)}–${(d.reqHi * 100).toFixed(0)}% (avg)`,
+    })),
+  ],
+}));
 ```
 
-```js
-function weekChart(width) {
-  return Plot.plot({
-    width, height: 340, marginLeft: 55, marginRight: 20,
-    x: {label: "Day of week", ticks: d3.range(7).map((d) => d * 48),
-        tickFormat: (d) => DAYS[d / 48], domain: [0, 336]},
-    y: {label: "State of charge", domain: [0, 1], tickFormat: ".0%", grid: true},
-    marks: [
-      // Average range the FR contracts required at each point in the week
-      Plot.areaY(socWeek, {x: "period", y1: "reqLo", y2: "reqHi", fill: "#0D7680", fillOpacity: 0.08}),
-      Plot.line(socWeek, {x: "period", y: "reqLo", stroke: "#0D7680", strokeDasharray: "4 3", strokeWidth: 1}),
-      Plot.line(socWeek, {x: "period", y: "reqHi", stroke: "#0D7680", strokeDasharray: "4 3", strokeWidth: 1}),
-      Plot.ruleX(d3.range(1, 7).map((d) => d * 48), {stroke: "grey", strokeOpacity: 0.3, strokeDasharray: "2 3"}),
-      Plot.areaY(socWeek, {x: "period", y1: "lo", y2: "hi", fill: "#C9400A", fillOpacity: 0.12}),
-      Plot.line(socWeek, {x: "period", y: "mean", stroke: "#C9400A", strokeWidth: 2}),
-      Plot.tip(socWeek, Plot.pointerX({
-        x: "period", y: "mean",
-        title: (d) => `${DAYS[Math.floor(d.period / 48)]} SP ${(d.period % 48) + 1}\nmean ${(d.mean * 100).toFixed(1)}%\n±1 sd ${(d.lo * 100).toFixed(1)}–${(d.hi * 100).toFixed(1)}%\nrequired ${(d.reqLo * 100).toFixed(0)}–${(d.reqHi * 100).toFixed(0)}% (avg)`,
-      })),
-    ],
-  });
-}
-
-function dayChart(day, width) {
-  const rows = d3.range(48).map((k) => {
-    const avg = weekByPeriod.get(day.dow * 48 + k);
-    return {
-      sp: k + 1,
-      soc: socCol[day.start + k] / SOC_STEPS,
-      lo: loCol[day.start + k] / SOC_STEPS,
-      hi: hiCol[day.start + k] / SOC_STEPS,
-      mean: avg?.mean, sdLo: avg?.lo, sdHi: avg?.hi,
-    };
-  });
-  return Plot.plot({
-    width, height: 340, marginLeft: 55, marginRight: 20,
-    x: {label: "Settlement period", domain: [1, 48], ticks: [1, 12, 24, 36, 48]},
-    y: {label: "State of charge", domain: [0, 1], tickFormat: ".0%", grid: true},
-    marks: [
-      Plot.areaY(rows, {x: "sp", y1: "lo", y2: "hi", curve: "step-after", fill: "#0D7680", fillOpacity: 0.1}),
-      Plot.line(rows, {x: "sp", y: "lo", curve: "step-after", stroke: "#0D7680", strokeDasharray: "4 3", strokeWidth: 1}),
-      Plot.line(rows, {x: "sp", y: "hi", curve: "step-after", stroke: "#0D7680", strokeDasharray: "4 3", strokeWidth: 1}),
-      Plot.areaY(rows, {x: "sp", y1: "sdLo", y2: "sdHi", fill: "#C9400A", fillOpacity: 0.1}),
-      Plot.line(rows, {x: "sp", y: "mean", stroke: "#C9400A", strokeWidth: 1.5}),
-      Plot.line(rows, {x: "sp", y: "soc", stroke: "#33302E", strokeWidth: 2.4}),
-      Plot.tip(rows, Plot.pointerX({
-        x: "sp", y: "soc",
-        title: (d) => `SP ${d.sp}\nthis day ${(d.soc * 100).toFixed(0)}%\naverage ${(d.mean * 100).toFixed(0)}%\nrequired ${(d.lo * 100).toFixed(0)}–${(d.hi * 100).toFixed(0)}%`,
-      })),
-    ],
-  });
-}
-```
-
-<div class="soc-view">
-  <div class="card">${scenarioPick !== "full"
-    ? html`<i>The state-of-charge profile is shown for the FR + arbitrage run, where dispatch is simulated.</i>`
-    : resize((width) => socView.day ? dayChart(socView.day, width) : weekChart(width))}</div>
-  <div class="soc-view-side">${scenarioPick === "full" ? socViewPicker : ""}</div>
-</div>
-
-```js
-if (scenarioPick === "full") display(socView.day ? html`<p>
-<b>${d3.utcFormat("%A %-d %B %Y")(socView.day.date)}</b>, ${STRATEGY_LABELS[strategyPick]}. The dark
-line is that day's state of charge. The orange line and band are the average and spread for a
-${d3.utcFormat("%A")(socView.day.date)} across the selected months, and the teal band is the range that day's
-contracts required. Its path sits ${(socView.day.rmse * 100).toFixed(1)} percentage points from the
-average (root-mean-square over its 48 half-hours), against ${(medianDistance * 100).toFixed(1)} for the
-median day.</p>` : html`<p>
 Mean state of charge at each half-hour of an average week across the selected months. The
 orange band is ±1 standard deviation across weeks. The teal band is the average range the
 battery's FR contracts required at that point in the week: at least the Low products'
-response energy in store, and at least the High products' as headroom.</p>
-<p>Real days rarely look like the average. Contracts often hold the battery at one level for a
-whole block, so individual days move in steps, and the smooth weekly shape is what many
-different days average out to. The median day in this selection sits
-${(medianDistance * 100).toFixed(1)} percentage points from it. Pick a day on the right to compare.</p>`);
-```
+response energy in store, and at least the High products' as headroom. Individual days
+require narrower, shifting ranges that averaging smooths out.
+
+These traces leave out the energy the battery would deliver when its FR contracts are called
+on, which the model does not yet simulate. A real battery, especially one holding Dynamic
+Regulation, would move around far more than they suggest.
 
 ### Cumulative revenue by stream
 
