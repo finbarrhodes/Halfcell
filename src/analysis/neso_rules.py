@@ -1,8 +1,10 @@
 """
 src/analysis/neso_rules.py
 ==========================
-The NESO rules that bound how a battery can take part in the Dynamic Response
-Services (DC, DM, DR), expressed as constants and feasibility checks.
+The NESO rules that bound how a battery can take part in the Dynamic Services
+(DC, DM, DR), expressed as constants and feasibility checks. DR is Dynamic
+Regulation throughout; "Dynamic Services" is NESO's collective name for the
+three, and its rulebooks are the Response Services documents cited below.
 
 Every number here is taken from a NESO or Ofgem document and cited inline, so
 the model can be audited against its sources rather than against itself. The

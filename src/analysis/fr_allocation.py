@@ -1,7 +1,7 @@
 """
 src/analysis/fr_allocation.py
 =============================
-Allocation of a battery between the six Dynamic Response products and
+Allocation of a battery between the six Dynamic Services products and
 wholesale arbitrage, within NESO's participation rules: for one EFA block, and
 for a service day's six blocks together.
 

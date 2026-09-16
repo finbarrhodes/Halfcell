@@ -1,5 +1,5 @@
 """
-NESO Dynamic Response rules, checked against NESO's own published examples.
+NESO Dynamic Services rules, checked against NESO's own published examples.
 
 Where a test reproduces a figure or worked example from a NESO document, the
 docstring names it, so a failure points straight at the source to re-read.

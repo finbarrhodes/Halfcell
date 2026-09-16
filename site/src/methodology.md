@@ -550,7 +550,7 @@ collected later is kept, so a settled value always displaces the estimate it rep
 
 ## Literature & references
 
-**NESO Dynamic Response rules and market evidence**
+**NESO frequency response rules and market evidence**
 
 - NESO. *Response Services Service Terms*.
   [neso.energy](https://www.neso.energy/document/384606/download)

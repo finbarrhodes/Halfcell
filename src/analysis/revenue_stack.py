@@ -3,7 +3,7 @@ BESS Revenue Stack Backtester
 ==============================
 Models the revenue a grid-scale battery could have earned from:
 
-  1. Dynamic Response availability payments (DC, DM and DR, High and Low).
+  1. Frequency response availability payments (DC, DM and DR, High and Low).
      Revenue = clearing price (£/MW/h) x contracted MW x 4 hours per EFA block,
      for each product the battery holds.
 
@@ -598,7 +598,7 @@ def compute_fr_schedule(
     initial_soc_frac: float = 0.5,
 ) -> pd.DataFrame:
     """
-    Per-EFA-block holdings in each Dynamic Response product, without dispatch.
+    Per-EFA-block holdings in each frequency response product, without dispatch.
 
     State of energy follows each day's own plan, so the battery is assumed to
     reposition within its free power at no energy cost. This is the FR-only

@@ -1,8 +1,8 @@
 """
 src/analysis/response_delivery.py
 =================================
-Energy a battery delivers under Dynamic Response contracts, from GB system
-frequency.
+Energy a battery delivers under its Dynamic Services contracts (DC, DM, DR),
+from GB system frequency.
 
 A contracted unit follows frequency along its service's response curve
 (Response Service Terms, Table 1): nothing inside the ±0.015 Hz deadband, a
