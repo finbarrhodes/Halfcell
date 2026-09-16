@@ -28,7 +28,7 @@ MANIFEST = CACHE / "manifest.json"
 STRATEGIES = ("pf_mpc", "naive_mpc", "ml_mpc")
 
 # FR-only scenarios need no price forecast, so one copy serves every strategy
-SHARED_FILES = ("fr_only.parquet", "fr_only_always_dc.parquet")
+SHARED_FILES = ("fr_only.parquet",)
 
 # Strategies from one run finish within minutes of each other; a wider spread
 # means the cache was assembled from separate runs.
@@ -87,7 +87,7 @@ def main() -> None:
     # not comparable even if they ran together.
     shared_keys = ("power_mw", "duration_h", "efficiency_rt", "cycling_cost_per_mwh",
                    "availability_factor", "start_date", "end_date", "dispatch_method",
-                   "pre_eac_rule")
+                   "pre_eac_rule", "auction_share_cap")
     ref_params = manifest[STRATEGIES[0]]["params"]
     for strategy in STRATEGIES[1:]:
         params = manifest[strategy]["params"]

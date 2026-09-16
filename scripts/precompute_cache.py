@@ -16,17 +16,20 @@ Written, per strategy (pf_mpc, naive_mpc, ml_mpc):
   soc_<key>.parquet        state of energy for every settlement period
   <key>_arb_only.parquet   arbitrage only, no FR commitments
 
-Shared by all strategies, since FR-only needs no price forecast:
-  fr_only.parquet               FR availability only
-  fr_only_always_dc.parquet     the same with pre-EAC units held in DC - the
-                                fleet-practice lower bound reported in methodology
+Shared by all strategies, since FR-only uses no price forecast:
+  fr_only.parquet               a site with no interest in arbitrage: FR availability,
+                                less the trading it needs to make good delivered energy
+
+Every run is capped at a fifth of each auction's cleared volume, calls contracts on
+as GB frequency actually moved (data/processed/response_delivery.parquet), and
+prices that delivery into offers.
 
 Strategies:
   1. Perfect Foresight + MPC  — revenue ceiling
   2. Naive (D-1 prices) + MPC — zero-skill floor
   3. ML (Random Forest) + MPC — realistic best case; main result
 
-Runtime is roughly six dispatch runs at ~4-5 minutes each with the compile-once
+Runtime is roughly seven dispatch runs at ~6-8 minutes each with the compile-once
 MPC solver, plus model training. It lengthens with every refresh, because
 DEFAULT_TEST_START is fixed and new data accrues to the test period, so re-check
 it against the refresh workflow's timeout-minutes from time to time.
@@ -51,7 +54,12 @@ from src.analysis.price_forecast import (
     run_forecast_backtest,
     train_forecast_model,
 )
-from src.analysis.revenue_stack import ALL_SERVICES, REFERENCE_BATTERY, run_backtest
+from src.analysis.revenue_stack import (
+    ALL_SERVICES,
+    AUCTION_SHARE_CAP,
+    REFERENCE_BATTERY,
+    run_backtest,
+)
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -108,6 +116,7 @@ def _print_section(n: int, total: int, label: str) -> None:
 
 def _summary_line(label: str, summary: dict) -> None:
     print(f"  {label:<20}: £{summary.get('annualised_per_mw', 0):>10,.0f} / MW / yr"
+          f"   delivered {summary.get('total_delivery_mwh', 0):>9,.0f} MWh"
           f"   state-of-energy breaches: {summary.get('soe_breach_periods', 0):,} periods")
 
 
@@ -122,6 +131,7 @@ def main() -> None:
     auctions  = pd.read_parquet(PROCESSED / "auctions.parquet")
     mkt_index = pd.read_parquet(PROCESSED / "market_index.parquet")
     gen_daily = pd.read_parquet(PROCESSED / "generation_daily.parquet")
+    delivery  = pd.read_parquet(PROCESSED / "response_delivery.parquet")
 
     # Full overlapping date range
     start_date = max(
@@ -146,6 +156,8 @@ def main() -> None:
         dispatch_method      = DISPATCH_METHOD,
         horizon              = HORIZON,
         pre_eac_rule         = PRE_EAC_RULE,
+        auction_share_cap    = AUCTION_SHARE_CAP,
+        delivery_modelled    = True,
         start_date           = str(start_date),
         end_date             = str(end_date),
     )
@@ -166,14 +178,10 @@ def main() -> None:
     # ------------------------------------------------------------------
     _print_section(1, 4, "FR availability only (scenario shared by all strategies)")
     fr_only = run_backtest(auctions, mkt_index, BATTERY, SERVICES, start_date, end_date,
-                           include_arbitrage=False, pre_eac_rule=PRE_EAC_RULE)
+                           include_arbitrage=False, pre_eac_rule=PRE_EAC_RULE, delivery=delivery)
     fr_only["monthly"].to_parquet(CACHE / "fr_only.parquet", index=False)
-    fr_dc = run_backtest(auctions, mkt_index, BATTERY, SERVICES, start_date, end_date,
-                         include_arbitrage=False, pre_eac_rule="always_dc")
-    fr_dc["monthly"].to_parquet(CACHE / "fr_only_always_dc.parquet", index=False)
     _summary_line("FR only", fr_only["summary"])
-    _summary_line("FR only, always DC", fr_dc["summary"])
-    fr_scenarios = {"fr_only": fr_only["summary"], "fr_only_always_dc": fr_dc["summary"]}
+    fr_scenarios = {"fr_only": fr_only["summary"]}
 
     def run_pair(key: str, run) -> tuple[dict, dict]:
         """Full stack and arbitrage-only for one strategy; writes both to the cache."""
@@ -193,7 +201,7 @@ def main() -> None:
     _print_section(2, 4, "Perfect Foresight + MPC")
     pf, pf_scenarios = run_pair("pf_mpc", lambda svc: run_backtest(
         auctions, mkt_index, BATTERY, svc, start_date, end_date,
-        initial_soc_frac=INITIAL_SOC, horizon=HORIZON, pre_eac_rule=PRE_EAC_RULE,
+        initial_soc_frac=INITIAL_SOC, horizon=HORIZON, pre_eac_rule=PRE_EAC_RULE, delivery=delivery,
     ))
     manifest["pf_mpc"] = entry(pf, pf_scenarios)
 
@@ -204,7 +212,7 @@ def main() -> None:
     naive, naive_scenarios = run_pair("naive_mpc", lambda svc: run_forecast_backtest(
         strategy="naive", market_index=mkt_index, auctions=auctions, battery=BATTERY,
         services=svc, start_date=start_date, end_date=end_date,
-        initial_soc_frac=INITIAL_SOC, horizon=HORIZON, pre_eac_rule=PRE_EAC_RULE,
+        initial_soc_frac=INITIAL_SOC, horizon=HORIZON, pre_eac_rule=PRE_EAC_RULE, delivery=delivery,
     ))
     manifest["naive_mpc"] = entry(naive, naive_scenarios)
 
@@ -227,7 +235,7 @@ def main() -> None:
         strategy="ml", market_index=mkt_index, auctions=auctions, battery=BATTERY,
         services=svc, start_date=start_date, end_date=end_date,
         model=model, feature_df=feature_df, feature_cols=feature_cols,
-        initial_soc_frac=INITIAL_SOC, horizon=HORIZON, pre_eac_rule=PRE_EAC_RULE,
+        initial_soc_frac=INITIAL_SOC, horizon=HORIZON, pre_eac_rule=PRE_EAC_RULE, delivery=delivery,
     ))
 
     # Feature importances are stored here so the site never has to train a model
