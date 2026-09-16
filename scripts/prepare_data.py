@@ -29,11 +29,16 @@ see prepare_generation.
 
 import argparse
 import re
+import sys
 from pathlib import Path
 
 import pandas as pd
 
 ROOT      = Path(__file__).parent.parent
+sys.path.insert(0, str(ROOT))
+
+from src.analysis.response_delivery import build_delivery_table  # noqa: E402
+
 RAW       = ROOT / "data" / "raw"
 PROCESSED = ROOT / "data" / "processed"
 
@@ -296,6 +301,31 @@ def prepare_bess_fleet(raw: Path, processed: Path, append: bool) -> None:
     _write(bess, processed, "bess_fleet_capacity.parquet", unit="months")
 
 
+# ---------------------------------------------------------------------------
+# Response delivery — energy delivered per MW contracted, from 1 s frequency
+# ---------------------------------------------------------------------------
+def prepare_response_delivery(raw: Path, processed: Path, append: bool) -> None:
+    print("Processing response delivery (NESO system frequency)...")
+    files = sorted(p for p in (raw / "frequency").glob("frequency_*.*") if p.suffix in (".csv", ".zip"))
+
+    # The one-second files come to ~4 GB and exist only where they were
+    # downloaded, so without them the committed table is left untouched.
+    if not files:
+        if (processed / "response_delivery.parquet").exists():
+            print("  no frequency files in this slice — existing Parquet left as is")
+        else:
+            print(
+                "  SKIP: no files in data/raw/frequency/. Download them with:\n"
+                "    python -m src.data_collection.frequency_collector --start 2021-09 --end YYYY-MM"
+            )
+        return
+
+    base = _read_base(processed, "response_delivery.parquet", append)
+    table = _merge(build_delivery_table(files), base, ["settlementDate", "settlementPeriod"])
+    table = table.sort_values(["settlementDate", "settlementPeriod"]).reset_index(drop=True)
+    _write(table, processed, "response_delivery.parquet", unit="settlement periods")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Convert raw CSVs into the committed processed Parquets."
@@ -330,6 +360,7 @@ def main() -> None:
         prepare_system_prices,
         prepare_generation,
         prepare_bess_fleet,
+        prepare_response_delivery,
     ):
         step(args.raw_dir, args.processed_dir, args.append)
 

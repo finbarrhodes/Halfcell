@@ -108,3 +108,6 @@ site/node_modules/
 site/dist/
 site/.observablehq/cache/
 site/src/.observablehq/
+
+# NESO one-second frequency files (~4 GB); only the derived half-hourly table is committed
+data/raw/frequency/
