@@ -7,7 +7,6 @@ the battery trades its whole rating.
   arb_only           arbitrage only, one run per strategy
   fr_only            FR availability only; needs no price forecast, so one run
                      serves every strategy (strategy = "all")
-  fr_only_always_dc  as fr_only, with pre-EAC units held in DC
 
 The full stack is in revenue-monthly. All figures are for the reference 50 MW
 asset; the browser rescales linearly.
@@ -35,7 +34,7 @@ ROOT = Path(__file__).resolve().parents[3]
 CACHE = ROOT / "data/cache"
 
 sources = [(key, "arb_only", f"{key}_arb_only.parquet") for key in ("pf_mpc", "naive_mpc", "ml_mpc")]
-sources += [("all", name, f"{name}.parquet") for name in ("fr_only", "fr_only_always_dc")]
+sources.append(("all", "fr_only", "fr_only.parquet"))
 
 frames = []
 for strategy, scenario, filename in sources:
