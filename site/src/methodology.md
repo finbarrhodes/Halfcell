@@ -7,37 +7,131 @@ forecasting and dispatch model.
 const coverage = await FileAttachment("data/coverage.json").json();
 const manifest = await FileAttachment("data/manifest.json").json();
 const p = manifest.ml_mpc.params;
+const scenarios = (await FileAttachment("data/revenue-scenarios.parquet").parquet()).toArray()
+  .map((d) => ({...d, month_dt: new Date(d.month_dt)}));
 const fmt = (d) => new Date(d).toLocaleDateString("en-GB", {year: "numeric", month: "short"});
 ```
 
 ## Two-stage participation model
 
-The backtester uses a two-stage model to separate FR availability revenue from energy
-arbitrage revenue without double-counting the same physical capacity.
+The backtester separates frequency response (FR) availability revenue from energy arbitrage
+without counting the same capacity twice, and within the rules NESO sets for Dynamic
+Response providers.
 
-**Stage 1 — day-ahead capacity allocation.** For each day D, the model decides how many MW
-to commit to FR services versus hold back for arbitrage. Two signals are compared using
-only information available at the end of day D-1:
+**Stage 1: what to offer, at the bid deadline.** Offers for all six EFA blocks of day D close
+the afternoon before: 14:00 on D-1 since the Enduring Auction Capability (EAC) went live on
+2 November 2023, and 14:30 before it. At that moment the model decides how many MW to hold
+in each of the six products (DC, DM and DR, each High and Low) in each block.
 
-- **FR value per MW** — the confirmed clearing price for day D from the EAC day-ahead
-  auction (which clears on D-1), summed across selected services and EFA blocks. No
-  forecasting needed; this price is already known.
-- **Shadow arbitrage value per MW** — a per-unit estimate of net arbitrage profit for day D,
-  derived from the same price forecast used for dispatch:
-  `(avg_discharge − avg_charge / η − cycling_cost) × duration_h`.
+It offers every product at its **opportunity cost**: the arbitrage the same MW would
+otherwise earn in the block, estimated from the price forecast used for dispatch as
+`(avg_discharge − avg_charge / η − cycling_cost) × duration_h`. NESO accepts an order when
+the clearing price covers its offer, so a battery bidding at cost ends up holding whichever
+permitted combination earns most at the clearing prices. The model solves for that
+combination directly with a linear programme. This reproduces the outcome of cost-reflective
+bidding rather than assuming foresight, on the assumption that the battery is a price-taker
+whose offers do not move clearing prices.
 
-Capacity is allocated proportionally, `fr_fraction = fr_value / (fr_value + arb_value)`, so
-more MW flows toward whichever stream looks more attractive that day — without
-all-or-nothing switching.
+NESO's rules set which combinations are permitted:
 
-**Stage 2 — intraday dispatch.** Within the allocated arbitrage MW, the selected strategy
-schedules charge/discharge against forecast prices and realises revenue against actual
-day-D prices. The same price signal drives both stages.
+- **Capacity in each direction.** MW offered into Low products, plus the Reserved Capacity
+  held for any High products, must fit within the battery's discharge rating. High MW plus
+  the reserve for Low products must fit within its charge rating
+  ([Procurement Rules](https://www.neso.energy/document/378246/download) 8.3.3.2). Reserved
+  Capacity is 10% of the contracted MW for DC, 20% for DM and 40% for DR, held in the
+  opposite direction for energy recovery. So a MW sold into DC Low cannot also be sold into
+  DR Low, though it can back a High product at the same time.
+- **Energy.** Each Low contract needs its delivery energy in store, and each High contract
+  the same again as headroom: MW × 15 minutes for DC, 30 for DM, 60 for DR
+  ([Service Terms](https://www.neso.energy/document/384606/download) 6.11). Both must fit in
+  the battery together.
+- **Reachability.** All six blocks are solved together, starting from the battery's actual
+  state of energy at the deadline and the commitments it still holds for the rest of D-1.
+  Every block's required range must be reachable using only the power the contracts leave
+  free. Some combinations use the whole rating in both directions, so state of energy cannot
+  move at all while they run.
+- **Maximum Sell Size.** No more than 100 MW in any one product.
 
-The MPC engine tracks SoC continuously at 30-minute resolution, enforcing the FR headroom
-band `[10%, 90%]` as a hard constraint at every step of the planning horizon. The remaining
-simplification is that Stage 1 allocation is a daily heuristic rather than being jointly
-co-optimised with the intraday LP — see [known limitations](#known-limitations).
+Two of these rules changed during the backtest, and the model applies each from its date:
+
+| Service days from | Rule |
+|---|---|
+| Start of data (Sep 2021) | One service per unit per EFA block: DC, DM or DR, with High and Low of that service allowed together ([DR Auction Rules](https://www.neso.energy/document/246746/download) 7.3.1) |
+| 2 Nov 2023, EAC go-live | Capacity can be split across all three services in the same block |
+| 15 Nov 2024 | Reserved Capacity applies ([Procurement Rules v2.0](https://www.neso.energy/document/347456/download)) |
+
+Before EAC the unit has to choose its service before the auction clears; see
+[pre-EAC service choice](#pre-eac-service-choice).
+
+<div class="note">
+<b>Earlier versions of this model got this wrong.</b> They sold the full rating into all six
+products at once, which the per-direction rule forbids, and split capacity between FR and
+arbitrage with a proportional heuristic. On FR availability alone that overstated a
+rule-compliant allocation by about 1.5× over the backtest. Every revenue figure on the site
+now comes from the rule-compliant model.
+</div>
+
+**Stage 2: dispatch around the commitments.** The rolling MPC below trades only the power
+the contracts leave free on each side, and holds state of energy inside the range they
+require. A day's commitments enter dispatch at its bid deadline: an operator must be able to
+deliver everything it offered, so it positions for its offers before results publish, and in
+a price-taker model the offers are exactly what clears. A settlement period that starts
+outside the required range counts as unavailability
+([Service Terms](https://www.neso.energy/document/384606/download) 6.12), and the block
+loses an eighth of its availability payment for each one. The dispatch page reports how many
+periods each strategy missed.
+
+## Pre-EAC service choice
+
+Before 2 November 2023, a unit could offer only one of DC, DM and DR into each EFA block, and
+had to pick before the auction cleared. For each block the model picks the service that
+would have earned most at the **previous day's clearing prices** for the same block, the
+latest a bidder had at the 14:30 deadline. It is then paid the day's actual prices for what
+it offered.
+
+The fleet's own orders show how operators actually chose. Across 247,893 unit-blocks of
+NESO's legacy order data (March 2022 – October 2023, from the
+[NESO Data Portal](https://www.neso.energy/data-portal)):
+
+- no unit offered two services into the same block, confirming the rule;
+- 86.5% of orders went in after the previous day's results had published, so those prices
+  were available;
+- 91% of unit-blocks repeated the previous day's service, and 82% were DC;
+- units picked the previous day's best-paying service 33% of the time, no more often than
+  the service that turned out best on the day (32%).
+
+Operators were not chasing yesterday's prices; most stayed in DC. A plausible reason is
+duration. The GB fleet averaged about 1.1 hours in 2022
+([Modo Energy](https://modoenergy.com/research/modo-battery-energy-storage-year-review-2023-capacity-revenues-frequency-response)),
+and DR's 60-minute delivery requirement binds hard on a one-hour battery. The model's
+2-hour reference battery can hold DR comfortably, so it picks DR whenever DR paid more the
+day before.
+
+The D-1 rule is kept as the main case because it uses only information a bidder had. As a
+lower bound grounded in what the fleet did, a sensitivity run holds every pre-EAC block in
+DC instead:
+
+```js
+// Whole months before EAC go-live, the only period where the two runs can differ
+const preEacRows = [
+  ["Service chosen on D-1 prices (main case)", "fr_only"],
+  ["Every block held in DC", "fr_only_always_dc"],
+].map(([label, key]) => {
+  const rows = scenarios.filter((d) => d.scenario === key && d.month_dt < new Date("2023-11-01"));
+  const fr = d3.sum(rows, (d) => ["DCH", "DCL", "DMH", "DML", "DRH", "DRL"]
+    .reduce((acc, svc) => acc + (d[`${svc}_rev`] ?? 0), 0));
+  const years = rows.length / 12;
+  return {
+    Rule: label,
+    Months: rows.length,
+    "FR revenue (£k / MW / yr)": years > 0 ? (fr / years / p.power_mw / 1e3).toFixed(0) : "—",
+  };
+});
+display(Inputs.table(preEacRows, {rows: 3, width: {Rule: 300}}));
+```
+
+FR-only runs for the ${p.power_mw} MW reference battery. From EAC go-live onwards the two runs
+are identical.
 
 ## Dispatch strategies
 
@@ -58,9 +152,13 @@ maximise  Σ price[t] × (p_dis[t] − p_chg[t]) × 0.5h  −  cycling_cost × �
 subject to:
 
 - SoC state equation with round-trip efficiency applied on the charge side
-- FR feasibility band `[10%, 90%]` enforced as a **hard constraint** at all SoC points,
-  forcing the battery to pre-condition SoC for upcoming FR delivery obligations
-- Power bounded to the residual MW available for arbitrage after FR commitment
+- State of energy within the physical store at every point
+- State of energy inside the range the FR contracts require at the start of every period,
+  which forces the battery to pre-position for upcoming blocks. The range is soft: missing
+  it costs £50,000 per MWh, about 25× the highest price in the data. The LP therefore always
+  moves towards compliance, never breaches a contract to capture a spread, and stays
+  solvable when a requirement genuinely cannot be reached
+- Discharge and charge power each bounded by what the contracts leave free on that side
 
 Mutual exclusion of simultaneous charge and discharge is handled by LP relaxation: because
 the objective penalises cycling, simultaneous charge and discharge is never optimal at a
@@ -68,8 +166,9 @@ positive spread, so no binary variables are required. Solved with the **CLARABEL
 interior-point solver bundled with cvxpy
 ([Diamond & Boyd, 2016](https://www.jmlr.org/papers/v17/15-408.html)).
 
-**Three price signals are benchmarked** — all run the identical dispatch engine; only the
-forecast fed to the LP differs.
+**Three price signals are benchmarked.** All three run the identical allocation and dispatch
+engine; only the forecast differs. It sets the opportunity cost FR is offered at as well as
+driving dispatch.
 
 | Strategy | Price signal fed to LP | What it represents |
 |---|---|---|
@@ -87,30 +186,34 @@ achieves. For LP-based joint co-optimisation of arbitrage and frequency response
 
 ## Ancillary service availability revenue
 
-- Revenue = `clearing_price (£/MW/h) × MW committed to FR × 4 hours per EFA block`
-- Services of different response speeds (DC, DR, DM) can be stacked on the same physical MW
-  in the GB market — each earns a separate availability payment.
+- Revenue = `clearing_price (£/MW/h) × MW held in that product × 4 hours per EFA block`,
+  less an eighth of the block's payment for each settlement period the battery was
+  unavailable.
 - **High and Low name the frequency excursion, not the battery's power direction.** A Low
   service (DCL, DRL, DML) answers a *low*-frequency event by injecting power — the battery
   discharges. A High service (DCH, DRH, DMH) answers a *high*-frequency event by absorbing
   power — the battery charges.
-- High (charge) and Low (discharge) services are modelled as independent and simultaneous,
-  assuming sufficient SoC headroom to respond in both directions.
+- The same MW can back a High and a Low product at once, provided the store has energy for
+  the Low contracts and headroom for the High ones. It cannot back two products in the same
+  direction: DC Low, DM Low and DR Low share the discharge rating
+  (see [Stage 1](#two-stage-participation-model)).
 - Clearing prices from the NESO Data Portal (legacy DC/DR/DM auctions Sep 2021 – Nov 2023,
   EAC service Nov 2023 – present). NESO publishes EAC results as one resource per fiscal
   year plus a live current-year feed, rotating the live feed into a new archive each April;
   collection stitches these segments together, de-duplicating the one-day overlap where
   adjacent segments meet.
-- Ancillary revenue is identical across all three dispatch strategies — it does not depend
-  on price forecasting.
+- Ancillary revenue differs slightly between strategies. The forecast sets the arbitrage
+  opportunity cost each product is offered at, and dispatch determines the state of energy
+  each day's offers start from.
 
 ## Wholesale energy arbitrage revenue
 
 - Computed period-by-period as the LP dispatches:
   `revenue[t] = actual_price[t] × (e_dis[t] − e_chg[t])`, summed across all 48 settlement
   periods in the day.
-- Power in each period is bounded to the residual MW available for arbitrage (total power
-  minus MW committed to FR for that EFA block). Round-trip efficiency
+- Power in each period is bounded on each side by what the block's FR contracts leave free:
+  the discharge rating less Low MW and the reserve for High MW, and the charge rating less
+  High MW and the reserve for Low MW. Round-trip efficiency
   (${(p.efficiency_rt * 100).toFixed(0)}%) is applied to the charge side of the SoC state
   equation.
 - The cycling wear cost (£${p.cycling_cost_per_mwh}/MWh discharged) is deducted each period
@@ -128,27 +231,13 @@ price**, concentrated in DR High (5,205 records) and DM High (2,816). As the sto
 has grown, procurement volumes have been outpaced and the High-side services in particular
 have tipped into oversupply.
 
-**These are included in revenue.** Negative prices are a real feature of a maturing
-flexibility market, and excluding them overstates FR income — by roughly 12% of total
-modelled revenue on this dataset. Earlier versions floored clearing prices at zero, which
-silently removed those records; the floor is now opt-in rather than a default.
+**The model never holds a product at a negative price.** It offers each product at its
+opportunity cost, which is never below zero, so a product that clears negative is not
+accepted, as for any provider offering products individually at cost. A block where every
+product clears negative gets no FR commitment and leaves the whole battery free to trade.
 
-**Capacity allocation treats them differently, and deliberately so.** The Stage 1 allocator
-splits each block's capacity in proportion to the value of each stream, and capacity cannot
-rationally be allocated *toward* negative expected value — so the FR signal used for the
-split is clamped at zero. Two consequences:
-
-- A block whose services net out negative receives **no** FR commitment; the capacity is
-  released to arbitrage. It earns nothing from FR either way, and committing it would bind
-  the dispatch LP to the FR SoC band for no return.
-- A block that nets out positive but contains a negative leg (5,178 of 10,773 blocks) **is**
-  committed, and the negative leg is netted into revenue — modelling an operator bidding a
-  service stack that is profitable overall while carrying one loss-making component, rather
-  than one that cherry-picks each leg after the fact.
-
-Without the clamp the proportional split is undefined: a negative numerator produces
-negative committed MW, which propagates into the LP's power bounds, and the denominator can
-cross zero and make the fraction unbounded.
+Every negative price in the data comes after EAC went live in November 2023: the legacy
+auctions never cleared below zero.
 
 ## Why DR High clears negative
 
@@ -170,30 +259,36 @@ while DRL has strengthened over the same period. **The pair, however, remains re
 positive.** Adding the two legs gives +£8.10/MW/h in 2026, and fewer than 11% of blocks
 price negative as a pair.
 
-Two pieces of evidence indicate the market prices DR as a package rather than as two
-independent services:
+**When it started is the clearest clue.** No DR High block cleared negative in October 2023;
+87% did in November, the month EAC went live, and 83–89% have since. The legacy auctions
+never cleared below zero. DM High shows the same break, from never to around half of blocks.
 
-- **Cleared volumes are matched.** DRH and DRL clear within 5% of each other on 77% of
-  blocks since 2025 (median difference 20 MW). The equivalent figures for DM and DC are 52%
-  and 49% — DR is procured far more symmetrically than its neighbours.
-- **The two legs are negatively correlated** (ρ = −0.21). When one rises the other falls, so
-  the split moves while the sum stays comparatively stable — the signature of a package
-  price being divided between two legs rather than two prices set independently.
+EAC changed two things that make a negative High leg possible. Prices may go below zero, and
+a provider can put several products in one order at a single price, accepted all-or-nothing
+when the order's total surplus, `Σ MW × (clearing price − offer price)`, is non-negative
+([EAC Detailed Market Design](https://www.neso.energy/document/276866/download)). A provider
+wanting DR Low can offer DR High alongside it in one order, and the High leg can then clear
+below zero while the order as a whole still pays. That fits the pair staying positive even as
+DR High fell.
 
-The mechanism is the sustained delivery requirement described above. DR must be held for a
-full 60 minutes, against 15 for DC and 30 for DM, so a provider holding a DR position must
-keep state of charge near the midpoint to honour either direction for the whole window.
-Committing to one leg effectively commits the asset's SoC posture to both, and the market
-clears the resulting package asymmetrically.
+Two other explanations fit less well:
 
-**What this means for reading the revenue breakdown.** A negative DR High figure is not a
-service an operator should drop — dropping it means not participating in DR at all. The
-asymmetry reflects where charge and discharge headroom are scarce, not the profitability of
-one leg in isolation. The service selector on the dispatch page allows DRH and DRL to be
-toggled independently, which is useful for attribution but does not correspond to a
-strategy an operator could actually run.
+- **Matched cleared volumes.** DR High and DR Low have cleared within 5% of each other on 73%
+  of blocks since November 2024, against 5% in EAC's first year. But NESO sets how much it
+  buys in each direction, so matched volumes say more about its requirement than about how
+  providers bid.
+- **A rule tying the legs together.** There is none. High and Low are separate products, and
+  a provider can hold either alone. The links are physical: a MW of DR Low needs an hour of
+  energy in store, a MW of DR High an hour of headroom, and since November 2024 each reserves
+  40% of its MW on the opposite side. The model applies those constraints directly (see
+  [Stage 1](#two-stage-participation-model)).
 
-The correlation with renewable output runs the way the mechanism predicts. DRH prices are
+**What this means for reading the revenue breakdown.** The model offers products
+individually at cost, so it never holds DR High at a negative price; a battery that wants DR
+Low simply holds DR Low. The negative DR High revenue that package bidders took on does not
+appear in its breakdown.
+
+The correlation with renewable output fits the charge leg's role. DRH prices are
 *positively* correlated with the daily renewable share (ρ = +0.43) while DRL is weakly
 negative (ρ = −0.18). DRH is the charge leg — the service that answers an over-frequency
 excursion — and heavy renewable output is precisely what pushes the system toward surplus
@@ -204,6 +299,8 @@ DRL's mild negative correlation reflects.
 ## Availability factor
 
 - Applied as a uniform multiplier to all revenue streams and cycling costs.
+- Missed state-of-energy requirements are deducted separately, period by period, before this
+  factor applies (see [Stage 2](#two-stage-participation-model)).
 - Models periods where the asset is unavailable through planned maintenance, unplanned
   faults, grid curtailment, or service delivery failures.
 - The default of ${(p.availability_factor * 100).toFixed(0)}% reflects the minimum
@@ -293,18 +390,33 @@ importances are on the [Forecasting & Dispatch](./backtester) page.
 - Balancing Mechanism direct trading
 - Real-time dispatch constraints or grid connection limits
 
-**Approximations in the current MPC LP**
+**Approximations**
 
 - *Rolling horizon is not globally optimal.* A single LP over the full backtest would yield
   more revenue in theory, but the rolling approach reflects the real constraint that
   dispatch must be committed before future prices are known.
+- *Stored energy has no terminal value.* Energy left in store at the end of the 48-hour
+  horizon is worth nothing to the LP, so each plan sells it down towards the horizon end.
+  Only the first period of each plan is executed, which keeps this from dominating, but a
+  learned terminal value would remove it.
 - *LP relaxation of charge/discharge mutual exclusion.* No binary variables prohibit
   simultaneous charge and discharge; because the objective penalises cycling, this is never
   optimal at a positive spread, so it is not binding in practice.
-- *Stage 1 allocation is a daily heuristic.* A fully joint formulation would co-optimise
-  allocation and intraday dispatch in a single LP/MIP — see
+- *Offers and dispatch are solved in sequence.* Offers are fixed at the bid deadline from a
+  block-level estimate of arbitrage value, and dispatch then optimises around them. A joint
+  formulation would co-optimise both; see
   [Swierczynski et al. (2021)](https://doi.org/10.3390/en14248365) and
   [Bai et al. (2024)](https://www.sciencedirect.com/science/article/abs/pii/S0306261924015149).
+- *Response delivery is not simulated.* Frequency events move state of energy while a
+  contract runs. The model assumes no response energy is delivered and holds each block's
+  start-of-block requirement throughout, so it does not model the energy recovery NESO allows
+  around delivery either.
+- *Price-taker.* The battery's offers are assumed not to move clearing prices. That is why
+  results scale linearly with power, and why the dispatch page stops at 100 MW.
+- *FR-only runs reposition for free.* Without dispatch, state of energy follows the
+  allocation's own plan, with no energy bought or sold to move it.
+- *Continuous MW, unlimited orders.* EAC trades whole MW and caps the number of orders per
+  unit per day; the LP uses continuous MW and any combination of products.
 
 **Battery degradation (not yet modelled)**
 
@@ -348,6 +460,22 @@ collected later is kept, so a settled value always displaces the estimate it rep
 [DESNZ REPD](https://www.gov.uk/government/publications/renewable-energy-planning-database-monthly-extract)
 
 ## Literature & references
+
+**NESO Dynamic Response rules and market evidence**
+
+- NESO. *Response Services Service Terms*.
+  [neso.energy](https://www.neso.energy/document/384606/download)
+- NESO. *Response Services Procurement Rules*, version 5
+  ([neso.energy](https://www.neso.energy/document/378246/download)); version 2.0, effective
+  15 November 2024 ([neso.energy](https://www.neso.energy/document/347456/download)).
+- NESO. (2025). *SOE Monitoring Guidance for Energy Limited DC/DM/DR Providers*, V2.
+  [neso.energy](https://www.neso.energy/document/347241/download)
+- National Grid ESO. (2023). *Enduring Auction Capability: Detailed Market Design*.
+  [neso.energy](https://www.neso.energy/document/276866/download)
+- National Grid ESO. *Dynamic Regulation Auction Rules* (legacy auctions).
+  [neso.energy](https://www.neso.energy/document/246746/download)
+- Modo Energy. *Battery Energy Storage Year in Review: 2023*.
+  [modoenergy.com](https://modoenergy.com/research/modo-battery-energy-storage-year-review-2023-capacity-revenues-frequency-response)
 
 **Electricity price forecasting**
 

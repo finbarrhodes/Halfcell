@@ -6,6 +6,9 @@ statistics for mean and standard deviation are aggregated here per
 (strategy, month, period_in_week). The browser sums them over whatever date
 range is selected and recovers the exact mean and sd — same numbers as
 averaging the raw trajectory, a fraction of the payload.
+
+The required state-of-charge range is summed the same way, so the chart can show
+the average range the battery's FR contracts demanded at each point in the week.
 """
 import io
 import sys
@@ -37,9 +40,11 @@ for key in ("pf_mpc", "naive_mpc", "ml_mpc"):
     df["period_in_week"] = df["date"].dt.dayofweek * 48 + (df["sp"] - 1)
     df["month_dt"] = df["date"].dt.to_period("M").dt.to_timestamp()
 
+    df["soc_sq"] = df["soc_frac"] ** 2
     agg = (
-        df.groupby(["month_dt", "period_in_week"])["soc_frac"]
-        .agg(n="count", total="sum", total_sq=lambda s: (s**2).sum())
+        df.groupby(["month_dt", "period_in_week"])
+        .agg(n=("soc_frac", "count"), total=("soc_frac", "sum"), total_sq=("soc_sq", "sum"),
+             min_total=("soc_min_frac", "sum"), max_total=("soc_max_frac", "sum"))
         .reset_index()
     )
     agg.insert(0, "strategy", key)
@@ -49,7 +54,8 @@ out = _js_safe(pd.concat(frames, ignore_index=True))
 # float32 is ample for a 0-1 SoC fraction and halves the two largest columns;
 # zstd on top brings the whole table well under the raw trajectories it replaces.
 out["total"] = out["total"].astype("float32")
-out["total_sq"] = out["total_sq"].astype("float32")
+for col in ("total_sq", "min_total", "max_total"):
+    out[col] = out[col].astype("float32")
 out["strategy"] = out["strategy"].astype("category")
 
 buf = io.BytesIO()

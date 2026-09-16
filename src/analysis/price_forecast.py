@@ -15,9 +15,9 @@ Implements three dispatch strategies for the BESS revenue backtester:
      features available at end of day D-1 (lagged prices, generation mix, cyclical
      temporal encodings) with a strict temporal train/test split.
 
-All three strategies share the same dispatch logic: given a price forecast for day D,
-pick the N cheapest periods to charge and N most expensive to discharge; then realise
-revenue against the actual day-D prices.
+All three strategies run the same engine, revenue_stack.run_strategy. The forecast
+values each EFA block's arbitrage when the FR allocation decides what to offer, and
+drives the MPC dispatch; revenue is realised against actual day-D prices.
 
 Model definitions   → src/analysis/forecasting_models.py
 Feature engineering → src/analysis/features.py
@@ -293,50 +293,6 @@ def naive_day_prices(
 # Forecast-driven dispatch backtester
 # ---------------------------------------------------------------------------
 
-def _dispatch_day(
-    forecast_prices: pd.Series,
-    actual_prices: pd.Series,
-    n_periods: int,
-    energy_out: float,
-    energy_in: float,
-    cycling_cost_per_mwh: float,
-) -> dict | None:
-    """
-    Given a price forecast and actual prices for a single day:
-    - Use forecast to identify which periods to charge / discharge
-    - Realise revenue against actual prices
-
-    Returns a dict {imbalance_revenue_gbp, cycling_cost_gbp, mwh_cycled}
-    or None if the trade is not executed (insufficient data or not profitable).
-    """
-    if len(forecast_prices) < n_periods * 2 or len(actual_prices) < n_periods * 2:
-        return None
-
-    # Use FORECAST to rank periods
-    charge_periods    = forecast_prices.nsmallest(n_periods).index
-    discharge_periods = forecast_prices.nlargest(n_periods).index
-
-    # Realise revenue against ACTUAL prices
-    avg_charge    = actual_prices.reindex(charge_periods).dropna().mean()
-    avg_discharge = actual_prices.reindex(discharge_periods).dropna().mean()
-
-    if pd.isna(avg_charge) or pd.isna(avg_discharge):
-        return None
-
-    gross_profit = avg_discharge * energy_out - avg_charge * energy_in
-    cycling_wear = cycling_cost_per_mwh * energy_out
-
-    # Only execute if forecast-implied schedule is realised-profitable
-    if gross_profit <= cycling_wear:
-        return None
-
-    return {
-        "imbalance_revenue_gbp": gross_profit,
-        "cycling_cost_gbp":      cycling_wear,
-        "mwh_cycled":            energy_out,
-    }
-
-
 def run_forecast_backtest(
     strategy: str,
     market_index: pd.DataFrame,
@@ -349,20 +305,19 @@ def run_forecast_backtest(
     feature_df: pd.DataFrame = None,
     feature_cols: list = None,
     initial_soc_frac: float = 0.5,
-    dispatch_method: str = "greedy",
     horizon: int = 96,
+    *,
+    include_arbitrage: bool = True,
+    pre_eac_rule: str = "d1",
 ) -> dict:
     """
-    Run a forecast-driven revenue backtest for either the 'naive' or 'ml' strategy.
+    Forecast-driven revenue backtest for the 'naive' or 'ml' strategy.
 
-    Uses a two-pass approach:
-      1. Collect forecast prices for all days in the period.
-      2. Run compute_daily_fr_schedule() to determine per-EFA-block FR/arb allocation:
-         for each block, compare the confirmed FR clearing price against a shadow arb
-         estimate from the forecast prices for that block's 8 settlement periods.
-      3. Dispatch within the allocated arb_mw for each EFA block, realising revenue
-         against actual prices. SoC is tracked across all 6 blocks per day and
-         carried into the next day.
+    The forecast for day D, built only from information available by the end of
+    D-1, does two jobs: it values each EFA block's arbitrage when the FR
+    allocation decides how much capacity to offer, and it drives the MPC
+    dispatch. Revenue is realised against actual prices. Everything after the
+    forecast is shared with the perfect-foresight run (revenue_stack.run_strategy).
 
     Parameters
     ----------
@@ -370,180 +325,39 @@ def run_forecast_backtest(
     market_index     : DataFrame from load_market_index()
     auctions         : DataFrame from load_auctions()
     battery          : BatterySpec instance
-    services         : list of service codes to include
+    services         : products the battery may offer ([] for arbitrage only)
     start_date       : inclusive backtest start
     end_date         : inclusive backtest end
     model            : fitted model object (required for strategy="ml")
     feature_df       : feature matrix from build_feature_matrix() (required for strategy="ml")
     feature_cols     : feature column list from train_forecast_model() (required for strategy="ml")
-    initial_soc_frac : float — starting SoC as fraction of energy_mwh (default 0.5)
-    dispatch_method  : "greedy" (default) or "mpc". When "mpc", re-solves LP every
-                       30 minutes over a rolling horizon using forecast prices for
-                       planning and actual prices for revenue settlement.
-    horizon          : MPC planning horizon in settlement periods (default 96 = 48h).
+    initial_soc_frac : starting state of energy as a fraction of energy_mwh (default 0.5)
+    horizon          : MPC planning horizon in settlement periods (default 96 = 48h)
+    include_arbitrage: False runs the FR-only scenario; no forecast is needed
+    pre_eac_rule     : "d1" (default) or "always_dc" — see revenue_stack.compute_fr_schedule
 
     Returns
     -------
-    dict with keys:
-      'monthly'        : wide-format DataFrame, same schema as revenue_stack.run_backtest()
-      'summary'        : dict of aggregate stats
-      'soc_trajectory' : DataFrame [date, sp, soc_frac] when dispatch_method="mpc", else None
+    dict with the same keys as revenue_stack.run_backtest()
     """
-    from src.analysis.revenue_stack import (
-        calc_ancillary_revenue,
-        compute_daily_fr_schedule,
-        EFA_PERIODS,
-        FR_SOC_LOWER,
-        FR_SOC_UPPER,
-        _efa_prices,
-        _build_arb_mw_by_period,
-        _run_mpc_dispatch,
-        _build_result,
-        ALL_SERVICES,
-    )
+    from src.analysis.revenue_stack import _apx_by_date, _in_range, run_strategy
 
-    if services is None:
-        services = ALL_SERVICES
+    if strategy not in ("naive", "ml"):
+        raise ValueError(f"Unknown strategy '{strategy}'")
 
-    # Build full apx_by_date lookup (unfiltered) so EFA 1 D-1 lookups work on first day
-    apx_all = market_index[market_index["dataProvider"] == "APXMIDP"].copy()
-    apx_all["settlementDate"] = pd.to_datetime(apx_all["settlementDate"]).dt.normalize()
-    apx_all = apx_all[apx_all["settlementPeriod"] <= 48]
-    apx_by_date = {
-        date: grp.set_index("settlementPeriod")["price"]
-        for date, grp in apx_all.groupby("settlementDate")
-    }
-
-    sd = pd.Timestamp(start_date) if start_date else apx_all["settlementDate"].min()
-    ed = pd.Timestamp(end_date)   if end_date   else apx_all["settlementDate"].max()
-    sorted_dates = sorted(
-        d for d in apx_by_date if sd <= d <= ed
-    )
-
-    # --- First pass: collect forecast prices for all days in range ---
     forecast_prices_by_date: dict = {}
-    for date in sorted_dates:
-        if strategy == "naive":
-            fp = naive_day_prices(market_index, date)
-        elif strategy == "ml":
-            fp = predict_day_prices(model, feature_cols, feature_df, date)
-        else:
-            raise ValueError(f"Unknown strategy '{strategy}'")
-        if not fp.empty:
-            forecast_prices_by_date[date] = fp
+    if include_arbitrage:
+        apx_by_date = _apx_by_date(market_index)
+        for date in sorted(d for d in apx_by_date if _in_range(d, start_date, end_date)):
+            if strategy == "naive":
+                fp = naive_day_prices(market_index, date)
+            else:
+                fp = predict_day_prices(model, feature_cols, feature_df, date)
+            if not fp.empty:
+                forecast_prices_by_date[date] = fp
 
-    # --- Per-EFA-block capacity allocation ---
-    # For each block: confirmed FR clearing price vs forecast-based shadow arb estimate.
-    fr_schedule = compute_daily_fr_schedule(
-        auctions, forecast_prices_by_date, battery, services, start_date, end_date
+    return run_strategy(
+        auctions, market_index, battery, forecast_prices_by_date, services, start_date, end_date,
+        initial_soc_frac=initial_soc_frac, horizon=horizon,
+        include_arbitrage=include_arbitrage, pre_eac_rule=pre_eac_rule,
     )
-    # arb_sched_map: {(date, efa): arb_mw}
-    arb_sched_map = {
-        (pd.Timestamp(d).normalize(), int(e)): battery.power_mw - float(v)
-        for (d, e), v in fr_schedule.items()
-    }
-    avg_fr_mw  = float(fr_schedule.mean()) if len(fr_schedule) > 0 else battery.power_mw
-    avg_arb_mw = battery.power_mw - avg_fr_mw
-
-    # --- Ancillary revenue (scaled by per-EFA-block fr_mw) ---
-    anc = calc_ancillary_revenue(
-        auctions, battery, services, start_date, end_date, fr_schedule=fr_schedule,
-    )
-    if not anc.empty:
-        anc_wide = anc.pivot_table(
-            index="month", columns="service", values="revenue_gbp", fill_value=0
-        )
-        anc_wide.columns = [f"{c}_rev" for c in anc_wide.columns]
-    else:
-        anc_wide = pd.DataFrame()
-
-    # --- Second pass: dispatch with SoC tracking ---
-    actual_by_period = {
-        (d, int(sp)): float(price)
-        for d, series in apx_by_date.items()
-        for sp, price in series.items()
-    }
-    all_periods = [(date, sp) for date in sorted_dates for sp in range(1, 49)]
-
-    soc_traj = []
-
-    if dispatch_method == "mpc":
-        # Rolling MPC: re-solves LP every 30 min using forecast prices for planning,
-        # actual prices for settlement. Forecast EFA 1 D-1 periods are absent from
-        # forecast_by_period — LP treats them as zero-revenue (conservative).
-        arb_mw_by_period = _build_arb_mw_by_period(arb_sched_map)
-        forecast_by_period = {
-            (date, int(sp)): float(price)
-            for date, fp_series in forecast_prices_by_date.items()
-            for sp, price in fp_series.items()
-        }
-        arb_rows, soc_traj = _run_mpc_dispatch(
-            all_periods=all_periods,
-            actual_by_period=actual_by_period,
-            forecast_by_period=forecast_by_period,
-            arb_mw_by_period=arb_mw_by_period,
-            battery=battery,
-            initial_soc_frac=initial_soc_frac,
-            horizon=horizon,
-        )
-
-    else:
-        # Greedy EFA-block dispatch (original)
-        n_periods = max(1, int(battery.duration_h * 2))
-        soc       = initial_soc_frac * battery.energy_mwh
-        soc_min   = FR_SOC_LOWER * battery.energy_mwh
-        soc_max   = FR_SOC_UPPER * battery.energy_mwh
-        arb_rows  = []
-
-        for date in sorted_dates:
-            fp_day = forecast_prices_by_date.get(date)
-            if fp_day is None:
-                continue
-            fp_by_date = {date: fp_day}
-
-            for efa in range(1, 7):
-                actual_efa   = _efa_prices(apx_by_date, date, efa)
-                forecast_efa = _efa_prices(fp_by_date, date, efa)
-
-                arb_mw_d = arb_sched_map.get((date, efa), 0.0)
-                if arb_mw_d <= 0:
-                    continue
-
-                nominal_energy_out = arb_mw_d * battery.duration_h
-                energy_out = min(nominal_energy_out, max(0.0, soc - soc_min))
-                energy_in  = min(
-                    energy_out / battery.efficiency_rt,
-                    max(0.0, soc_max - soc),
-                )
-                if energy_out <= 0 or energy_in <= 0:
-                    continue
-
-                result_d = _dispatch_day(
-                    forecast_efa, actual_efa,
-                    n_periods, energy_out, energy_in,
-                    battery.cycling_cost_per_mwh,
-                )
-                if result_d:
-                    soc = soc - result_d["mwh_cycled"] + result_d["mwh_cycled"] / battery.efficiency_rt
-                    soc = float(np.clip(soc, 0, battery.energy_mwh))
-                    result_d["date"] = date
-                    arb_rows.append(result_d)
-
-    if arb_rows:
-        daily_arb = pd.DataFrame(arb_rows)
-        daily_arb["month"] = pd.to_datetime(daily_arb["date"]).dt.to_period("M")
-        imb_wide = (
-            daily_arb.groupby("month")
-            .agg(
-                imbalance_revenue_gbp=("imbalance_revenue_gbp", "sum"),
-                cycling_cost_gbp=("cycling_cost_gbp", "sum"),
-                mwh_cycled=("mwh_cycled", "sum"),
-            )
-            .reset_index()
-            .set_index("month")
-        )
-    else:
-        imb_wide = pd.DataFrame()
-
-    # --- Merge streams, apply availability factor, compute summary ---
-    return _build_result(anc_wide, imb_wide, battery, avg_fr_mw, avg_arb_mw, soc_traj)

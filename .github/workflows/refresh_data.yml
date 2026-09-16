@@ -59,7 +59,8 @@ jobs:
   refresh:
     name: Collect, extend, rebuild cache
     runs-on: ubuntu-latest
-    # precompute_cache.py measured ~30 min locally (2026-09-09), and a hosted runner
+    # precompute_cache.py measured ~38 min locally (2026-09-14, after the FR-only and
+    # arbitrage-only scenario runs were added; ~30 min before), and a hosted runner
     # is typically slower than a dev machine at single-threaded numeric work. The
     # backtest also lengthens every refresh, because DEFAULT_TEST_START is fixed and
     # new data accrues to the test period. 60 was too tight on both counts.

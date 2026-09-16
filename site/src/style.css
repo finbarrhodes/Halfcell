@@ -371,3 +371,65 @@ form.oi input[type="checkbox"], form.oi input[type="radio"] { accent-color: var(
 @media (prefers-reduced-motion: reduce) {
   .scrolly-dot { transition: none; }
 }
+
+/* ------------------------------------------------------------------ */
+/* Choice controls (components/controls.js)                            */
+/* ------------------------------------------------------------------ */
+
+/* A pill-shaped segmented control that sits on a chart */
+.choice-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  border: 1px solid var(--hc-rule);
+  border-radius: 999px;
+  background: var(--hc-paper-deep);
+  padding: 3px;
+}
+
+.choice {
+  font: 600 0.75rem/1.2 var(--sans-serif);
+  letter-spacing: 0.02em;
+  color: var(--hc-ink-soft);
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  padding: 0.35rem 0.85rem;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.choice:hover { color: var(--hc-ink); }
+.choice.is-active { background: var(--hc-teal); color: #fff; }
+.choice:focus-visible { outline: 2px solid var(--hc-orange); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .choice { transition: none; }
+}
+
+/* A caption that belongs to one card, so it wraps with its own chart rather
+   than running across a grid at prose measure */
+.card-caption {
+  margin: 0.6rem 0 0;
+  max-width: none;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--hc-ink-soft);
+}
+
+/* Chart header: title or legend on the left, a control on the right */
+.chart-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.6rem;
+}
+.chart-head h3 { margin: 0; }
+
+/* Card headings sit at the top of the card, not 2rem down like page headings */
+.card h3 { margin-top: 0; font-size: 1.05rem; }
+
+/* Heatmap strips: one per market, stacked */
+.heat-strip + .heat-strip { margin-top: 0.9rem; }
+.heat-strip .chart-head { margin-bottom: 0.2rem; }
+.heat-strip h4 { margin: 0; font-size: 1rem; }

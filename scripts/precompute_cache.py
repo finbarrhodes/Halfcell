@@ -2,29 +2,34 @@
 """
 Pre-compute Backtest Cache
 ===========================
-Runs all three MPC strategy backtests with a fixed 50 MW / 2h battery
-configuration and writes results to data/cache/ as Parquet files.
-
-The site is a pure viewer that reads from this cache — its Python data loaders
-read the committed parquets at build time, so nothing is computed on page load.
+Runs every strategy and scenario for the fixed 50 MW / 2h reference battery and
+writes the results to data/cache/ for the site to read.
 
 Usage:
     python scripts/precompute_cache.py
 
 Re-run after any data update or methodology change, then commit the updated
-cache files.  Runtime: ~30 minutes total, roughly 10 per strategy (measured
-2026-09-09 on a test window running to 2026-09-08).
+cache files.
 
-That figure grows over time and is worth re-checking. DEFAULT_TEST_START is held
-fixed across refreshes so new data accrues to the test period, which means each
-refresh lengthens the backtest and the runtime with it, close to linearly. The
-refresh workflow's timeout-minutes is set with headroom for that, but not
-infinite headroom.
+Written, per strategy (pf_mpc, naive_mpc, ml_mpc):
+  <key>.parquet            full stack: FR availability + arbitrage
+  soc_<key>.parquet        state of energy for every settlement period
+  <key>_arb_only.parquet   arbitrage only, no FR commitments
 
-Strategies computed:
+Shared by all strategies, since FR-only needs no price forecast:
+  fr_only.parquet               FR availability only
+  fr_only_always_dc.parquet     the same with pre-EAC units held in DC - the
+                                fleet-practice lower bound reported in methodology
+
+Strategies:
   1. Perfect Foresight + MPC  — revenue ceiling
   2. Naive (D-1 prices) + MPC — zero-skill floor
   3. ML (Random Forest) + MPC — realistic best case; main result
+
+Runtime is roughly six dispatch runs at ~4-5 minutes each with the compile-once
+MPC solver, plus model training. It lengthens with every refresh, because
+DEFAULT_TEST_START is fixed and new data accrues to the test period, so re-check
+it against the refresh workflow's timeout-minutes from time to time.
 """
 
 import json
@@ -61,7 +66,8 @@ CACHE     = Path(__file__).parent.parent / "data" / "cache"
 
 BATTERY = REFERENCE_BATTERY
 INITIAL_SOC    = 0.5   # Neutral midpoint; SoC tracked continuously thereafter
-DISPATCH_METHOD = "mpc"
+DISPATCH_METHOD = "mpc"   # recorded in the manifest; MPC is the only dispatch path
+PRE_EAC_RULE    = "d1"    # pre-EAC service chosen on D-1 clearing prices
 HORIZON         = 96    # 48h rolling LP horizon
 SERVICES        = ALL_SERVICES
 ML_MODEL_TYPE   = "rf"  # Random Forest selected at precompute time (see methodology expander)
@@ -100,8 +106,14 @@ def _print_section(n: int, total: int, label: str) -> None:
 # Main
 # ---------------------------------------------------------------------------
 
+def _summary_line(label: str, summary: dict) -> None:
+    print(f"  {label:<20}: £{summary.get('annualised_per_mw', 0):>10,.0f} / MW / yr"
+          f"   state-of-energy breaches: {summary.get('soe_breach_periods', 0):,} periods")
+
+
 def main() -> None:
     CACHE.mkdir(parents=True, exist_ok=True)
+    started = datetime.now(timezone.utc)
 
     # ------------------------------------------------------------------
     # Load source data
@@ -133,70 +145,73 @@ def main() -> None:
         initial_soc          = INITIAL_SOC,
         dispatch_method      = DISPATCH_METHOD,
         horizon              = HORIZON,
+        pre_eac_rule         = PRE_EAC_RULE,
         start_date           = str(start_date),
         end_date             = str(end_date),
     )
 
-    # ------------------------------------------------------------------
-    # 1. Perfect Foresight + MPC
-    # ------------------------------------------------------------------
-    _print_section(1, 3, "Perfect Foresight + MPC")
-
-    pf = run_backtest(
-        auctions, mkt_index, BATTERY, SERVICES, start_date, end_date,
-        initial_soc_frac=INITIAL_SOC,
-        dispatch_method=DISPATCH_METHOD,
-        horizon=HORIZON,
-    )
-    pf["monthly"].to_parquet(CACHE / "pf_mpc.parquet", index=False)
-    if pf.get("soc_trajectory") is not None:
-        pf["soc_trajectory"].to_parquet(CACHE / "soc_pf_mpc.parquet", index=False)
-
-    manifest["pf_mpc"] = dict(
-        computed_at = datetime.now(timezone.utc).isoformat(),
-        git_sha     = git_sha,
-        data_mtimes = data_mtimes,
-        params      = base_params,
-        summary     = pf["summary"],
-    )
-    print(f"  Total net revenue : £{pf['summary']['total_net']:>12,.0f}")
-    print(f"  Ann. per MW       : £{pf['summary']['annualised_per_mw']:>10,.0f} / MW / yr")
+    def entry(result: dict, scenarios: dict, params: dict = base_params, **extra) -> dict:
+        return dict(
+            computed_at = datetime.now(timezone.utc).isoformat(),
+            git_sha     = git_sha,
+            data_mtimes = data_mtimes,
+            params      = params,
+            summary     = result["summary"],
+            scenarios   = scenarios,
+            **extra,
+        )
 
     # ------------------------------------------------------------------
-    # 2. Naive (D-1 prices) + MPC
+    # 1. FR availability only — no price forecast, so shared by all three
     # ------------------------------------------------------------------
-    _print_section(2, 3, "Naive (D-1 prices) + MPC")
+    _print_section(1, 4, "FR availability only (scenario shared by all strategies)")
+    fr_only = run_backtest(auctions, mkt_index, BATTERY, SERVICES, start_date, end_date,
+                           include_arbitrage=False, pre_eac_rule=PRE_EAC_RULE)
+    fr_only["monthly"].to_parquet(CACHE / "fr_only.parquet", index=False)
+    fr_dc = run_backtest(auctions, mkt_index, BATTERY, SERVICES, start_date, end_date,
+                         include_arbitrage=False, pre_eac_rule="always_dc")
+    fr_dc["monthly"].to_parquet(CACHE / "fr_only_always_dc.parquet", index=False)
+    _summary_line("FR only", fr_only["summary"])
+    _summary_line("FR only, always DC", fr_dc["summary"])
+    fr_scenarios = {"fr_only": fr_only["summary"], "fr_only_always_dc": fr_dc["summary"]}
 
-    naive = run_forecast_backtest(
-        strategy        = "naive",
-        market_index    = mkt_index,
-        auctions        = auctions,
-        battery         = BATTERY,
-        services        = SERVICES,
-        start_date      = start_date,
-        end_date        = end_date,
-        initial_soc_frac = INITIAL_SOC,
-        dispatch_method = DISPATCH_METHOD,
-        horizon         = HORIZON,
-    )
-    naive["monthly"].to_parquet(CACHE / "naive_mpc.parquet", index=False)
-    if naive.get("soc_trajectory") is not None:
-        naive["soc_trajectory"].to_parquet(CACHE / "soc_naive_mpc.parquet", index=False)
-
-    manifest["naive_mpc"] = dict(
-        computed_at = datetime.now(timezone.utc).isoformat(),
-        git_sha     = git_sha,
-        data_mtimes = data_mtimes,
-        params      = base_params,
-        summary     = naive["summary"],
-    )
-    print(f"  Total net revenue : £{naive['summary']['total_net']:>12,.0f}")
-    print(f"  Ann. per MW       : £{naive['summary']['annualised_per_mw']:>10,.0f} / MW / yr")
+    def run_pair(key: str, run) -> tuple[dict, dict]:
+        """Full stack and arbitrage-only for one strategy; writes both to the cache."""
+        full = run(SERVICES)
+        full["monthly"].to_parquet(CACHE / f"{key}.parquet", index=False)
+        if full.get("soc_trajectory") is not None:
+            full["soc_trajectory"].to_parquet(CACHE / f"soc_{key}.parquet", index=False)
+        arb = run([])
+        arb["monthly"].to_parquet(CACHE / f"{key}_arb_only.parquet", index=False)
+        _summary_line("Full stack", full["summary"])
+        _summary_line("Arbitrage only", arb["summary"])
+        return full, {"arb_only": arb["summary"], **fr_scenarios}
 
     # ------------------------------------------------------------------
-    # 3. ML (Random Forest) + MPC
+    # 2. Perfect Foresight + MPC
     # ------------------------------------------------------------------
-    _print_section(3, 3, "ML (Random Forest) + MPC")
+    _print_section(2, 4, "Perfect Foresight + MPC")
+    pf, pf_scenarios = run_pair("pf_mpc", lambda svc: run_backtest(
+        auctions, mkt_index, BATTERY, svc, start_date, end_date,
+        initial_soc_frac=INITIAL_SOC, horizon=HORIZON, pre_eac_rule=PRE_EAC_RULE,
+    ))
+    manifest["pf_mpc"] = entry(pf, pf_scenarios)
+
+    # ------------------------------------------------------------------
+    # 3. Naive (D-1 prices) + MPC
+    # ------------------------------------------------------------------
+    _print_section(3, 4, "Naive (D-1 prices) + MPC")
+    naive, naive_scenarios = run_pair("naive_mpc", lambda svc: run_forecast_backtest(
+        strategy="naive", market_index=mkt_index, auctions=auctions, battery=BATTERY,
+        services=svc, start_date=start_date, end_date=end_date,
+        initial_soc_frac=INITIAL_SOC, horizon=HORIZON, pre_eac_rule=PRE_EAC_RULE,
+    ))
+    manifest["naive_mpc"] = entry(naive, naive_scenarios)
+
+    # ------------------------------------------------------------------
+    # 4. ML (Random Forest) + MPC
+    # ------------------------------------------------------------------
+    _print_section(4, 4, "ML (Random Forest) + MPC")
 
     print("  Building feature matrix…")
     feature_df = build_feature_matrix(mkt_index, gen_daily, load_bess_capacity())
@@ -208,61 +223,35 @@ def main() -> None:
     print(f"  Test RMSE: {test_metrics['rmse']:.2f} £/MWh  |  "
           f"Spearman ρ: {test_metrics['spearman']:.3f}")
 
-    print("  Running ML + MPC backtest…")
-    ml = run_forecast_backtest(
-        strategy        = "ml",
-        market_index    = mkt_index,
-        auctions        = auctions,
-        battery         = BATTERY,
-        services        = SERVICES,
-        start_date      = start_date,
-        end_date        = end_date,
-        model           = model,
-        feature_df      = feature_df,
-        feature_cols    = feature_cols,
-        initial_soc_frac = INITIAL_SOC,
-        dispatch_method = DISPATCH_METHOD,
-        horizon         = HORIZON,
-    )
-    ml["monthly"].to_parquet(CACHE / "ml_mpc.parquet", index=False)
-    if ml.get("soc_trajectory") is not None:
-        ml["soc_trajectory"].to_parquet(CACHE / "soc_ml_mpc.parquet", index=False)
+    ml, ml_scenarios = run_pair("ml_mpc", lambda svc: run_forecast_backtest(
+        strategy="ml", market_index=mkt_index, auctions=auctions, battery=BATTERY,
+        services=svc, start_date=start_date, end_date=end_date,
+        model=model, feature_df=feature_df, feature_cols=feature_cols,
+        initial_soc_frac=INITIAL_SOC, horizon=HORIZON, pre_eac_rule=PRE_EAC_RULE,
+    ))
 
-    # Feature importances are stored here so the app never has to train a model
-    # at runtime — the chart needs ~20 numbers, not a fresh Random Forest fit.
+    # Feature importances are stored here so the site never has to train a model
+    # — the chart needs ~20 numbers, not a fresh Random Forest fit.
     importances = get_feature_importances(model, feature_cols).head(N_IMPORTANCES)
-
-    manifest["ml_mpc"] = dict(
-        computed_at   = datetime.now(timezone.utc).isoformat(),
-        git_sha       = git_sha,
-        data_mtimes   = data_mtimes,
-        params        = {**base_params, "ml_model_type": ML_MODEL_TYPE,
-                         "test_start": str(DEFAULT_TEST_START)},
-        summary       = ml["summary"],
-        model_metrics = {"train": train_metrics, "test": test_metrics},
-        feature_importances = [
-            {"feature": str(k), "importance": float(v)}
-            for k, v in importances.items()
+    manifest["ml_mpc"] = entry(
+        ml, ml_scenarios,
+        params={**base_params, "ml_model_type": ML_MODEL_TYPE, "test_start": str(DEFAULT_TEST_START)},
+        model_metrics={"train": train_metrics, "test": test_metrics},
+        feature_importances=[
+            {"feature": str(k), "importance": float(v)} for k, v in importances.items()
         ],
     )
-    print(f"  Total net revenue : £{ml['summary']['total_net']:>12,.0f}")
-    print(f"  Ann. per MW       : £{ml['summary']['annualised_per_mw']:>10,.0f} / MW / yr")
 
     # ------------------------------------------------------------------
-    # Write manifest
+    # Write manifest last: check_cache_consistency.py relies on that order
     # ------------------------------------------------------------------
-    print(f"\n{'─' * 60}")
     manifest_path = CACHE / "manifest.json"
     with open(manifest_path, "w") as f:
         json.dump(manifest, f, indent=2, default=str)
 
-    print("\n✓  Cache written to data/cache/")
-    print("   pf_mpc.parquet      naive_mpc.parquet      ml_mpc.parquet")
-    print("   soc_pf_mpc.parquet  soc_naive_mpc.parquet  soc_ml_mpc.parquet")
-    print("   manifest.json")
-    print("\nCommit data/cache/ to the repository to make results available on")
-    print("the site available without any compute step at deploy time.")
-
+    minutes = (datetime.now(timezone.utc) - started).total_seconds() / 60
+    print(f"\n{'─' * 60}")
+    print(f"✓  Cache written to data/cache/ in {minutes:.1f} min")
 
 if __name__ == "__main__":
     main()

@@ -2,6 +2,7 @@
 
 The dashboard charts daily aggregates only — never raw half-hourly data — so
 the half-hourly series is collapsed here rather than shipped to the browser.
+`negative` counts half-hours below zero, out of `n`.
 """
 import io
 import sys
@@ -34,8 +35,10 @@ mkt = pd.read_parquet(ROOT / "data/processed/market_index.parquet")
 apx = mkt[mkt["dataProvider"] == "APXMIDP"]
 
 out = (
-    apx.groupby("settlementDate")["price"]
-    .agg(mean="mean", min="min", max="max")
+    apx.assign(negative=apx["price"] < 0)
+    .groupby("settlementDate")
+    .agg(mean=("price", "mean"), min=("price", "min"), max=("price", "max"),
+         n=("price", "size"), negative=("negative", "sum"))
     .reset_index()
     .rename(columns={"settlementDate": "date"})
 )

@@ -107,15 +107,16 @@ compression visible in the charts above is the story this table tells in words.
 | Year | Event |
 |---|---|
 | **2020** | NESO launches Dynamic Containment (DC) — BESS becomes the dominant provider within months, displacing gas peakers |
-| **2021** | Dynamic Regulation (DR) and Dynamic Moderation (DM) introduced; revenue stacking across all three services becomes standard |
-| **2022** | Revenue peak — DC High averaging £15–20/MW/h; leading assets earning ~£156k/MW/year |
+| **2021** | Day-ahead DC auctions for each EFA block; the auction results on this site begin on 16 September |
+| **2022** | Revenue peak — DM and DR join DC in late March, though a unit can still offer only one service per block; DC Low averages £17.51/MW/h over the year; leading assets earning ~£156k/MW/year |
 | **Late 2022** | Rapid capacity influx saturates frequency response markets; clearing prices begin a sharp, sustained decline |
-| **2023** | Revenue compression accelerates; wholesale arbitrage and Capacity Market grow significantly in relative importance |
+| **2023** | Revenue compression accelerates; wholesale arbitrage and Capacity Market grow significantly in relative importance. In November the Enduring Auction Capability lets a unit split capacity across DC, DM and DR in the same block, and prices can go negative |
 | **2024–25** | Stack diversification — operators blend FR, arbitrage, and BM participation; long-duration projects begin to emerge |
 
-Figures in this table are hand-compiled market context, not computed from the datasets
-below — unlike every other number on this site, they are not reproducible from the
-pipeline.
+Most of this table is hand-compiled market context rather than computed from the datasets
+below, so unlike the rest of the site it is not reproducible from the pipeline. The
+exceptions are the auction dates and the 2022 DC Low average, which come from the auction
+data.
 
 ## Market snapshot
 

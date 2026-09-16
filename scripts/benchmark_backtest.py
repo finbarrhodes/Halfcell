@@ -47,8 +47,8 @@ PROCESSED = Path(__file__).parent.parent / "data" / "processed"
 
 BATTERY = REFERENCE_BATTERY
 INITIAL_SOC     = 0.5
-DISPATCH_METHOD = "mpc"   # faster than MPC; relative model ranking is consistent
-HORIZON         = 96         # unused in greedy mode; retained for MPC compatibility
+DISPATCH_METHOD = "mpc"   # the only dispatch path; kept for the printed config
+HORIZON         = 96         # 48h rolling LP horizon
 SERVICES        = ALL_SERVICES
 
 ML_MODELS = ["rf", "lgb", "lear", "dnn"]
@@ -119,7 +119,6 @@ def main() -> None:
     pf = run_backtest(
         auctions, mkt_index, BATTERY, SERVICES, start_date, end_date,
         initial_soc_frac=INITIAL_SOC,
-        dispatch_method=DISPATCH_METHOD,
         horizon=HORIZON,
     )
     pf_time = time.time() - t0
@@ -142,7 +141,6 @@ def main() -> None:
         start_date=start_date,
         end_date=end_date,
         initial_soc_frac=INITIAL_SOC,
-        dispatch_method=DISPATCH_METHOD,
         horizon=HORIZON,
     )
     naive_time = time.time() - t0
@@ -179,7 +177,6 @@ def main() -> None:
             feature_df=feature_df,
             feature_cols=feature_cols,
             initial_soc_frac=INITIAL_SOC,
-            dispatch_method=DISPATCH_METHOD,
             horizon=HORIZON,
         )
         bt_time = time.time() - t_bt

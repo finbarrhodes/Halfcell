@@ -1,4 +1,11 @@
-"""Daily system sell/buy price statistics (imbalance settlement)."""
+"""Daily imbalance price statistics.
+
+GB has settled imbalance at a single price since P305 (November 2015), so the
+System Sell Price and System Buy Price are the same number. The daily mean, low
+and high come from the sell price, and `sell_buy_mismatches` counts half-hours
+where the two differ, so the page checks that claim on every refresh rather than
+asserting it. `negative` counts half-hours below zero, out of `n`.
+"""
 import io
 import sys
 from pathlib import Path
@@ -28,13 +35,19 @@ def _js_safe(df):
 ROOT = Path(__file__).resolve().parents[3]
 sp = pd.read_parquet(ROOT / "data/processed/system_prices.parquet")
 
+sp = sp.assign(
+    mismatch=(sp["systemSellPrice"] - sp["systemBuyPrice"]).abs() > 1e-6,
+    negative=sp["systemSellPrice"] < 0,
+)
 out = (
     sp.groupby("settlementDate")
     .agg(
-        ssp_mean=("systemSellPrice", "mean"),
-        ssp_min=("systemSellPrice", "min"),
-        ssp_max=("systemSellPrice", "max"),
-        sbp_mean=("systemBuyPrice", "mean"),
+        price_mean=("systemSellPrice", "mean"),
+        price_min=("systemSellPrice", "min"),
+        price_max=("systemSellPrice", "max"),
+        n=("systemSellPrice", "size"),
+        negative=("negative", "sum"),
+        sell_buy_mismatches=("mismatch", "sum"),
     )
     .reset_index()
     .rename(columns={"settlementDate": "date"})

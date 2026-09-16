@@ -14,6 +14,8 @@ import {SERVICE_COLOURS, SERVICE_LABELS, STRATEGY_LABELS, gbp} from "./component
 const manifest = await FileAttachment("data/manifest.json").json();
 const revenueAll = (await FileAttachment("data/revenue-monthly.parquet").parquet())
   .toArray().map((d) => ({...d, month_dt: new Date(d.month_dt)}));
+const scenarioAll = (await FileAttachment("data/revenue-scenarios.parquet").parquet())
+  .toArray().map((d) => ({...d, month_dt: new Date(d.month_dt)}));
 const socAll = (await FileAttachment("data/soc-week.parquet").parquet())
   .toArray().map((d) => ({...d, month_dt: new Date(d.month_dt)}));
 ```
@@ -21,9 +23,12 @@ const socAll = (await FileAttachment("data/soc-week.parquet").parquet())
 ```js
 const ALL_SERVICES = ["DCH", "DCL", "DMH", "DML", "DRH", "DRL"];
 const BASE_POWER_MW = manifest.ml_mpc.params.power_mw;   // cache is computed at this rating
+const MAX_POWER_MW = 100;                                // NESO Maximum Sell Size per product
 const DURATION_H = manifest.ml_mpc.params.duration_h;
 const EFF = manifest.ml_mpc.params.efficiency_rt;
 const BASE_CYCLING = manifest.ml_mpc.params.cycling_cost_per_mwh;
+
+const SCENARIO_LABELS = {full: "FR + arbitrage", fr_only: "FR only", arb_only: "Arbitrage only"};
 
 const bounds = (() => {
   const starts = Object.values(manifest).map((m) => m.params.start_date).filter(Boolean);
@@ -71,24 +76,34 @@ simply trade the extremes.
 ### But frequency response pays for sitting still
 
 NESO pays a **£/MW/h availability fee** for capacity held ready to respond within seconds,
-whether or not it is ever called. That income is contracted and known a day ahead, because
-the EAC auction for day D clears on D-1.
+whether or not it is ever called. That income is contracted a day ahead: offers for day D
+close at 14:00 on D-1.
 
-Committing to it constrains the asset: FR-committed capacity must keep charge *and*
-headroom to respond in either direction, which limits how freely it can trade.
+Each contract constrains the asset. A **Low** contract needs enough energy in store to
+discharge for its full delivery window — 15 minutes for DC, 30 for DM, 60 for DR — and a
+**High** contract needs the same again as headroom to absorb. The power a contract uses is
+also unavailable for trading.
 </div></div>
 
 <div class="step"><div class="step-inner">
 <span class="step-num">Step 4</span>
 
-### Stage 1 — split the capacity
+### Stage 1 — decide what to offer
 
-For each of the six EFA blocks the model compares two numbers: the **confirmed FR clearing
-price**, and a **shadow arbitrage value** — what that MW of headroom would earn trading the
-block, estimated from the price forecast.
+For each of the six EFA blocks, the model offers every product at its opportunity cost: a
+**shadow arbitrage value**, what that MW would earn trading the block, estimated from the
+price forecast. It keeps the combination that earns most at the clearing prices, within
+NESO's rules:
 
-Capacity is allocated in proportion, `fr_fraction = fr_value / (fr_value + arb_value)`, so
-it flows toward whichever stream looks better that block without all-or-nothing switching.
+- the MW it sells in each direction, plus the share NESO reserves on the other side for
+  recharging, fit within the battery's power rating
+- there is enough energy in store to deliver every Low contract for its full window, and
+  enough empty space to absorb every High one
+- starting from how full the battery actually is at 14:00, it can get into the charge range
+  each block needs in time, using only the power its contracts leave free
+
+Before EAC went live in November 2023, a unit could offer only one service per block, chosen
+here on the previous day's prices.
 </div></div>
 
 <div class="step"><div class="step-inner">
@@ -96,14 +111,14 @@ it flows toward whichever stream looks better that block without all-or-nothing 
 
 ### Stage 2 — dispatch under constraint
 
-Within the arbitrage allocation, a **linear programme** plans charge and discharge at
-half-hourly resolution over a rolling 48-hour horizon, re-solving every period and
-executing only the first — model predictive control.
+With the offers set, a **linear programme** plans charge and discharge at half-hourly
+resolution over a rolling 48-hour horizon, re-solving every period and executing only the
+first — model predictive control.
 
-The state-of-charge trace shows the result. The shaded band is the **[10%, 90%] FR
-feasibility constraint**, enforced as a hard bound: the battery must pre-position its SoC
-to honour tomorrow's commitments, which is why it sometimes charges when prices are not
-obviously attractive.
+The shaded band is the state-of-charge range the day's contracts require. It moves block by
+block with the commitments, and the battery pre-positions to be inside it before each block
+begins. Starting a half-hour outside it counts as unavailability and forfeits that period's
+payment.
 </div></div>
 
 <div class="step"><div class="step-inner">
@@ -111,10 +126,10 @@ obviously attractive.
 
 ### Forecast quality is the variable under test
 
-All three strategies run the *same* dispatch engine. Only the price signal differs:
-**Perfect Foresight** sees actual day-D prices, **Naive** reuses yesterday's, and the
-**ML model** — a Random Forest on lagged prices, generation mix and cyclical time features
-— predicts them from information available at the end of D-1.
+All three strategies run the *same* allocation and dispatch engine. Only the price signal
+differs: **Perfect Foresight** sees actual day-D prices, **Naive** reuses yesterday's, and
+the **ML model** — a Random Forest on lagged prices, generation mix and cyclical time
+features — predicts them from information available at the end of D-1.
 
 Where the traces diverge is the cost of forecast error. The analysis below quantifies it.
 </div></div>
@@ -135,6 +150,8 @@ const dear  = [...dayPrices].sort((a, b) => b.price - a.price).slice(0, 8).map((
 
 const traceFor = (key) => sampleDay.filter((d) => d.strategy === key)
   .map((d) => ({sp: d.sp, soc: d.soc_frac, strategy: STRATEGY_LABELS[key]}));
+const bandFor = (key) => sampleDay.filter((d) => d.strategy === key)
+  .map((d) => ({sp: d.sp, lo: d.soc_min_frac, hi: d.soc_max_frac}));
 
 const spAxis = {label: "Settlement period", ticks: [1, 12, 24, 36, 48], domain: [1, 48]};
 ```
@@ -189,6 +206,9 @@ function buildFigure(s) {
   const traces = s >= 5
     ? ["pf_mpc", "naive_mpc", "ml_mpc"].flatMap(traceFor)
     : traceFor("ml_mpc");
+  // The required range depends on what each strategy offered, so it is only
+  // drawn while a single strategy is on screen.
+  const band = s === 4 ? bandFor("ml_mpc") : [];
 
   return Plot.plot({
     height: 380, marginLeft: 55, x: spAxis,
@@ -196,8 +216,10 @@ function buildFigure(s) {
     color: {legend: s >= 5, domain: Object.values(STRATEGY_LABELS),
             range: ["#4E8A3C", "#C9400A", "#0D7680"]},
     marks: [
-      Plot.rect([{y1: 0.1, y2: 0.9}], {y1: "y1", y2: "y2", fill: "#0D7680", fillOpacity: 0.07}),
-      Plot.ruleY([0.1, 0.9], {stroke: "#0D7680", strokeDasharray: "4 3"}),
+      Plot.areaY(band, {x: "sp", y1: "lo", y2: "hi", curve: "step-after",
+                        fill: "#0D7680", fillOpacity: 0.1}),
+      Plot.line(band, {x: "sp", y: "lo", curve: "step-after", stroke: "#0D7680", strokeDasharray: "4 3"}),
+      Plot.line(band, {x: "sp", y: "hi", curve: "step-after", stroke: "#0D7680", strokeDasharray: "4 3"}),
       Plot.line(traces, {x: "sp", y: "soc",
                          stroke: s >= 5 ? "strategy" : () => "#0D7680", strokeWidth: 2}),
     ],
@@ -220,26 +242,32 @@ function buildFigure(s) {
 ## Controls
 
 ```js
-const powerMw = view(Inputs.range([1, 500], {
+const powerMw = view(Inputs.range([1, MAX_POWER_MW], {
   label: "Asset power (MW)", value: BASE_POWER_MW, step: 1,
 }));
 const strategyPick = view(Inputs.radio(Object.keys(STRATEGY_LABELS), {
   label: "Price signal", value: "pf_mpc", format: (k) => STRATEGY_LABELS[k],
 }));
-const servicePick = view(Inputs.checkbox(ALL_SERVICES, {
-  label: "FR services", value: ALL_SERVICES,
-  format: (s) => `${s} — ${SERVICE_LABELS[s]}`,
+const scenarioPick = view(Inputs.radio(Object.keys(SCENARIO_LABELS), {
+  label: "Markets", value: "full", format: (k) => SCENARIO_LABELS[k],
 }));
-const includeArb = view(Inputs.toggle({label: "Include wholesale arbitrage", value: true}));
 const fromPick = view(Inputs.date({label: "From", value: bounds[0], min: bounds[0], max: bounds[1]}));
 const toPick = view(Inputs.date({label: "To", value: bounds[1], min: bounds[0], max: bounds[1]}));
 ```
+
+<div class="muted">
+Every figure comes from a precomputed run for a ${BASE_POWER_MW} MW / ${BASE_POWER_MW * DURATION_H} MWh
+reference asset and scales linearly with power at fixed duration. That holds while the battery
+is a price-taker, too small for its offers to move clearing prices. The slider stops at
+${MAX_POWER_MW} MW, NESO's Maximum Sell Size for a single product. Which products the battery
+holds is decided by the model under NESO's rules rather than chosen here; the revenue breakdown
+below shows what it held.
+</div>
 
 ```js
 // Revenue scales linearly with power at fixed duration, so scaling the cached monthly
 // table by the power ratio is exact rather than an approximation.
 const scale = powerMw / BASE_POWER_MW;
-const chosen = new Set(servicePick);
 
 // The cached table is monthly, and the cache bounds are mid-month dates
 // (2021-09-16 / 2026-08-17). Comparing a month-start against a mid-month bound
@@ -248,18 +276,25 @@ const fromMonth = d3.utcMonth.floor(fromPick);
 const toMonth = d3.utcMonth.floor(toPick);
 const inRange = (d) => d.month_dt >= fromMonth && d.month_dt <= toMonth;
 
-const monthly = revenueAll
-  .filter((d) => d.strategy === strategyPick && inRange(d))
-  .map((d) => {
-    const row = {month_dt: d.month_dt};
-    for (const s of ALL_SERVICES) row[`${s}_rev`] = chosen.has(s) ? (d[`${s}_rev`] ?? 0) * scale : 0;
-    row.imbalance_revenue_gbp = includeArb ? (d.imbalance_revenue_gbp ?? 0) * scale : 0;
-    // No arbitrage dispatch means no cycling, so the wear cost goes with it
-    row.cycling_cost_gbp = includeArb ? (d.cycling_cost_gbp ?? 0) * scale : 0;
-    row.mwh_cycled = includeArb ? (d.mwh_cycled ?? 0) * scale : 0;
-    return row;
-  })
-  .sort((a, b) => a.month_dt - b.month_dt);
+const COLUMNS = [...ALL_SERVICES.map((s) => `${s}_rev`),
+                 "imbalance_revenue_gbp", "cycling_cost_gbp", "mwh_cycled"];
+
+// Each scenario is its own backtest. FR-only needs no price forecast, so one
+// run (strategy "all") serves every price signal.
+function rowsFor(strategy, scenario) {
+  const source = scenario === "full"
+    ? revenueAll.filter((d) => d.strategy === strategy)
+    : scenarioAll.filter((d) => d.scenario === scenario
+                              && (d.strategy === strategy || d.strategy === "all"));
+  return source
+    .filter(inRange)
+    .map((d) => {
+      const row = {month_dt: d.month_dt};
+      for (const c of COLUMNS) row[c] = (d[c] ?? 0) * scale;
+      return row;
+    })
+    .sort((a, b) => a.month_dt - b.month_dt);
+}
 
 function summarise(rows, mw) {
   if (!rows.length) return null;
@@ -285,7 +320,9 @@ function summarise(rows, mw) {
   };
 }
 
+const monthly = rowsFor(strategyPick, scenarioPick);
 const summary = summarise(monthly, powerMw);
+const breachPeriods = manifest[strategyPick].summary.soe_breach_periods;
 ```
 
 ## Results
@@ -298,8 +335,18 @@ const summary = summarise(monthly, powerMw);
 </div>
 
 Modelling a **${powerMw} MW / ${(powerMw * DURATION_H).toFixed(0)} MWh** asset
-(${DURATION_H}h duration, ${(EFF * 100).toFixed(0)}% round-trip efficiency) using
-**${STRATEGY_LABELS[strategyPick]}** price signals and MPC dispatch over a rolling 48-hour horizon.
+(${DURATION_H}h duration, ${(EFF * 100).toFixed(0)}% round-trip efficiency) in
+**${SCENARIO_LABELS[scenarioPick]}**, using **${STRATEGY_LABELS[strategyPick]}** price signals
+and MPC dispatch over a rolling 48-hour horizon.
+
+```js
+if (breachPeriods != null) display(html`<div class="muted">
+Over the full backtest, this strategy started ${d3.format(",")(breachPeriods)} committed
+half-hour${breachPeriods === 1 ? "" : "s"} outside the state-of-charge range its contracts
+required. Each counts as unavailability and forfeits that period's payment, which is already
+deducted above.
+</div>`);
+```
 
 ### Monthly revenue stack
 
@@ -354,7 +401,9 @@ const socWeek = (() => {
       const mean = d3.sum(v, (d) => d.total) / n;
       const variance = Math.max(d3.sum(v, (d) => d.total_sq) / n - mean * mean, 0);
       const sd = Math.sqrt(variance);
-      return {mean, lo: Math.max(mean - sd, 0), hi: Math.min(mean + sd, 1)};
+      return {mean, lo: Math.max(mean - sd, 0), hi: Math.min(mean + sd, 1),
+              reqLo: d3.sum(v, (d) => d.min_total) / n,
+              reqHi: d3.sum(v, (d) => d.max_total) / n};
     }, (d) => d.period_in_week),
     ([p, s]) => ({period: p, ...s})
   ).sort((a, b) => a.period - b.period);
@@ -362,30 +411,38 @@ const socWeek = (() => {
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-display(Plot.plot({
+display(scenarioPick !== "full"
+  ? html`<i>The state-of-charge profile is shown for the FR + arbitrage run, where dispatch is simulated.</i>`
+  : Plot.plot({
   height: 340, marginLeft: 55, marginRight: 55,
   x: {label: "Day of week", ticks: d3.range(7).map((d) => d * 48),
       tickFormat: (d) => DAYS[d / 48], domain: [0, 336]},
   y: {label: "State of charge", domain: [0, 1], tickFormat: ".0%", grid: true},
   marks: [
-    // FR feasibility band — a hard constraint in the MPC LP
-    Plot.rect([{y1: 0.1, y2: 0.9}], {y1: "y1", y2: "y2", fill: "#0D7680", fillOpacity: 0.08}),
-    Plot.ruleY([0.1, 0.9], {stroke: "#0D7680", strokeDasharray: "4 3", strokeWidth: 1}),
+    // Average range the FR contracts required at each point in the week
+    Plot.areaY(socWeek, {x: "period", y1: "reqLo", y2: "reqHi", fill: "#0D7680", fillOpacity: 0.08}),
+    Plot.line(socWeek, {x: "period", y: "reqLo", stroke: "#0D7680", strokeDasharray: "4 3", strokeWidth: 1}),
+    Plot.line(socWeek, {x: "period", y: "reqHi", stroke: "#0D7680", strokeDasharray: "4 3", strokeWidth: 1}),
     Plot.ruleX(d3.range(1, 7).map((d) => d * 48), {stroke: "grey", strokeOpacity: 0.3, strokeDasharray: "2 3"}),
     Plot.areaY(socWeek, {x: "period", y1: "lo", y2: "hi", fill: "#C9400A", fillOpacity: 0.12}),
     Plot.line(socWeek, {x: "period", y: "mean", stroke: "#C9400A", strokeWidth: 2}),
     Plot.tip(socWeek, Plot.pointerX({
       x: "period", y: "mean",
-      title: (d) => `${DAYS[Math.floor(d.period / 48)]} SP ${(d.period % 48) + 1}\nmean ${(d.mean * 100).toFixed(1)}%\n±1 sd ${(d.lo * 100).toFixed(1)}–${(d.hi * 100).toFixed(1)}%`,
+      title: (d) => `${DAYS[Math.floor(d.period / 48)]} SP ${(d.period % 48) + 1}\nmean ${(d.mean * 100).toFixed(1)}%\n±1 sd ${(d.lo * 100).toFixed(1)}–${(d.hi * 100).toFixed(1)}%\nrequired ${(d.reqLo * 100).toFixed(0)}–${(d.reqHi * 100).toFixed(0)}% (avg)`,
     })),
   ],
 }));
 ```
 
-Mean state-of-charge at each half-hourly slot across the backtest, folded onto an average
-week. The orange band is ±1 standard deviation across all weeks; the teal band marks the
-**[10%, 90%] FR feasibility constraint** enforced as a hard bound in the rolling LP. The
-pre-conditioning behaviour driven by the next block's FR obligations is visible in the shape.
+Mean state of charge at each half-hour of an average week across the selected months. The
+orange band is ±1 standard deviation across weeks. The teal band is the average range the
+battery's FR contracts required at that point in the week: at least the Low products'
+response energy in store, and at least the High products' as headroom. Individual days
+require narrower, shifting ranges that averaging smooths out.
+
+These traces leave out the energy the battery would deliver when its FR contracts are called
+on, which the model does not yet simulate. A real battery, especially one holding Dynamic
+Regulation, would move around far more than they suggest.
 
 ### Cumulative revenue by stream
 
@@ -432,8 +489,8 @@ display(summary ? Inputs.table(
 
 ## Strategy comparison
 
-Three price-signal strategies run the same MPC dispatch engine on the same asset, isolating
-how much *forecast quality* — not the optimiser — affects operational revenue.
+Three price-signal strategies run the same allocation and dispatch engine on the same asset,
+isolating how much *forecast quality* — not the optimiser — affects operational revenue.
 
 | Strategy | Price signal | What it represents |
 |---|---|---|
@@ -444,20 +501,9 @@ how much *forecast quality* — not the optimiser — affects operational revenu
 ```js
 // Apply the identical filter and scaling to all three strategies so the comparison
 // reflects whatever selection is active above.
-const allSummaries = Object.fromEntries(Object.keys(STRATEGY_LABELS).map((key) => {
-  const rows = revenueAll
-    .filter((d) => d.strategy === key && inRange(d))
-    .map((d) => {
-      const row = {month_dt: d.month_dt};
-      for (const s of ALL_SERVICES) row[`${s}_rev`] = chosen.has(s) ? (d[`${s}_rev`] ?? 0) * scale : 0;
-      row.imbalance_revenue_gbp = includeArb ? (d.imbalance_revenue_gbp ?? 0) * scale : 0;
-      row.cycling_cost_gbp = includeArb ? (d.cycling_cost_gbp ?? 0) * scale : 0;
-      row.mwh_cycled = includeArb ? (d.mwh_cycled ?? 0) * scale : 0;
-      return row;
-    })
-    .sort((a, b) => a.month_dt - b.month_dt);
-  return [key, summarise(rows, powerMw)];
-}));
+const allSummaries = Object.fromEntries(Object.keys(STRATEGY_LABELS).map((key) =>
+  [key, summarise(rowsFor(key, scenarioPick), powerMw)]
+));
 
 const pf = allSummaries.pf_mpc, nv = allSummaries.naive_mpc, ml = allSummaries.ml_mpc;
 // Mirrors compute_revenue_gap() in price_forecast.py: the denominator is the
@@ -580,15 +626,15 @@ display(summary && summary.mwhCycled > 0 ? Inputs.table(
       "": c === BASE_CYCLING ? "← base case" : "",
     };
   }), {rows: 8}
-) : html`<i>Enable wholesale arbitrage to see cycling sensitivity — with no arbitrage dispatch there is no cycling.</i>`);
+) : html`<i>Choose a scenario with arbitrage to see cycling sensitivity — without arbitrage dispatch there is no cycling.</i>`);
 ```
 
 ```js
-display(summary && summary.mwhCycled > 0 ? html`<div class="muted">
+if (summary && summary.mwhCycled > 0) display(html`<div class="muted">
 Gross revenue is held constant; only the cycling deduction changes. Total cycled across
 this selection: ${d3.format(",.0f")(summary.mwhCycled)} MWh
 (${d3.format(",.0f")(summary.mwhCycled / summary.years / powerMw)} MWh/MW/yr annualised).
-</div>` : html``);
+</div>`);
 ```
 
 ### Service mix
@@ -597,19 +643,12 @@ How the revenue stack changes depending on which markets the asset participates 
 
 ```js
 const mixRows = [
-  ["FR only (no arbitrage)", true, false],
-  ["Arbitrage only (no FR)", false, true],
-  ["Full stack", true, true],
-].map(([label, withFr, withArb]) => {
-  const rows = monthly.map((d) => {
-    const r = {month_dt: d.month_dt};
-    for (const s of ALL_SERVICES) r[`${s}_rev`] = withFr ? d[`${s}_rev`] : 0;
-    r.imbalance_revenue_gbp = withArb ? d.imbalance_revenue_gbp : 0;
-    r.cycling_cost_gbp = withArb ? d.cycling_cost_gbp : 0;
-    r.mwh_cycled = withArb ? d.mwh_cycled : 0;
-    return r;
-  });
-  const s = summarise(rows, powerMw);
+  ["FR + arbitrage", "full"],
+  ["FR only", "fr_only"],
+  ["Arbitrage only", "arb_only"],
+  ["FR only, pre-EAC blocks held in DC", "fr_only_always_dc"],
+].map(([label, key]) => {
+  const s = summarise(rowsFor(strategyPick, key), powerMw);
   return s ? {
     Scenario: label,
     "Total net revenue": gbp(s.net),
@@ -618,8 +657,17 @@ const mixRows = [
   } : null;
 }).filter(Boolean);
 
-display(Inputs.table(mixRows, {rows: 4, width: {Scenario: 200}}));
+display(Inputs.table(mixRows, {rows: 4, width: {Scenario: 240}}));
 ```
 
-Arbitrage-only removes all FR availability fees; cycling cost is zeroed in FR-only mode,
-since in this model cycling is incurred only through arbitrage dispatch.
+Each scenario is its own backtest rather than the full stack with a stream removed: without
+arbitrage the allocation gives FR every MW it can use, and without FR the battery trades its
+whole rating. The FR-only runs assume the battery repositions its state of charge between
+blocks at no energy cost. The last row holds every block before November 2023 in DC, which
+is what most of the 2022–23 fleet actually did; the main run picks each block's service on
+the previous day's prices. See the [methodology](./methodology#pre-eac-service-choice) for
+the evidence behind both.
+
+The price signal matters here too. FR is offered at the arbitrage value the forecast
+expects, so a forecast that overstates arbitrage holds back capacity that trading then fails
+to earn back. With a weak forecast, the full stack can earn less than FR alone.
