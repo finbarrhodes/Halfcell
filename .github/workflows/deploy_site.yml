@@ -21,13 +21,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The site's data loaders are Python and read the committed parquets, so
       # the build runs here rather than in Cloudflare's build image — pandas and
       # pyarrow are awkward to provision there, and this keeps the data pipeline
       # and the site build on the same runtime.
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -35,7 +35,7 @@ jobs:
       - name: Install Python dependencies
         run: pip install pandas pyarrow matplotlib
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: 'npm'
@@ -76,8 +76,10 @@ jobs:
             exit 1
           fi
 
+      # wrangler-action v4 changed its default Wrangler to v4. `pages deploy` is
+      # unchanged, and nothing here pins a wrangler version or reads its output.
       - name: Deploy to Cloudflare Pages
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
