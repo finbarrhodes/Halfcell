@@ -10,6 +10,7 @@ curve through to the dispatch the model settles on. Scroll, or select any step d
 
 ```js
 import {SERVICE_COLOURS, SERVICE_LABELS, STRATEGY_LABELS, gbp} from "./components/theme.js";
+import {choiceGroup, controlPanel, dateRange, slider} from "./components/controls.js";
 
 const manifest = await FileAttachment("data/manifest.json").json();
 const revenueAll = (await FileAttachment("data/revenue-monthly.parquet").parquet())
@@ -247,23 +248,42 @@ function buildFigure(s) {
 
 ## The model in full
 
-## Controls
+Everything below runs that same engine across the whole backtest window rather than one day.
+Set the asset, the price signal it trades on and the markets it may bid into; every figure on
+the rest of the page follows the selection.
 
 ```js
-const powerMw = view(Inputs.range([1, MAX_POWER_MW], {
-  label: "Asset power (MW)", value: BASE_POWER_MW, step: 1,
-}));
-const strategyPick = view(Inputs.radio(Object.keys(STRATEGY_LABELS), {
-  label: "Price signal", value: "pf_mpc", format: (k) => STRATEGY_LABELS[k],
-}));
-const scenarioPick = view(Inputs.radio(Object.keys(SCENARIO_LABELS), {
-  label: "Markets", value: "full", format: (k) => SCENARIO_LABELS[k],
-}));
-const fromPick = view(Inputs.date({label: "From", value: bounds[0], min: bounds[0], max: bounds[1]}));
-const toPick = view(Inputs.date({label: "To", value: bounds[1], min: bounds[0], max: bounds[1]}));
+// Built here and observed in the next block rather than through view(), which
+// would display each control where its cell sits — five stacked form rows
+// instead of one panel.
+const powerInput = slider({
+  min: 1, max: MAX_POWER_MW, step: 1, value: BASE_POWER_MW, unit: "MW", label: "Asset power",
+});
+const strategyInput = choiceGroup(Object.keys(STRATEGY_LABELS), {
+  value: "ml_mpc", format: (k) => STRATEGY_LABELS[k], label: "Price signal",
+});
+const scenarioInput = choiceGroup(Object.keys(SCENARIO_LABELS), {
+  value: "full", format: (k) => SCENARIO_LABELS[k], label: "Markets",
+});
+const dateInputs = dateRange({value: bounds, min: bounds[0], max: bounds[1]});
+
+display(controlPanel([
+  {label: "Asset power", input: powerInput},
+  {label: "Price signal", input: strategyInput},
+  {label: "Markets", input: scenarioInput},
+  {label: "Date range", input: dateInputs},
+], {title: "Controls"}));
 ```
 
-<div class="muted">
+```js
+const powerMw = Generators.input(powerInput);
+const strategyPick = Generators.input(strategyInput);
+const scenarioPick = Generators.input(scenarioInput);
+const fromPick = Generators.input(dateInputs.from);
+const toPick = Generators.input(dateInputs.to);
+```
+
+<div class="muted controls-note">
 Every figure comes from a precomputed run for a ${BASE_POWER_MW} MW / ${BASE_POWER_MW * DURATION_H} MWh
 reference asset and scales linearly with power at fixed duration. That holds while the battery
 is a price-taker, too small for its offers to move clearing prices. The slider stops at

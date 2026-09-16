@@ -405,6 +405,147 @@ form.oi input[type="checkbox"], form.oi input[type="radio"] { accent-color: var(
   .choice { transition: none; }
 }
 
+/* A panel of labelled controls (controlPanel), so a page's inputs read as one
+   instrument rather than a stack of loose form rows */
+.controls {
+  background: var(--hc-paper-deep);
+  border: 1px solid var(--hc-rule);
+  border-radius: 3px;
+  padding: 1.1rem 1.3rem 1.3rem;
+  margin: 1.5rem 0 0;
+}
+
+.controls-title {
+  font: 600 0.72rem/1 var(--sans-serif);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--hc-ink-soft);
+  padding-bottom: 0.85rem;
+  margin-bottom: 1.15rem;
+  border-bottom: 1px solid var(--hc-rule);
+}
+
+/* Two columns rather than auto-fit: the content column is wide enough for three,
+   which would leave a fourth field stranded on its own row. */
+.controls-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.3rem 2.5rem;
+}
+
+@media (min-width: 720px) {
+  .controls-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.control-field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.control-label {
+  font: 600 0.72rem/1 var(--sans-serif);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--hc-ink-faint);
+}
+
+/* The segmented control's own ground is the panel ground, so on the panel it
+   would vanish. Drop it back to paper to keep the inset reading. */
+.controls .choice-group { background: var(--hc-paper); }
+
+/* The note under the panel is a <div>, which Framework leaves at full column
+   width — at prose size that is far past a comfortable measure. */
+.controls-note {
+  max-width: var(--hc-measure);
+  margin-top: 0.9rem;
+}
+
+/* Slider (slider): the track leads, the typed box doubles as the readout */
+.control-slider {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  width: 100%;
+  max-width: 22rem;
+}
+
+/* Framework's global.css pins every text-ish input and the range to a flat
+   240px with `input[type=…]`, which outweighs a single class. Both rules here
+   are doubled up so the slider can take the room the readout does not. */
+.control-slider input[type="range"] {
+  flex: 1 1 0;
+  width: auto;
+  min-width: 6rem;
+  margin: 0;
+  accent-color: var(--hc-teal);
+  cursor: pointer;
+}
+.control-slider input[type="range"]:focus-visible {
+  outline: 2px solid var(--hc-orange);
+  outline-offset: 3px;
+}
+
+.control-number-box {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  flex: 0 0 auto;
+  background: var(--hc-paper);
+  border: 1px solid var(--hc-rule);
+  border-radius: 3px;
+  padding: 0.3rem 0.5rem;
+}
+.control-number-box:focus-within { border-color: var(--hc-teal); }
+
+.control-slider .control-number {
+  width: 3.5ch;
+  padding: 0;
+  border: none;
+  background: transparent;
+  text-align: right;
+  font: 600 0.9rem/1.2 var(--sans-serif);
+  font-variant-numeric: tabular-nums;
+  color: var(--hc-ink);
+  -moz-appearance: textfield;
+}
+/* Spinners would put two more ways to change the value next to a slider */
+.control-number::-webkit-outer-spin-button,
+.control-number::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.control-number:focus { outline: none; }
+
+.control-unit {
+  font: 600 0.72rem/1 var(--sans-serif);
+  letter-spacing: 0.04em;
+  color: var(--hc-ink-soft);
+}
+
+/* Date range (dateRange): two fields joined by a dash, read as one span */
+.control-dates {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.control-date-sep { color: var(--hc-ink-faint); }
+
+.control-date input {
+  font: 500 0.85rem/1.2 var(--sans-serif);
+  font-variant-numeric: tabular-nums;
+  color: var(--hc-ink);
+  background: var(--hc-paper);
+  border: 1px solid var(--hc-rule);
+  border-radius: 3px;
+  padding: 0.3rem 0.45rem;
+}
+.control-date input:focus-visible {
+  border-color: var(--hc-teal);
+  outline: 2px solid var(--hc-orange);
+  outline-offset: 1px;
+}
+
 /* A caption that belongs to one card, so it wraps with its own chart rather
    than running across a grid at prose measure */
 .card-caption {
