@@ -59,11 +59,14 @@ jobs:
   refresh:
     name: Collect, extend, rebuild cache
     runs-on: ubuntu-latest
-    # precompute_cache.py measured ~38 min locally (2026-09-14, after the FR-only and
-    # arbitrage-only scenario runs were added; ~30 min before), and a hosted runner
-    # is typically slower than a dev machine at single-threaded numeric work. The
-    # backtest also lengthens every refresh, because DEFAULT_TEST_START is fixed and
-    # new data accrues to the test period. 60 was too tight on both counts.
+    # precompute_cache.py measured ~63 min locally on 2026-09-15, once response
+    # delivery and the Reserved Capacity flows in the dispatch LP were added (~38 min
+    # on 2026-09-14 before them, ~30 min before the scenario runs). Two changes since
+    # pull the other way: the always-DC scenario is gone, leaving seven dispatch runs,
+    # and horizons holding no reserve compile without those flows (3.2 vs 4.6 ms per
+    # solve). A hosted runner is typically slower than a dev machine at single-threaded
+    # numeric work, and the backtest lengthens every refresh, because DEFAULT_TEST_START
+    # is fixed and new data accrues to the test period. 60 was too tight on both counts.
     timeout-minutes: 120
 
     steps:
@@ -97,6 +100,18 @@ jobs:
           python src/data_collection/collect_data.py \
             --start "${{ steps.window.outputs.start }}" \
             --end   "${{ steps.window.outputs.end }}"
+
+      # NESO publishes one-second frequency as one file per month, a week or two
+      # after the month ends, so the window's months cover the latest file and
+      # any revision to the one before. The runner starts with no raw files, so
+      # this fetches two or three files of ~75 MB each. The collector retries and
+      # exits non-zero only if a file still fails, which stops the refresh rather
+      # than letting the delivery table fall silently behind.
+      - name: Collect recent system frequency
+        run: |
+          START="${{ steps.window.outputs.start }}"
+          END="${{ steps.window.outputs.end }}"
+          python -m src.data_collection.frequency_collector --start "${START:0:7}" --end "${END:0:7}"
 
       - name: Merge into the committed parquets
         run: python scripts/prepare_data.py --append
@@ -144,7 +159,7 @@ jobs:
       - name: Check the REPD fleet series has not drifted
         run: python scripts/check_repd_freshness.py
 
-      # The long pole: three MPC backtests, ~30 min and growing. See the note on
+      # The long pole: seven dispatch runs, ~60 min and growing. See the note on
       # timeout-minutes above.
       - name: Rebuild the backtest cache
         run: python scripts/precompute_cache.py

@@ -1,5 +1,5 @@
 """
-NESO Dynamic Response rules, checked against NESO's own published examples.
+NESO Dynamic Services rules, checked against NESO's own published examples.
 
 Where a test reproduces a figure or worked example from a NESO document, the
 docstring names it, so a failure points straight at the source to re-read.
@@ -7,6 +7,7 @@ docstring names it, so a failure points straight at the source to re-read.
 import pytest
 
 from src.analysis.neso_rules import (
+    minimum_soe_requirement,
     DELIVERY_DURATION_H,
     ENERGY_RECOVERY_SHARE,
     FAMILIES,
@@ -164,3 +165,24 @@ def test_reserve_rule_starts_when_codified():
 def test_rules_tighten_in_order():
     """Splitting arrived with EAC a year before the reserve became binding."""
     assert EAC_GO_LIVE < RESERVE_RULE_EFFECTIVE
+
+
+# --- Minimum State of Energy Requirement (Service Terms 6.11) ------------------------------
+
+def test_service_terms_worked_example():
+    """50 MWh volume, 2 MWh delivered in the first period: 48 until the sixth period restores it."""
+    assert minimum_soe_requirement(50.0, [2, 0, 0, 0, 0, 0, 0, 0]) == [50, 48, 48, 48, 48, 50, 50, 50]
+
+
+def test_recovery_is_capped_at_a_fifth_of_the_volume_per_period():
+    assert minimum_soe_requirement(50.0, [30, 0, 0, 0, 0, 0, 0, 0, 0]) == [50, 20, 20, 20, 20, 30, 40, 50, 50]
+
+
+def test_an_adjustment_is_not_counted_twice_while_the_shortfall_persists():
+    requirement = minimum_soe_requirement(40.0, [4, 0, 0, 0, 0, 0, 0, 0])
+    assert requirement[5] == 40.0 and max(requirement) == 40.0
+
+
+def test_continued_delivery_keeps_lowering_the_requirement():
+    requirement = minimum_soe_requirement(40.0, [1, 1, 1, 0])
+    assert requirement == [40, 39, 38, 37]

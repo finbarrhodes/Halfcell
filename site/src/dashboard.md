@@ -127,8 +127,11 @@ There are three services, split by how fast and how long they must respond:
 
 <p class="muted">¹ Since 15 November 2024, each MW contracted also keeps a share of the
 battery's power free on the opposite side for recovering energy: a battery selling 10 MW of
-DR Low must keep 4 MW of charging capacity spare. Response times and delivery windows are
-from NESO's <a href="https://www.neso.energy/document/384606/download">Response Service Terms</a>.</p>
+DR Low must keep 4 MW of charging capacity spare. The reserve shares come from the
+<a href="https://www.neso.energy/document/378246/download">Response Services Procurement
+Rules</a> (Schedule 1, &ldquo;Reserved Capacity&rdquo;); response times and delivery windows
+from NESO's <a href="https://www.neso.energy/document/384606/download">Response Service
+Terms</a>.</p>
 
 Each runs as two separate auctions: **High**, which responds to *rising* frequency by
 charging, and **Low**, which responds to *falling* frequency by discharging. Auctions clear
@@ -232,8 +235,8 @@ absorb power has generally been easier to find than spare capacity to inject it.
 EAC allowed prices below zero, and the High products went there almost immediately. Since
 go-live, DR High has cleared negative in ${eacNegative.DRH}% of blocks and DM High in
 ${eacNegative.DMH}%, while the Low products almost never have. A provider can offer DR High and
-DR Low in one order, accepted on its combined value, so a negative High leg can sit inside a
-package that still pays.
+DR Low in one order, accepted on its combined value. And DR High delivers free energy the
+battery can sell on, which is worth paying a little to hold.
 </div></div>
 
 </div>
@@ -457,7 +460,8 @@ month the Enduring Auction Capability (EAC) went live: no DR High block cleared 
 October 2023, and 87% did in November. The legacy auctions never cleared below zero. EAC
 allows negative prices, and lets a provider offer several products in one order at a single
 price, accepted when the order as a whole is in the money, so a DR High leg can clear
-negative inside a package that still pays.</p>
+negative inside a package that still pays. It can pay on its own too: energy a battery
+absorbs while delivering DR High is neither paid for nor charged, so it can be sold on.</p>
 <p>High and Low remain separate products with separate prices, and nothing requires a
 provider to hold both. The battery links them physically instead: each MW of DR Low needs an
 hour of energy in store, each MW of DR High an hour of headroom, and since November 2024 each

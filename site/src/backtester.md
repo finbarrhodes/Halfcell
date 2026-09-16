@@ -83,6 +83,11 @@ Each contract constrains the asset. A **Low** contract needs enough energy in st
 discharge for its full delivery window — 15 minutes for DC, 30 for DM, 60 for DR — and a
 **High** contract needs the same again as headroom to absorb. The power a contract uses is
 also unavailable for trading.
+
+And contracts get called on. As frequency wanders, a battery holding DR moves energy in and
+out almost all the time. That energy is neither paid for nor charged, so whatever a Low
+contract gives away has to be bought back, and whatever a High contract absorbs can be sold
+on.
 </div></div>
 
 <div class="step"><div class="step-inner">
@@ -92,15 +97,17 @@ also unavailable for trading.
 
 For each of the six EFA blocks, the model offers every product at its opportunity cost: a
 **shadow arbitrage value**, what that MW would earn trading the block, estimated from the
-price forecast. It keeps the combination that earns most at the clearing prices, within
-NESO's rules:
+price forecast, plus the expected cost of the energy the product will deliver. It keeps the
+combination that earns most at the clearing prices, within NESO's rules:
 
 - the MW it sells in each direction, plus the share NESO reserves on the other side for
-  recharging, fit within the battery's power rating
+  recovering delivered energy, fit within the battery's power rating
 - there is enough energy in store to deliver every Low contract for its full window, and
   enough empty space to absorb every High one
 - starting from how full the battery actually is at 14:00, it can get into the charge range
   each block needs in time, using only the power its contracts leave free
+- it holds no more than a fifth of what any auction cleared, small enough that its own
+  offers would not have set the price
 
 Before EAC went live in November 2023, a unit could offer only one service per block, chosen
 here on the previous day's prices.
@@ -115,10 +122,11 @@ With the offers set, a **linear programme** plans charge and discharge at half-h
 resolution over a rolling 48-hour horizon, re-solving every period and executing only the
 first — model predictive control.
 
-The shaded band is the state-of-charge range the day's contracts require. It moves block by
-block with the commitments, and the battery pre-positions to be inside it before each block
-begins. Starting a half-hour outside it counts as unavailability and forfeits that period's
-payment.
+The shaded band is the range NESO requires: enough energy in store for the Low contracts
+and enough headroom for the High ones. Each block starts at the full amount. Delivering
+response lowers it, it climbs back by at most a fifth each half-hour, and the battery trades
+to keep up. Starting a half-hour outside it counts as unavailability and forfeits that
+period's payment.
 </div></div>
 
 <div class="step"><div class="step-inner">
@@ -276,8 +284,9 @@ const fromMonth = d3.utcMonth.floor(fromPick);
 const toMonth = d3.utcMonth.floor(toPick);
 const inRange = (d) => d.month_dt >= fromMonth && d.month_dt <= toMonth;
 
-const COLUMNS = [...ALL_SERVICES.map((s) => `${s}_rev`),
-                 "imbalance_revenue_gbp", "cycling_cost_gbp", "mwh_cycled"];
+const COLUMNS = [...ALL_SERVICES.map((s) => `${s}_rev`), "imbalance_revenue_gbp",
+                 "cycling_cost_gbp", "mwh_cycled", "delivery_mwh", "delivery_cycling_cost_gbp"];
+const TRADING = "Wholesale trading";
 
 // Each scenario is its own backtest. FR-only needs no price forecast, so one
 // run (strategy "all") serves every price signal.
@@ -301,20 +310,21 @@ function summarise(rows, mw) {
   const svc = {};
   for (const s of ALL_SERVICES) svc[s] = d3.sum(rows, (d) => d[`${s}_rev`]);
   const arb = d3.sum(rows, (d) => d.imbalance_revenue_gbp);
-  const cyc = d3.sum(rows, (d) => d.cycling_cost_gbp);
+  // Wear on every MWh discharged: trades and energy delivered under FR contracts alike
+  const cyc = d3.sum(rows, (d) => d.cycling_cost_gbp + d.delivery_cycling_cost_gbp);
   const gross = d3.sum(Object.values(svc)) + arb;
   const net = gross - cyc;
   const years = rows.length / 12;
   // Negative streams are kept: FR services can clear below zero, and filtering
   // them out would hide that from the breakdown table and the revenue stack.
   const breakdown = Object.fromEntries(
-    Object.entries({...svc, Arbitrage: arb}).filter(([, v]) => v !== 0)
+    Object.entries({...svc, [TRADING]: arb}).filter(([, v]) => v !== 0)
   );
   return {
     gross, cyc, net, years,
     annualised: years > 0 ? net / years : 0,
     perMw: years > 0 && mw > 0 ? net / years / mw : 0,
-    mwhCycled: d3.sum(rows, (d) => d.mwh_cycled),
+    mwhCycled: d3.sum(rows, (d) => d.mwh_cycled + d.delivery_mwh),
     breakdown,
     top: d3.greatest(Object.entries(breakdown), (d) => d[1])?.[0] ?? "—",
   };
@@ -352,20 +362,20 @@ deducted above.
 
 ```js
 const streams = [...ALL_SERVICES.map((s) => ({key: `${s}_rev`, label: s})),
-                 {key: "imbalance_revenue_gbp", label: "Arbitrage"}];
+                 {key: "imbalance_revenue_gbp", label: TRADING}];
 
 const stacked = monthly.flatMap((d) => [
   ...streams
     .filter((s) => (d[s.key] ?? 0) !== 0)
     .map((s) => ({month: d.month_dt, stream: SERVICE_LABELS[s.label] ?? s.label,
                   colourKey: s.label, value: d[s.key] / 1e3})),
-  ...(d.cycling_cost_gbp > 0
+  ...(d.cycling_cost_gbp + d.delivery_cycling_cost_gbp > 0
     ? [{month: d.month_dt, stream: "Cycling wear cost", colourKey: "Cycling cost",
-        value: -d.cycling_cost_gbp / 1e3}]
+        value: -(d.cycling_cost_gbp + d.delivery_cycling_cost_gbp) / 1e3}]
     : []),
 ]);
 
-const streamDomain = [...ALL_SERVICES.map((s) => SERVICE_LABELS[s]), "Arbitrage", "Cycling wear cost"];
+const streamDomain = [...ALL_SERVICES.map((s) => SERVICE_LABELS[s]), TRADING, "Cycling wear cost"];
 const streamRange = [...ALL_SERVICES.map((s) => SERVICE_COLOURS[s]),
                      SERVICE_COLOURS.Arbitrage, SERVICE_COLOURS["Cycling cost"]];
 
@@ -440,9 +450,10 @@ battery's FR contracts required at that point in the week: at least the Low prod
 response energy in store, and at least the High products' as headroom. Individual days
 require narrower, shifting ranges that averaging smooths out.
 
-These traces leave out the energy the battery would deliver when its FR contracts are called
-on, which the model does not yet simulate. A real battery, especially one holding Dynamic
-Regulation, would move around far more than they suggest.
+The traces include the energy the battery delivers when its contracts are called on, worked
+out from GB frequency second by second, and the trades it makes to recover that energy.
+Delivery lowers the requirement as it happens, so the teal band dips where contracts are
+called on most and climbs back as the battery recovers.
 
 ### Cumulative revenue by stream
 
@@ -513,8 +524,8 @@ const pf = allSummaries.pf_mpc, nv = allSummaries.naive_mpc, ml = allSummaries.m
 const foresightDenom = pf && nv ? pf.net - nv.net : 0;
 const foresightRatio = pf && nv && ml && Math.abs(foresightDenom) >= 1
   ? (ml.net - nv.net) / foresightDenom : null;
-const arbRatio = pf?.breakdown.Arbitrage
-  ? (ml?.breakdown.Arbitrage ?? 0) / pf.breakdown.Arbitrage : null;
+const arbRatio = pf?.breakdown[TRADING]
+  ? (ml?.breakdown[TRADING] ?? 0) / pf.breakdown[TRADING] : null;
 ```
 
 <div class="grid grid-cols-2">
@@ -554,7 +565,7 @@ display(Inputs.table(
     "Total net": gbp(s.net),
     "Annualised": gbp(s.annualised),
     "£k / MW / yr": (s.perMw / 1e3).toFixed(1),
-    "Arbitrage": gbp(s.breakdown.Arbitrage ?? 0),
+    [TRADING]: gbp(s.breakdown[TRADING] ?? 0),
     "Cycling cost": gbp(s.cyc),
     "MWh cycled": d3.format(",.0f")(s.mwhCycled),
   })),
@@ -626,7 +637,7 @@ display(summary && summary.mwhCycled > 0 ? Inputs.table(
       "": c === BASE_CYCLING ? "← base case" : "",
     };
   }), {rows: 8}
-) : html`<i>Choose a scenario with arbitrage to see cycling sensitivity — without arbitrage dispatch there is no cycling.</i>`);
+) : html`<i>No energy was cycled in this selection.</i>`);
 ```
 
 ```js
@@ -646,7 +657,6 @@ const mixRows = [
   ["FR + arbitrage", "full"],
   ["FR only", "fr_only"],
   ["Arbitrage only", "arb_only"],
-  ["FR only, pre-EAC blocks held in DC", "fr_only_always_dc"],
 ].map(([label, key]) => {
   const s = summarise(rowsFor(strategyPick, key), powerMw);
   return s ? {
@@ -657,13 +667,13 @@ const mixRows = [
   } : null;
 }).filter(Boolean);
 
-display(Inputs.table(mixRows, {rows: 4, width: {Scenario: 240}}));
+display(Inputs.table(mixRows, {rows: 3, width: {Scenario: 240}}));
 ```
 
 Each scenario is its own backtest rather than the full stack with a stream removed: without
 arbitrage the allocation gives FR every MW it can use, and without FR the battery trades its
-whole rating. The FR-only runs assume the battery repositions its state of charge between
-blocks at no energy cost. The last row holds every block before November 2023 in DC, which
+whole rating. FR only is a site with no interest in wholesale arbitrage: it trades only to
+recover the energy its contracts deliver, at market prices. The last row holds every block before November 2023 in DC, which
 is what most of the 2022–23 fleet actually did; the main run picks each block's service on
 the previous day's prices. See the [methodology](./methodology#pre-eac-service-choice) for
 the evidence behind both.

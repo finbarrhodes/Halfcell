@@ -309,6 +309,7 @@ def run_forecast_backtest(
     *,
     include_arbitrage: bool = True,
     pre_eac_rule: str = "d1",
+    delivery: pd.DataFrame | None = None,
 ) -> dict:
     """
     Forecast-driven revenue backtest for the 'naive' or 'ml' strategy.
@@ -334,7 +335,9 @@ def run_forecast_backtest(
     initial_soc_frac : starting state of energy as a fraction of energy_mwh (default 0.5)
     horizon          : MPC planning horizon in settlement periods (default 96 = 48h)
     include_arbitrage: False runs the FR-only scenario; no forecast is needed
-    pre_eac_rule     : "d1" (default) or "always_dc" — see revenue_stack.compute_fr_schedule
+    pre_eac_rule     : "d1" — see revenue_stack.compute_fr_schedule
+    delivery         : response delivery table (response_delivery.parquet), or None to leave
+                       response undelivered
 
     Returns
     -------
@@ -359,5 +362,5 @@ def run_forecast_backtest(
     return run_strategy(
         auctions, market_index, battery, forecast_prices_by_date, services, start_date, end_date,
         initial_soc_frac=initial_soc_frac, horizon=horizon,
-        include_arbitrage=include_arbitrage, pre_eac_rule=pre_eac_rule,
+        include_arbitrage=include_arbitrage, pre_eac_rule=pre_eac_rule, delivery=delivery,
     )

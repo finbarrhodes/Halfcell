@@ -34,14 +34,9 @@ RULE = "#E0D3C4"
 SERIES = [("pf_mpc", "Perfect Foresight", GREEN),
           ("ml_mpc", "ML Model", TEAL),
           ("naive_mpc", "Naive (D-1)", ORANGE)]
-SERVICES = ["DCH", "DCL", "DMH", "DML", "DRH", "DRL"]
-
-
 def _cumulative(key):
     df = pd.read_parquet(CACHE / f"{key}.parquet").sort_values("month_dt")
-    gross = df[[f"{s}_rev" for s in SERVICES]].sum(axis=1) + df["imbalance_revenue_gbp"]
-    net = gross - df["cycling_cost_gbp"]
-    return pd.to_datetime(df["month_dt"]), net.cumsum() / 1e6
+    return pd.to_datetime(df["month_dt"]), df["net_revenue"].cumsum() / 1e6
 
 
 def main() -> None:

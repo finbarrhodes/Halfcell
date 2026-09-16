@@ -20,8 +20,8 @@ from src.analysis.neso_rules import (
 P, E, D = 50.0, 100.0, 2.0     # reference battery: 50 MW / 100 MWh
 
 
-def alloc(prices, arb=0.0, *, reserve=True, families=("DC", "DM", "DR"), power=P, energy=E, duration=D):
-    return allocate_block(prices, arb, power, energy, duration, apply_reserve=reserve, families=families)
+def alloc(prices, arb=0.0, *, reserve=True, families=("DC", "DM", "DR"), power=P, energy=E, duration=D, **kw):
+    return allocate_block(prices, arb, power, energy, duration, apply_reserve=reserve, families=families, **kw)
 
 
 # --- Basics ------------------------------------------------------------------
@@ -220,3 +220,25 @@ def test_days_are_neso_feasible_deliverable_and_never_beat_independent_blocks(se
             assert is_feasible(block["q"], P, E, apply_reserve=reserve, tol=1e-5)
             independent = alloc(pr, arb, reserve=reserve)["fr_revenue_gbp"]
             assert block["fr_revenue_gbp"] <= independent + 1e-3 or block["arb_mw"] < P
+
+
+# --- Caps and offer costs ------------------------------------------------------------------
+
+def test_a_cap_limits_a_product_and_the_freed_mw_goes_to_the_next_best():
+    out = alloc({"DRL": 30.0, "DCL": 10.0}, caps={"DRL": 20.0})
+    assert out["q"]["DRL"] == pytest.approx(20.0)
+    assert out["q"]["DCL"] == pytest.approx(30.0, rel=1e-4)
+
+
+def test_delivery_costs_can_make_a_negative_priced_high_product_worth_holding():
+    """DR High filled with free energy is worth more than its negative price costs."""
+    prices = {"DRL": 16.0, "DRH": -8.0}
+    assert "DRH" not in alloc(prices)["q"]
+    out = alloc(prices, offer_costs={"DRL": 55.0, "DRH": -41.6})
+    assert out["q"].get("DRH", 0.0) > 0 and out["q"].get("DRL", 0.0) > 0
+
+
+def test_day_allocation_respects_caps_in_every_block():
+    blocks = [{"prices": {"DRL": 30.0}, "arb_value": 0.0, "families": ("DR",), "caps": {"DRL": 12.0}}] * 6
+    out = allocate_day(blocks, P, E, D, ETA, 50.0, apply_reserve=True)
+    assert all(b["q"]["DRL"] == pytest.approx(12.0) for b in out["blocks"])
