@@ -3,8 +3,10 @@ import pandas as pd
 import pytest
 
 from src.analysis.neso_rules import PRODUCTS, is_feasible, splitting_allowed
+from src.analysis.response_delivery import DELIVERY_COLUMNS
 from src.analysis.revenue_stack import (
     ALL_SERVICES,
+    AUCTION_SHARE_CAP,
     EFA_HOURS,
     EFA_PERIODS,
     REFERENCE_BATTERY,
@@ -13,7 +15,10 @@ from src.analysis.revenue_stack import (
     BatterySpec,
     _bid_close,
     _block_start,
+    _delivery_offer_costs,
+    _expected_delivery,
     _period_block,
+    _service_block,
     calc_ancillary_revenue,
     compute_fr_schedule,
     run_backtest,
@@ -89,7 +94,7 @@ def _auctions(prices_by_day: dict) -> pd.DataFrame:
     """prices_by_day: {date str: {product: price}} applied to all six blocks."""
     return pd.DataFrame([
         {"EFA Date": pd.Timestamp(day), "Service": svc, "EFA": efa,
-         "Clearing Price": price, "Cleared Volume": 100.0}
+         "Clearing Price": price, "Cleared Volume": 1000.0}
         for day, prices in prices_by_day.items()
         for svc, price in prices.items()
         for efa in range(1, 7)
@@ -143,26 +148,21 @@ def test_pre_eac_service_is_chosen_on_the_previous_days_prices():
     assert row["q_DCL"] == 0.0 and row["q_DRL"] > 0.0
 
 
-def test_always_dc_rule_holds_dc_before_eac():
-    prices = {"2023-06-01": EVERYTHING_PAYS, "2023-06-02": EVERYTHING_PAYS}
-    row = _schedule(_auctions(prices), ["2023-06-02"], include_arbitrage=False,
-                    pre_eac_rule="always_dc").iloc[0]
-    assert row["family"] == "DC"
-    assert row["q_DRL"] == 0.0 and row["q_DCL"] > 0.0
-
-
 def test_unknown_pre_eac_rule_is_rejected():
     with pytest.raises(ValueError):
         _schedule(_auctions({"2023-06-01": EVERYTHING_PAYS}), ["2023-06-01"], pre_eac_rule="hindsight")
 
 
-def test_reserve_rule_switches_on_at_codification():
-    """Symmetric DM takes full power the day before 15 Nov 2024 and 41.67 MW from it."""
+def test_reserve_is_held_from_eac_go_live():
+    """
+    Symmetric DM takes full power on the last pre-EAC day and 41.67 MW from go-live, a year
+    before the rule binds, because a stack with no reserve cannot recover what it delivers.
+    """
     dm = {"DMH": 10.0, "DML": 10.0}
-    sched = _schedule(_auctions({"2024-11-14": dm, "2024-11-15": dm}), ["2024-11-14", "2024-11-15"],
-                      include_arbitrage=False, services=["DMH", "DML"])
-    before = sched.loc[pd.Timestamp("2024-11-14")].iloc[0]
-    after = sched.loc[pd.Timestamp("2024-11-15")].iloc[0]
+    sched = _schedule(_auctions({d: dm for d in ("2023-10-31", "2023-11-01", "2023-11-02")}),
+                      ["2023-11-01", "2023-11-02"], include_arbitrage=False, services=["DMH", "DML"])
+    before = sched.loc[pd.Timestamp("2023-11-01")].iloc[0]
+    after = sched.loc[pd.Timestamp("2023-11-02")].iloc[0]
     assert before["q_DMH"] == pytest.approx(P) and not before["apply_reserve"]
     assert after["q_DMH"] == pytest.approx(P / 1.2, rel=1e-4) and after["apply_reserve"]
 
@@ -288,12 +288,12 @@ def test_fr_revenue_never_exceeds_selling_the_same_mw_into_every_product():
     assert 0 < fr < old
 
 
-def test_fr_only_scenario_has_no_trading_stream():
-    days = DAYS[:3]
-    result = run_backtest(_auctions({d: EVERYTHING_PAYS for d in days}), _market_index(days),
+def test_without_delivery_a_site_without_arbitrage_holds_still():
+    result = run_backtest(_auctions({d: {"DRL": 30.0} for d in DAYS}), _market_index(DAYS),
                           BATTERY, include_arbitrage=False)
-    assert result["summary"]["breakdown"].get("Arbitrage", 0) == 0
-    assert result["soc_trajectory"] is None
+    s = result["summary"]
+    assert s["breakdown"]["Arbitrage"] == 0
+    assert s["total_delivery_mwh"] == 0
 
 
 def test_every_scenario_writes_the_same_columns():
@@ -302,3 +302,145 @@ def test_every_scenario_writes_the_same_columns():
     for kwargs in ({}, {"include_arbitrage": False}, {"services": []}):
         monthly = run_backtest(auctions, market, BATTERY, **kwargs)["monthly"]
         assert set(REVENUE_COLUMNS) <= set(monthly.columns), kwargs
+
+
+# --- Auction size ----------------------------------------------------------------------
+
+def test_holdings_never_exceed_a_fifth_of_the_auction_and_the_rest_goes_elsewhere():
+    auctions = pd.DataFrame([
+        {"EFA Date": pd.Timestamp("2026-01-01"), "Service": svc, "EFA": efa,
+         "Clearing Price": price, "Cleared Volume": volume}
+        for efa in range(1, 7) for svc, price, volume in (("DRL", 30.0, 100.0), ("DCL", 10.0, 1000.0))
+    ])
+    sched = _schedule(auctions, ["2026-01-01"], include_arbitrage=False)
+    assert sched["q_DRL"].max() == pytest.approx(AUCTION_SHARE_CAP * 100.0)
+    assert sched["q_DCL"].min() == pytest.approx(P - AUCTION_SHARE_CAP * 100.0, rel=1e-4)
+
+
+def test_an_auction_that_cleared_nothing_cannot_be_held():
+    auctions = _auctions({"2026-01-01": {"DRL": 30.0}}).assign(**{"Cleared Volume": 0.0})
+    sched = _schedule(auctions, ["2026-01-01"], include_arbitrage=False)
+    assert (sched["q_DRL"] == 0).all()
+
+
+def test_vectorised_block_mapping_matches_period_block():
+    day = pd.Timestamp("2026-01-01")
+    days, efas = _service_block(pd.Series([day] * 48), pd.Series(range(1, 49)))
+    assert [(d, int(e)) for d, e in zip(days, efas)] == [_period_block(day, sp) for sp in range(1, 49)]
+
+
+# --- Response delivery -------------------------------------------------------------------
+
+def _delivery(days, **per_period):
+    """A delivery table with the same MWh per MW contracted in every settlement period."""
+    return pd.DataFrame([
+        {"settlementDate": pd.Timestamp(d), "settlementPeriod": sp,
+         **{c: per_period.get(c, 0.0) for c in DELIVERY_COLUMNS}, "coverage": 1.0}
+        for d in days for sp in range(1, 49)
+    ])
+
+
+def _holding(day, *, lo=0.0, trade_mw=0.0, apply_reserve=True, **mw):
+    rows = []
+    for efa in range(1, 7):
+        row = {"date": day, "efa": efa, "family": "ALL", "apply_reserve": apply_reserve,
+               "soc_min_mwh": lo, "soc_max_mwh": P * D,
+               "discharge_max_mw": trade_mw, "charge_max_mw": trade_mw, "arb_mw": 0.0}
+        row.update({f"q_{p}": mw.get(p, 0.0) for p in PRODUCTS})
+        rows.append(row)
+    return pd.DataFrame(rows).set_index(["date", "efa"])
+
+
+def test_low_delivery_empties_the_store_and_wears_the_battery():
+    day = pd.Timestamp("2026-03-02")
+    flat = {day: pd.Series(50.0, index=range(1, 49))}
+    rows, traj, _ = run_dispatch(flat, BATTERY, [day], flat, schedule=_holding(day, DRL=40.0),
+                                 delivery=_delivery([day], dr_low=0.01), initial_soc_frac=0.5)
+    soc = pd.DataFrame(traj, columns=TRAJECTORY_COLUMNS)
+    assert soc.soc_frac.iloc[9] * P * D == pytest.approx(50.0 - 40.0 * 0.01 * 10)
+    # SP47-48 belong to the next day's first block, which is not held here
+    assert sum(r["delivery_mwh"] for r in rows) == pytest.approx(40.0 * 0.01 * 46)
+    assert sum(r["delivery_cycling_cost_gbp"] for r in rows) == pytest.approx(BATTERY.cycling_cost_per_mwh * 40.0 * 0.01 * 46)
+
+
+def test_high_delivery_fills_the_store_less_round_trip_loss():
+    """With no trading power or Reserved Capacity, nothing moves the delivered energy back out."""
+    day = pd.Timestamp("2026-03-02")
+    flat = {day: pd.Series(50.0, index=range(1, 49))}
+    _, traj, _ = run_dispatch(flat, BATTERY, [day], flat, schedule=_holding(day, apply_reserve=False, DRH=20.0),
+                              delivery=_delivery([day], dr_high=0.1), initial_soc_frac=0.5)
+    soc = pd.DataFrame(traj, columns=TRAJECTORY_COLUMNS)
+    assert soc.soc_frac.iloc[4] * P * D == pytest.approx(50.0 + BATTERY.efficiency_rt * 20.0 * 0.1 * 5)
+
+
+def _two_periods_of_delivery(day):
+    """1 MWh per 40 MW of DR Low in each of the day's first two settlement periods, then none."""
+    table = _delivery([day], dr_low=0.025)
+    table.loc[table.settlementPeriod > 2, "dr_low"] = 0.0
+    return table
+
+
+def test_delivery_lowers_the_requirement_so_it_is_not_unavailability_until_recovery_is_due():
+    """
+    40 MW of DR Low from 40 MWh, 2 MWh delivered, no power to recover. The requirement
+    follows delivery down (no breach), climbs back from the sixth period (Service Terms
+    6.11), and the next block starts at the full 40 MWh again.
+    """
+    day = pd.Timestamp("2026-03-02")
+    flat = {day: pd.Series(50.0, index=range(1, 49))}
+    sched = _holding(day, lo=40.0, apply_reserve=False, DRL=40.0)
+    _, traj, breaches = run_dispatch(flat, BATTERY, [day], flat, schedule=sched,
+                                     delivery=_two_periods_of_delivery(day), initial_soc_frac=0.4)
+    assert breaches.get((day, 1)) == 1      # the sixth period only
+    assert breaches.get((day, 2)) == 8
+    soc = pd.DataFrame(traj, columns=TRAJECTORY_COLUMNS)
+    assert soc.soc_min_frac.iloc[1] * P * D == pytest.approx(38.0)   # requirement at SP3
+
+
+def test_power_left_for_trading_recovers_delivered_energy_in_time():
+    day = pd.Timestamp("2026-03-02")
+    flat = {day: pd.Series(50.0, index=range(1, 49))}
+    sched = _holding(day, lo=40.0, trade_mw=10.0, apply_reserve=False, DRL=40.0)
+    _, _, breaches = run_dispatch(flat, BATTERY, [day], flat, schedule=sched,
+                                  delivery=_two_periods_of_delivery(day), initial_soc_frac=0.4)
+    assert sum(breaches.values()) == 0
+
+
+def test_reserved_capacity_recovers_delivered_energy_when_no_trading_power_is_left():
+    day = pd.Timestamp("2026-03-02")
+    flat = {day: pd.Series(50.0, index=range(1, 49))}
+    sched = _holding(day, lo=40.0, trade_mw=0.0, apply_reserve=True, DRL=40.0)
+    _, traj, breaches = run_dispatch(flat, BATTERY, [day], flat, schedule=sched,
+                                     delivery=_two_periods_of_delivery(day), initial_soc_frac=0.4)
+    assert sum(breaches.values()) == 0
+    soc = pd.DataFrame(traj, columns=TRAJECTORY_COLUMNS).set_index("sp")["soc_frac"] * P * D
+    # Meets the returning requirement, plus a margin for the delivery it has seen before the next block
+    assert soc[5] >= 39.0 - 1e-3 and soc[6] >= 40.0 - 1e-3
+
+
+def test_expected_delivery_uses_only_days_before_the_bid_deadline():
+    days = pd.date_range("2026-01-01", periods=40)
+    table = _delivery(days, dr_low=0.01)
+    table.loc[table.settlementDate == days[34], "dr_low"] = 1.0
+    expected = _expected_delivery(table)
+    assert expected[(days[35], 2)]["dr_low"] == pytest.approx(0.08)   # 8 periods x 0.01; day 34 unseen
+    assert expected[(days[36], 2)]["dr_low"] > 0.08
+
+
+def test_delivery_costs_charge_low_products_and_credit_high_ones():
+    eta, wear = BATTERY.efficiency_rt, BATTERY.cycling_cost_per_mwh
+    costs = _delivery_offer_costs({"dr_low": 0.6, "dr_high": 0.6}, 80.0, BATTERY)
+    assert costs["DRL"] == pytest.approx(0.6 * (80.0 / eta + wear))
+    assert costs["DRH"] == pytest.approx(-eta * 0.6 * (80.0 - wear))
+    assert _delivery_offer_costs(None, 80.0, BATTERY) == {}
+
+
+def test_a_site_without_arbitrage_trades_only_to_make_good_its_delivery():
+    auctions = _auctions({d: {"DRL": 30.0} for d in DAYS})
+    result = run_backtest(auctions, _market_index(DAYS), BATTERY, include_arbitrage=False,
+                          delivery=_delivery(DAYS, dr_low=0.04))
+    s = result["summary"]
+    assert s["total_delivery_mwh"] > 0
+    assert s["breakdown"]["Arbitrage"] < 0                       # it buys energy back
+    assert s["total_mwh_cycled"] == pytest.approx(0.0, abs=1e-6)  # and never sells for profit
+    assert s["soe_breach_periods"] == 0

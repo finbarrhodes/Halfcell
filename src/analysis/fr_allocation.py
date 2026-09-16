@@ -30,9 +30,13 @@ deadline, knowing their state of energy and the commitments they already hold,
 and should offer only what they could deliver if accepted. allocate_day solves
 the six blocks jointly from that position.
 
+Offers can carry two more inputs from the caller: a cap on the MW each product
+may be held at (the auction's size), and a cost per MW held on top of the
+arbitrage forgone (the energy the product is expected to deliver).
+
 What is not modelled: the cap on baskets per unit per day, integer MW
-quantities, energy used in actually delivering response, and any effect of the
-battery's own bids on clearing prices (the battery is a price-taker).
+quantities, and any effect of the battery's own bids on clearing prices beyond
+a cap on its share of each auction (the battery is otherwise a price-taker).
 
 Which services a unit may offer, and whether the Reserved Capacity rule
 applies, depend on the date. Callers decide those per block from
@@ -97,6 +101,11 @@ def _import_use(p: str, apply_reserve: bool) -> float:
     return _reserve(p, apply_reserve) if is_low(p) else 1.0
 
 
+def _upper(p: str, power_mw: float, caps: Mapping[str, float]) -> float:
+    """Most MW a product can be held at: the rating, the Maximum Sell Size and any cap."""
+    return max(0.0, min(MAX_SELL_SIZE_MW, power_mw, caps.get(p, math.inf)))
+
+
 def allocate_block(
     clearing_prices: Mapping[str, float],
     arb_value_per_mw: float,
@@ -106,6 +115,8 @@ def allocate_block(
     *,
     apply_reserve: bool,
     families: Iterable[str] = FAMILIES,
+    caps: Mapping[str, float] | None = None,
+    offer_costs: Mapping[str, float] | None = None,
 ) -> dict:
     """
     The permitted holding that earns most in one EFA block.
@@ -124,6 +135,10 @@ def allocate_block(
     families : iterable of "DC", "DM", "DR"
         Services the unit may offer into this block - all three since EAC,
         a single one before it.
+    caps : {product: MW}, optional
+        Most MW each product may be held at, on top of the rating and Maximum Sell Size.
+    offer_costs : {product: £ per MW held for the block}, optional
+        Costs of holding a product beyond the arbitrage forgone. Negative is a benefit.
 
     Returns
     -------
@@ -134,9 +149,11 @@ def allocate_block(
     """
     offered = _offered(clearing_prices, families)
     arb_value = max(0.0, float(arb_value_per_mw))
+    caps, offer_costs = caps or {}, offer_costs or {}
 
     # Decision vector: [q_p for p in offered] + [arb_mw]. linprog minimises.
-    cost = [-(clearing_prices[p] * EFA_HOURS) + _TIE_BREAK_GBP_PER_MW for p in offered] + [-arb_value]
+    cost = ([-(clearing_prices[p] * EFA_HOURS) + offer_costs.get(p, 0.0) + _TIE_BREAK_GBP_PER_MW for p in offered]
+            + [-arb_value])
 
     export_row = [_export_use(p, apply_reserve) for p in offered] + [1.0]
     import_row = [_import_use(p, apply_reserve) for p in offered] + [1.0]
@@ -148,7 +165,7 @@ def allocate_block(
         cost,
         A_ub=[export_row, import_row, energy_row],
         b_ub=[power_mw, power_mw, energy_mwh],
-        bounds=[(0.0, min(MAX_SELL_SIZE_MW, power_mw))] * len(offered) + [(0.0, power_mw)],
+        bounds=[(0.0, _upper(p, power_mw, caps)) for p in offered] + [(0.0, power_mw)],
         method="highs",
     )
     if not result.success:
@@ -181,7 +198,8 @@ def allocate_day(
     Parameters
     ----------
     blocks : sequence of {"prices": {product: £/MW/h}, "arb_value": £/MW, "families": iterable}
-        The blocks being bid, in delivery order. Each is priced as in allocate_block.
+        The blocks being bid, in delivery order, each optionally with "caps" and
+        "costs" as in allocate_block's caps and offer_costs.
     power_mw, energy_mwh, duration_h, efficiency_rt : float
         The battery. Efficiency applies on charge, as in dispatch.
     soc_now_mwh : float
@@ -234,8 +252,9 @@ def allocate_day(
     held = []
     for block in blocks:
         prices = block["prices"]
+        caps, costs = block.get("caps") or {}, block.get("costs") or {}
         offered = _offered(prices, block["families"])
-        q_idx = [var(-(prices[p] * EFA_HOURS) + _TIE_BREAK_GBP_PER_MW, 0.0, min(MAX_SELL_SIZE_MW, P))
+        q_idx = [var(-(prices[p] * EFA_HOURS) + costs.get(p, 0.0) + _TIE_BREAK_GBP_PER_MW, 0.0, _upper(p, P, caps))
                  for p in offered]
         arb_idx = var(-max(0.0, float(block["arb_value"])), 0.0, P)
         export_terms = {i: _export_use(p, apply_reserve) for i, p in zip(q_idx, offered)}
@@ -313,6 +332,8 @@ def choose_family(
     duration_h: float,
     *,
     apply_reserve: bool,
+    caps: Mapping[str, float] | None = None,
+    offer_costs: Mapping[str, float] | None = None,
 ) -> str | None:
     """
     The single service a pre-EAC unit would offer into, judged on reference prices.
@@ -328,7 +349,7 @@ def choose_family(
     for fam in FAMILIES:
         alloc = allocate_block(
             reference_prices, 0.0, power_mw, energy_mwh, duration_h,
-            apply_reserve=apply_reserve, families=[fam],
+            apply_reserve=apply_reserve, families=[fam], caps=caps, offer_costs=offer_costs,
         )
         # Compare like for like: FR revenue from this family against the
         # arbitrage the same capacity would otherwise earn.
@@ -336,7 +357,8 @@ def choose_family(
             sum(mw for p, mw in alloc["q"].items() if is_low(p)),
             sum(mw for p, mw in alloc["q"].items() if not is_low(p)),
         )
-        value = alloc["fr_revenue_gbp"] - max(0.0, arb_value_per_mw) * used
+        costs = sum((offer_costs or {}).get(p, 0.0) * mw for p, mw in alloc["q"].items())
+        value = alloc["fr_revenue_gbp"] - costs - max(0.0, arb_value_per_mw) * used
         if value > best_value:
             best, best_value = fam, value
     return best

@@ -119,3 +119,38 @@ def test_an_unreachable_requirement_still_solves_and_reports_the_shortfall():
     assert out is not None
     assert out["shortfall_mwh"][1] > 0
     assert out["p_chg"][0] == pytest.approx(20.0, rel=1e-3)   # moving towards compliance
+
+
+def test_reserved_capacity_brings_state_of_energy_down_before_a_block_resets_its_headroom():
+    """No trading power, 65 MWh in store, and a new block from period 4 allowing only 53."""
+    hi = np.array([70.0] * 4 + [53.0] * 5)
+    out = solve_mpc(65.0, np.full(8, 80.0), np.zeros(8), 0.0, hi, E, ETA, WEAR, horizon=8,
+                    charge_mw_schedule=np.zeros(8), return_plan=True, reserve_dis_mw=np.full(8, 18.8))
+    assert out["soc"][4:].max() <= 53.0 + 1e-4
+    assert out["shortfall_mwh"].sum() == pytest.approx(0.0, abs=1e-4)
+    assert out["r_dis"].sum() * DT == pytest.approx(12.0, rel=1e-3)   # no more than the reset needs
+
+
+def test_reserved_capacity_is_not_used_to_make_money():
+    """A wide spread and no requirement: trading power is zero, so nothing moves."""
+    out = solve_mpc(50.0, np.array([10.0] * 4 + [300.0] * 4), np.zeros(8), 0.0, E, E, ETA, WEAR,
+                    horizon=8, charge_mw_schedule=np.zeros(8), return_plan=True,
+                    reserve_dis_mw=np.full(8, 20.0), reserve_chg_mw=np.full(8, 20.0))
+    assert (out["r_dis"].sum() + out["r_chg"].sum()) == pytest.approx(0.0, abs=1e-5)
+
+
+def test_executed_energy_includes_reserve_flows():
+    lo = np.array([0.0, 60.0])
+    e_dis, e_chg = solve_mpc(50.0, np.array([80.0]), np.zeros(1), lo, E, E, ETA, WEAR, horizon=1,
+                             charge_mw_schedule=np.zeros(1), reserve_chg_mw=np.array([40.0]))
+    assert e_dis == pytest.approx(0.0, abs=1e-6)
+    assert e_chg * ETA == pytest.approx(10.0, rel=1e-3)
+
+
+def test_a_trade_cost_keeps_a_price_blind_plan_to_the_energy_its_requirement_needs():
+    """With no price signal, a small cost per MWh stops the plan moving energy it does not need."""
+    lo = np.array([0.0] * 4 + [60.0] * 5)
+    out = solve_mpc(50.0, np.zeros(8), np.full(8, 50.0), lo, E, E, ETA, WEAR, horizon=8,
+                    return_plan=True, trade_cost_per_mwh=1.0)
+    assert out["p_chg"].sum() * DT * ETA == pytest.approx(10.0, rel=1e-3)
+    assert out["p_dis"].sum() == pytest.approx(0.0, abs=1e-5)

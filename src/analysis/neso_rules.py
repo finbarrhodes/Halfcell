@@ -76,8 +76,8 @@ EAC_GO_LIVE = date(2023, 11, 2)
 
 # The Reserved Capacity rule became binding in the Procurement Rules from this
 # date ([PR2] cover; Ofgem decision 30 October 2024). Before it the percentages
-# existed only in NESO guidance ([R3] §4), so the model applies the rule from
-# codification onwards.
+# existed only in NESO guidance ([R3] §4). The revenue model holds the reserve
+# from EAC go-live regardless; see revenue_stack._Scheduler.allocate.
 RESERVE_RULE_EFFECTIVE = date(2024, 11, 15)
 
 # Sell orders for a service day close, and results publish, on the day before.
@@ -199,3 +199,48 @@ def arbitrage_power_limits_mw(
     """
     export, imp = capacity_use_mw(q, apply_reserve)
     return max(0.0, power_mw - export), max(0.0, power_mw - imp)
+
+
+# Energy Recovery [ST 6.11 ii-iii]. Delivering response lowers a contract's Minimum
+# State of Energy Requirement; the Energy Recovery Adjustment Volume then raises it
+# again. The Service Terms' worked example sets the adjustment for the fifth
+# settlement period from the shortfall at the start of the second, and applies it
+# to the sixth: a lag of three periods between assessment and adjustment.
+ENERGY_RECOVERY_LAG_PERIODS = 3
+
+
+def energy_recovery_adjustment(k: int, block_start: int, rev, requirement, adjustments) -> float:
+    """
+    Energy Recovery Adjustment Volume for settlement period k (MWh), which raises
+    the requirement for period k + 1 [ST 6.11 ii-iii].
+
+    It is the shortfall below the Contracted Response Energy Volume (`rev`) at the
+    start of period k - 3, less the adjustments made since then, and no more than
+    ENERGY_RECOVERY_SHARE of that volume. Sequences are indexed by settlement
+    period; nothing is carried across from before `block_start`, the first period
+    of the Contracted Service Period.
+    """
+    assessed = k - ENERGY_RECOVERY_LAG_PERIODS
+    if assessed < block_start:
+        return 0.0
+    shortfall = rev[k] - requirement[assessed] - sum(adjustments[assessed:k])
+    return min(ENERGY_RECOVERY_SHARE * rev[k], max(0.0, shortfall))
+
+
+def minimum_soe_requirement(rev: float, delivered) -> list[float]:
+    """
+    Minimum State of Energy Requirement at the start of each settlement period of
+    one Contracted Service Period, in one direction [ST 6.11 ii].
+
+    It starts at the Contracted Response Energy Volume, falls by the energy the
+    direction's products delivered in the previous period, and rises by that
+    period's Energy Recovery Adjustment Volume, never above the starting volume.
+    At or below zero the unit is allowed to be unavailable [SOE].
+    """
+    revs = [rev] * len(delivered)
+    requirement, adjustments = [rev], []
+    for j in range(1, len(delivered)):
+        k = j - 1
+        adjustments.append(energy_recovery_adjustment(k, 0, revs, requirement, adjustments))
+        requirement.append(min(rev, requirement[k] - delivered[k] + adjustments[k]))
+    return requirement
