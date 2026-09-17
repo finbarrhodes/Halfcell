@@ -250,13 +250,25 @@ The **foresight ratio** measures how much of the gap between those two bounds a 
 closes: `(ML − Naive) / (Perfect Foresight − Naive)`, on net revenue. Published GB and
 European price-forecasting literature treats 70–85% as strong performance.
 
-Read it together with its denominator. The ratio is a share of the *capturable* headroom, so
-anything that narrows the gap between the floor and the ceiling lowers it without the forecast
-changing at all. Modelling response delivery did exactly that: once a Low contract has to buy
-back the energy it gives away, arbitrage-driven revenue falls for all three strategies and the
-floor rises towards the ceiling, so the same Random Forest scores several points lower than it
-did against a delivery-free model. The absolute revenues, and the share of perfect-foresight
-trading revenue the forecast captures, are the steadier readings.
+Two things have moved this number, and both are worth knowing about.
+
+The larger one was leakage. Until walk-forward retraining replaced the fixed split, most of
+the backtest was forecast by a model that had trained on those same days, which put the ratio
+near 66%. Every forecast is now out-of-sample and it sits near 20% — and it stays there in
+every sub-period, 19% through the 2021–22 gas crisis and 21% from 2023 onward, so the old
+figure was leakage rather than a kind market.
+
+The smaller one is the denominator. The ratio is a share of the *capturable* headroom, so
+anything that narrows the gap between floor and ceiling lowers it without the forecast
+changing at all. Modelling response delivery did that: once a Low contract has to buy back the
+energy it gives away, arbitrage-driven revenue falls for every strategy and the floor rises
+towards the ceiling.
+
+Published figures of 70–85% come from studies forecasting day-ahead auction prices over
+shorter, calmer windows, usually scored on pure arbitrage rather than a co-optimisation
+against frequency response contracts. The gap to 20% is still the honest headline, and it is
+the reason model choice and feature work are the next things worth doing here: the forecast is
+currently worth about £4k/MW/yr, and the ceiling says there is £21k on the table.
 
 For LP-based joint co-optimisation of arbitrage and frequency response in GB, see
 [Swierczynski et al. (2021)](https://doi.org/10.3390/en14248365).
@@ -456,12 +468,21 @@ after the last carry the most recent measured capacity forward rather than dropp
 zero.
 </div>
 
-**Train/test split.** A strict temporal split: training ends before **${p.test_start}**, so
-the model never sees future prices. Training uses an expanding window; the held-out test
-period runs from ${p.test_start} to the end of the data. The split date is held fixed as
-data is extended, so each refresh adds to the out-of-sample period rather than to training —
-and the test window stays longer than a full year, so seasonal performance can be assessed
-across a complete annual cycle.
+**Walk-forward validation.** Every forecast behind the revenue figures is out-of-sample. The
+model is refit at quarterly origins on the history available at that point and used only for
+the days until the next origin, so no day is ever predicted by a model that trained on it.
+What makes this possible is that the feature matrix begins in January 2019 while the backtest
+begins in September 2021: the first origin already has two and a half years of history to
+learn from.
+
+This replaced a single fixed train/test split, and the change was not cosmetic. Under that
+arrangement the model trained on everything before ${p.test_start} while the revenue backtest
+still ran from 2021, so 42 of its 60 months were forecast by a model fitted on those very
+days. In-sample the Random Forest ranks a day's 48 periods almost perfectly, and ranking is
+exactly what dispatch consumes — so the apparent value of forecasting was £18.8k/MW/yr across
+that stretch against £2.3k in the 18 genuinely held-out months. The fixed split survives only
+as a diagnostic on the [Forecasting & Dispatch](./backtester) page, and as the fit that
+supplies feature importances.
 
 **Known limitations.** Tree-based models cannot extrapolate beyond price ranges seen in
 training; electricity price forecasting is inherently noisy; and the model improves dispatch
@@ -512,13 +533,12 @@ importances are on the [Forecasting & Dispatch](./backtester) page.
   only the periods that start outside the requirement, so it understates that exposure.
 - *Expected delivery costs are recent averages.* Offers price delivery on the previous four
   weeks and the previous week's prices, not on a forecast of either.
-- *One train/test split.* The ML model trains on everything before a fixed date and is
-  tested after it, so every forecast figure here rests on a single window. The August 2026
-  refresh showed how much that matters: on the six months it added, test RMSE rose from 29.1
-  to 48.6 and rank correlation fell from 0.615 to 0.544, with prices 28% higher and a third
-  more volatile than in training. Tree models cannot extrapolate beyond the price range they
-  were trained on, so this is a real limit on the forecast rather than noise. Walk-forward
-  validation across several windows is the fix, and is not yet done.
+- *Walk-forward, but not nested.* Every prediction is out-of-sample, refit quarterly on an
+  expanding window, which is what lets the five-year revenue comparison mean what it says.
+  Three things remain: hyperparameters were chosen once rather than re-selected inside each
+  fold, a rolling training window is untested against the expanding one, and quarterly is a
+  modelling choice where an operator might retrain monthly. Tree models also still cannot
+  extrapolate beyond the price range they have seen, which is a real limit rather than noise.
 - *Price-taker.* The battery's offers are assumed not to move clearing prices, backed by the
   20% auction-size limit. That is why results scale linearly with power, and why the dispatch
   page stops at 100 MW.

@@ -290,6 +290,128 @@ def naive_day_prices(
 
 
 # ---------------------------------------------------------------------------
+# Walk-forward retraining
+# ---------------------------------------------------------------------------
+
+# Months between retrainings. Quarterly is a compromise: an operator would retrain
+# at least this often, and it costs ~20 fits over the backtest (14-31 s each) where
+# monthly would cost 60. The prediction table is cached, so a refresh only fits the
+# origins it does not already have.
+WALK_FORWARD_CADENCE_MONTHS = 3
+
+
+def walk_forward_origins(start_date, end_date, cadence_months: int = WALK_FORWARD_CADENCE_MONTHS) -> list:
+    """Retraining dates covering [start_date, end_date], each the first of a month."""
+    start, end = pd.Timestamp(start_date).normalize(), pd.Timestamp(end_date).normalize()
+    origins, origin = [], start.replace(day=1)
+    while origin <= end:
+        origins.append(origin)
+        origin = origin + pd.DateOffset(months=cadence_months)
+    return origins
+
+
+def walk_forward_predictions(
+    feature_df: pd.DataFrame,
+    start_date,
+    end_date,
+    *,
+    model_type: str = "rf",
+    cadence_months: int = WALK_FORWARD_CADENCE_MONTHS,
+    train_years: float | None = None,
+    skip_origins=None,
+    on_fold=None,
+) -> tuple:
+    """
+    Out-of-sample price forecasts for every day in [start_date, end_date].
+
+    A single fixed split cannot cover a revenue backtest that starts before the
+    split date: predictions for those days would come from a model fitted on them,
+    which flatters both the forecast and the revenue it drives. Here the model is
+    refitted at each origin on data strictly before it and used only for the days
+    up to the next origin, so no day is ever predicted by a model that saw it.
+
+    The feature matrix starts well before the backtest does, which is what makes
+    this possible: the first origin already has years of history to train on.
+
+    Parameters
+    ----------
+    feature_df   : DataFrame from build_feature_matrix()
+    start_date, end_date : inclusive bounds of the window to predict
+    model_type   : any type train_forecast_model() accepts
+    cadence_months : months between retrainings
+    train_years  : cap the training window at this many years (a rolling window).
+                   None trains on all prior data (expanding), which is the default
+                   the fixed-split model used.
+    skip_origins : origins to leave out, so a cached table can be extended by fitting
+                   only the origins it does not already hold
+    on_fold      : optional callback, passed each fold's metadata as it completes
+
+    Returns
+    -------
+    (predictions, folds) where predictions is a DataFrame of
+    [settlementDate, settlementPeriod, prediction, origin] and folds is one dict
+    per origin: its training span and row count, and the metrics for the days it
+    predicted.
+    """
+    origins = walk_forward_origins(start_date, end_date, cadence_months)
+    first, last = pd.Timestamp(start_date).normalize(), pd.Timestamp(end_date).normalize()
+    dates = feature_df["settlementDate"].drop_duplicates().sort_values()
+
+    skip = {pd.Timestamp(o).normalize() for o in (skip_origins or ())}
+    frames, folds = [], []
+    for i, origin in enumerate(origins):
+        fold_end = origins[i + 1] if i + 1 < len(origins) else last + pd.Timedelta(days=1)
+        if origin in skip:
+            continue
+        window = feature_df[feature_df["settlementDate"] < fold_end]
+        if train_years is not None:
+            window = window[window["settlementDate"] >= origin - pd.DateOffset(months=round(train_years * 12))]
+        train_rows = int((window["settlementDate"] < origin).sum())
+        if train_rows == 0 or (window["settlementDate"] >= origin).sum() == 0:
+            continue
+
+        # test_start=origin makes this fit on the history and score exactly this fold
+        model, cols, _train_metrics, fold_metrics = train_forecast_model(
+            window, model_type=model_type, test_start=origin
+        )
+        for day in dates[(dates >= max(origin, first)) & (dates < fold_end) & (dates <= last)]:
+            forecast = predict_day_prices(model, cols, feature_df, day)
+            if forecast.empty:
+                continue
+            frames.append(pd.DataFrame({
+                "settlementDate": day,
+                "settlementPeriod": forecast.index.astype(int),
+                "prediction": forecast.to_numpy(dtype=float),
+                "origin": origin,
+            }))
+        folds.append({
+            "origin": origin.date().isoformat(),
+            "predicts_until": (fold_end - pd.Timedelta(days=1)).date().isoformat(),
+            "train_start": window["settlementDate"].min().date().isoformat(),
+            "train_rows": train_rows,
+            "metrics": fold_metrics,
+        })
+        if on_fold is not None:
+            on_fold(folds[-1])
+
+    columns = ["settlementDate", "settlementPeriod", "prediction", "origin"]
+    predictions = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=columns)
+    return predictions, folds
+
+
+def forecast_series_by_date(predictions: pd.DataFrame, start_date=None, end_date=None) -> dict:
+    """Prediction table as {date: Series indexed by settlementPeriod}, as dispatch wants it."""
+    from src.analysis.revenue_stack import _in_range
+
+    table = predictions.assign(settlementDate=pd.to_datetime(predictions["settlementDate"]).dt.normalize())
+    return {
+        date: group.set_index("settlementPeriod")["prediction"].sort_index()
+        for date, group in table.groupby("settlementDate")
+        if _in_range(date, start_date, end_date)
+    }
+
+
+# ---------------------------------------------------------------------------
 # Forecast-driven dispatch backtester
 # ---------------------------------------------------------------------------
 
@@ -304,6 +426,7 @@ def run_forecast_backtest(
     model=None,
     feature_df: pd.DataFrame = None,
     feature_cols: list = None,
+    predictions: pd.DataFrame | None = None,
     initial_soc_frac: float = 0.5,
     horizon: int = 96,
     *,
@@ -332,6 +455,9 @@ def run_forecast_backtest(
     model            : fitted model object (required for strategy="ml")
     feature_df       : feature matrix from build_feature_matrix() (required for strategy="ml")
     feature_cols     : feature column list from train_forecast_model() (required for strategy="ml")
+    predictions      : walk-forward prediction table from walk_forward_predictions(). Given
+                       for strategy="ml", it replaces model/feature_df/feature_cols, and every
+                       day is forecast by a model that never saw it
     initial_soc_frac : starting state of energy as a fraction of energy_mwh (default 0.5)
     horizon          : MPC planning horizon in settlement periods (default 96 = 48h)
     include_arbitrage: False runs the FR-only scenario; no forecast is needed
@@ -349,7 +475,9 @@ def run_forecast_backtest(
         raise ValueError(f"Unknown strategy '{strategy}'")
 
     forecast_prices_by_date: dict = {}
-    if include_arbitrage:
+    if include_arbitrage and strategy == "ml" and predictions is not None:
+        forecast_prices_by_date = forecast_series_by_date(predictions, start_date, end_date)
+    elif include_arbitrage:
         apx_by_date = _apx_by_date(market_index)
         for date in sorted(d for d in apx_by_date if _in_range(d, start_date, end_date)):
             if strategy == "naive":
