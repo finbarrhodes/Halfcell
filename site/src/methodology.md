@@ -484,7 +484,9 @@ that stretch against £2.3k in the 18 genuinely held-out months. The fixed split
 as a diagnostic on the [Forecasting & Dispatch](./backtester) page, and as the fit that
 supplies feature importances.
 
-**Why the model is not chosen by accuracy.** All four candidates were benchmarked on the same
+### Why the model is not chosen by accuracy
+
+All four candidates were benchmarked on the same
 walk-forward folds, with the folds from 2025 held back so the choice could not be made on the
 evidence used to report it. The most accurate forecaster was the worst earner, and not
 marginally.

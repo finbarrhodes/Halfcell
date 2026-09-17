@@ -119,6 +119,8 @@ def pooled_metrics(predictions: pd.DataFrame, market_index: pd.DataFrame) -> dic
     from sklearn.metrics import mean_absolute_error, mean_squared_error
     import numpy as np
 
+    from src.analysis.price_forecast import spread_calibration
+
     actual = (market_index[market_index["dataProvider"] == "APXMIDP"]
               .assign(settlementDate=lambda d: d["settlementDate"].dt.normalize())
               [["settlementDate", "settlementPeriod", "price"]])
@@ -131,6 +133,7 @@ def pooled_metrics(predictions: pd.DataFrame, market_index: pd.DataFrame) -> dic
         "spearman": round(float(spearmanr(y, p).statistic), 3),
         "spike_rmse": round(float(np.sqrt(mean_squared_error(y[spike], p[spike]))), 2),
         "n_samples": int(len(joined)),
+        **spread_calibration(joined["settlementDate"], y, p),
     }
 
 
