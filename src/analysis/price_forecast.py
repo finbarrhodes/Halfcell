@@ -61,6 +61,24 @@ DEFAULT_TEST_START = "2025-03-01"
 # Model training
 # ---------------------------------------------------------------------------
 
+def resolve_feature_cols(feature_df: pd.DataFrame) -> list:
+    """
+    The feature columns a model will actually be given: the declared list plus any
+    per-fuel generation columns present, filtered to what the matrix holds.
+
+    That filter is what makes a feature group optional — build_feature_matrix
+    either produced the group or it did not, and nothing else has to change. It
+    also means the declared list is not the truth about what a model saw, which
+    is why the walk-forward cache fingerprints the resolved list.
+    """
+    gen_fuel_cols = sorted(
+        c for c in feature_df.columns
+        if c.startswith("gen_") and c not in ("gen_total", "gen_renewable_frac", "gen_fossil_frac")
+    )
+    declared = FEATURE_COLS + [c for c in gen_fuel_cols if c not in FEATURE_COLS]
+    return [c for c in declared if c in feature_df.columns]
+
+
 def spread_calibration(dates, actual, predicted) -> dict:
     """
     How well a forecast predicts each day's price *spread*, which is what arbitrage trades on.
@@ -116,13 +134,7 @@ def train_forecast_model(
     from sklearn.metrics import mean_squared_error, mean_absolute_error
     from scipy.stats import spearmanr
 
-    # Resolve the full feature column list (base + any per-fuel gen columns present)
-    gen_fuel_cols = sorted([
-        c for c in feature_df.columns
-        if c.startswith("gen_") and c not in ("gen_total", "gen_renewable_frac", "gen_fossil_frac")
-    ])
-    feature_cols = FEATURE_COLS + [c for c in gen_fuel_cols if c not in FEATURE_COLS]
-    feature_cols = [c for c in feature_cols if c in feature_df.columns]
+    feature_cols = resolve_feature_cols(feature_df)
 
     train = feature_df[feature_df["settlementDate"] < pd.Timestamp(test_start)]
     test  = feature_df[feature_df["settlementDate"] >= pd.Timestamp(test_start)]

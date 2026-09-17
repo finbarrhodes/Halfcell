@@ -62,6 +62,7 @@ def build_feature_matrix(
     market_index: pd.DataFrame,
     generation_daily: pd.DataFrame,
     bess_capacity: pd.DataFrame | None = None,
+    wind_forecast: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """
     Construct a feature matrix for price forecasting.
@@ -85,6 +86,11 @@ def build_feature_matrix(
         When provided, adds ``bess_fleet_mw`` and ``bess_spread_suppression``
         feature columns. When None, those columns are simply absent (the
         dynamic column filter in train_forecast_model handles this gracefully).
+    wind_forecast : DataFrame, optional
+        From data/processed/wind_forecast.parquet — NESO's day-ahead wind
+        forecast. When provided, adds the WIND_FORECAST_COLS group. Absent by
+        default, so the feature set is a deliberate choice rather than whatever
+        happens to be on disk; see scripts/ablate_features.py.
 
     Returns
     -------
@@ -256,6 +262,33 @@ def build_feature_matrix(
     except ImportError:
         apx["is_bank_holiday"] = 0
 
+    # --- Day-ahead wind forecast (NESO, published ~09:00 on D-1) ---
+    # The only forward-looking features here: everything above describes
+    # yesterday or the calendar. Wind is the largest driver of GB price shape,
+    # so the day's forecast *range* is close to a direct forecast of the spread
+    # the battery trades on — the quantity spread calibration showed the model
+    # getting wrong.
+    if wind_forecast is not None and not wind_forecast.empty:
+        wind = wind_forecast.copy()
+        wind["settlementDate"] = pd.to_datetime(wind["settlementDate"]).dt.normalize()
+        wind = wind[["settlementDate", "settlementPeriod", "wind_forecast_mw", "capacity_mw"]]
+
+        daily = wind.groupby("settlementDate")["wind_forecast_mw"].agg(
+            wind_fc_day_mean="mean", wind_fc_day_min="min", wind_fc_day_max="max"
+        ).reset_index()
+        daily["wind_fc_day_range"] = daily["wind_fc_day_max"] - daily["wind_fc_day_min"]
+
+        apx = apx.merge(wind, on=["settlementDate", "settlementPeriod"], how="left")
+        apx = apx.merge(daily, on="settlementDate", how="left")
+        apx = apx.rename(columns={"wind_forecast_mw": "wind_fc_mw"})
+
+        # Share of installed capacity, so the feature means the same thing as the
+        # fleet grows from 1 GW to 24 GW across the window
+        apx["wind_fc_load_factor"] = apx["wind_fc_mw"] / apx["capacity_mw"].replace(0, np.nan)
+        # Where this period sits against the day, which is what shapes the curve
+        apx["wind_fc_vs_day_mean"] = apx["wind_fc_mw"] - apx["wind_fc_day_mean"]
+        apx = apx.drop(columns=["capacity_mw", "wind_fc_day_min", "wind_fc_day_max"])
+
     # --- Drop rows where any lag feature is missing ---
     lag_cols = [c for c in apx.columns if "lag" in c or "prev_day" in c or c == "rolling_7d_mean"]
     apx = apx.dropna(subset=lag_cols).reset_index(drop=True)
@@ -325,6 +358,15 @@ def _build_lear_extra_features(feature_df: pd.DataFrame) -> pd.DataFrame:
 # Base feature column list (tree-based models)
 # ---------------------------------------------------------------------------
 
+# Day-ahead wind forecast group. Listed in FEATURE_COLS so a model picks it up
+# when build_feature_matrix was given the forecast table, and ignores it when it
+# was not — train_forecast_model filters to columns actually present, which is
+# what makes an ablation a matter of what you pass in rather than a code change.
+WIND_FORECAST_COLS = [
+    "wind_fc_mw", "wind_fc_load_factor", "wind_fc_day_mean", "wind_fc_day_range",
+    "wind_fc_vs_day_mean",
+]
+
 FEATURE_COLS = [
     # Same-period lags
     "apx_lag_1d", "apx_lag_2d", "apx_lag_7d", "apx_lag_14d",
@@ -340,6 +382,6 @@ FEATURE_COLS = [
     "is_weekend", "is_bank_holiday",
     # GB BESS fleet capacity (structural market variable, from REPD)
     "bess_fleet_mw", "bess_spread_suppression",
-]
+] + WIND_FORECAST_COLS
 # Include any individual fuel-group columns that were built (gas, wind, etc.)
 # These are appended dynamically in train_forecast_model.
