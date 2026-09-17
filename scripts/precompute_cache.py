@@ -51,7 +51,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pandas as pd
 
-from scripts.build_forecast_walk_forward import load_or_build, pooled_metrics
+from scripts.build_forecast_walk_forward import fold_metrics, load_or_build, pooled_metrics
 from src.analysis.price_forecast import (
     DEFAULT_TEST_START,
     WALK_FORWARD_CADENCE_MONTHS,
@@ -260,8 +260,7 @@ def main() -> None:
                 "test_start": str(DEFAULT_TEST_START)},
         model_metrics={
             "walk_forward": walk_forward,
-            "folds": [{"origin": f["origin"], "train_rows": f["train_rows"], **f["metrics"]}
-                      for f in folds],
+            "folds": fold_metrics(predictions, mkt_index, folds),
             "fixed_split": {"train": fixed_train, "test": fixed_test},
         },
         feature_importances=[

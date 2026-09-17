@@ -137,6 +137,32 @@ def pooled_metrics(predictions: pd.DataFrame, market_index: pd.DataFrame) -> dic
     }
 
 
+def fold_metrics(predictions: pd.DataFrame, market_index: pd.DataFrame, folds: list | None = None) -> list:
+    """
+    Per-origin metrics, computed from the prediction table rather than read back.
+
+    Fold metadata is written when a fold is fitted, so any metric added later is
+    missing from every cached fold — which is what happened when spread
+    calibration arrived on 2026-09-17 and all 20 folds came back without it.
+    Computing from the predictions keeps the numbers consistent with whatever the
+    metric code currently says. Build-time facts (training span and row count)
+    still come from the metadata, since the predictions cannot reveal them.
+    """
+    facts = {str(f.get("origin")): f for f in (folds or [])}
+    rows = []
+    for origin, group in predictions.groupby("origin"):
+        key = pd.Timestamp(origin).date().isoformat()
+        fact = facts.get(key, {})
+        rows.append({
+            "origin": key,
+            "train_start": fact.get("train_start"),
+            "predicts_until": fact.get("predicts_until"),
+            "train_rows": fact.get("train_rows"),
+            **pooled_metrics(group, market_index),
+        })
+    return sorted(rows, key=lambda row: row["origin"])
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", default="rf", help="model type to refit at each origin")

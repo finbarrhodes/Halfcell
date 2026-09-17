@@ -1,11 +1,11 @@
 {
   "pf_mpc": {
-    "computed_at": "2026-09-17T11:55:00.093710+00:00",
-    "git_sha": "3cce458b64786e0259eab20815bfab0696f697c3",
+    "computed_at": "2026-09-17T14:20:19.917463+00:00",
+    "git_sha": "aab539d97df18a3f482bea8d311a4dc110a842d3",
     "data_mtimes": {
       "auctions.parquet": 1788868231.5648346,
       "bess_fleet_capacity.parquet": 1788868243.1590447,
-      "forecast_walk_forward.parquet": 1789645033.0632665,
+      "forecast_walk_forward.parquet": 1789648135.4400334,
       "generation_daily.parquet": 1788868243.155298,
       "market_index.parquet": 1788868232.7657495,
       "response_delivery.parquet": 1789573661.5762203,
@@ -117,12 +117,12 @@
     }
   },
   "naive_mpc": {
-    "computed_at": "2026-09-17T12:07:22.536741+00:00",
-    "git_sha": "3cce458b64786e0259eab20815bfab0696f697c3",
+    "computed_at": "2026-09-17T14:32:57.057418+00:00",
+    "git_sha": "aab539d97df18a3f482bea8d311a4dc110a842d3",
     "data_mtimes": {
       "auctions.parquet": 1788868231.5648346,
       "bess_fleet_capacity.parquet": 1788868243.1590447,
-      "forecast_walk_forward.parquet": 1789645033.0632665,
+      "forecast_walk_forward.parquet": 1789648135.4400334,
       "generation_daily.parquet": 1788868243.155298,
       "market_index.parquet": 1788868232.7657495,
       "response_delivery.parquet": 1789573661.5762203,
@@ -234,12 +234,12 @@
     }
   },
   "ml_mpc": {
-    "computed_at": "2026-09-17T12:19:47.673143+00:00",
-    "git_sha": "3cce458b64786e0259eab20815bfab0696f697c3",
+    "computed_at": "2026-09-17T14:45:34.334228+00:00",
+    "git_sha": "aab539d97df18a3f482bea8d311a4dc110a842d3",
     "data_mtimes": {
       "auctions.parquet": 1788868231.5648346,
       "bess_fleet_capacity.parquet": 1788868243.1590447,
-      "forecast_walk_forward.parquet": 1789645033.0632665,
+      "forecast_walk_forward.parquet": 1789648135.4400334,
       "generation_daily.parquet": 1788868243.155298,
       "market_index.parquet": 1788868232.7657495,
       "response_delivery.parquet": 1789573661.5762203,
@@ -359,188 +359,270 @@
         "mae": 31.21,
         "spearman": 0.793,
         "spike_rmse": 110.83,
-        "n_samples": 86233
+        "n_samples": 86233,
+        "spread_bias": -31.52,
+        "spread_mae": 45.09
       },
       "folds": [
         {
           "origin": "2021-09-01",
+          "train_start": "2019-01-19",
+          "predicts_until": "2021-11-30",
           "train_rows": 43357,
-          "rmse": 121.38,
-          "mae": 54.83,
-          "spearman": 0.5,
-          "n_samples": 4368,
-          "spike_rmse": 358.95
+          "rmse": 83.62,
+          "mae": 48.28,
+          "spearman": 0.43,
+          "spike_rmse": 225.41,
+          "n_samples": 3648,
+          "spread_bias": -146.6,
+          "spread_mae": 147.86
         },
         {
           "origin": "2021-12-01",
+          "train_start": "2019-01-19",
+          "predicts_until": "2022-02-28",
           "train_rows": 47725,
           "rmse": 79.58,
           "mae": 47.95,
           "spearman": 0.617,
+          "spike_rmse": 202.52,
           "n_samples": 4320,
-          "spike_rmse": 202.52
+          "spread_bias": -44.38,
+          "spread_mae": 84.07
         },
         {
           "origin": "2022-03-01",
+          "train_start": "2019-01-19",
+          "predicts_until": "2022-05-31",
           "train_rows": 52045,
           "rmse": 58.01,
           "mae": 43.05,
           "spearman": 0.744,
+          "spike_rmse": 106.99,
           "n_samples": 4413,
-          "spike_rmse": 106.99
+          "spread_bias": -20.61,
+          "spread_mae": 50.03
         },
         {
           "origin": "2022-06-01",
+          "train_start": "2019-01-19",
+          "predicts_until": "2022-08-31",
           "train_rows": 56458,
           "rmse": 88.61,
           "mae": 63.46,
           "spearman": 0.793,
+          "spike_rmse": 207.74,
           "n_samples": 4415,
-          "spike_rmse": 207.74
+          "spread_bias": -81.34,
+          "spread_mae": 92.09
         },
         {
           "origin": "2022-09-01",
+          "train_start": "2019-01-19",
+          "predicts_until": "2022-11-30",
           "train_rows": 60873,
           "rmse": 60.1,
           "mae": 45.13,
           "spearman": 0.812,
+          "spike_rmse": 104.87,
           "n_samples": 4363,
-          "spike_rmse": 104.87
+          "spread_bias": -71.2,
+          "spread_mae": 78.61
         },
         {
           "origin": "2022-12-01",
+          "train_start": "2019-01-19",
+          "predicts_until": "2023-02-28",
           "train_rows": 65236,
           "rmse": 50.41,
           "mae": 35.35,
           "spearman": 0.782,
+          "spike_rmse": 80.03,
           "n_samples": 4320,
-          "spike_rmse": 80.03
+          "spread_bias": -45.44,
+          "spread_mae": 58.18
         },
         {
           "origin": "2023-03-01",
+          "train_start": "2019-01-19",
+          "predicts_until": "2023-05-31",
           "train_rows": 69556,
           "rmse": 29.65,
           "mae": 21.22,
           "spearman": 0.634,
+          "spike_rmse": 55.17,
           "n_samples": 4413,
-          "spike_rmse": 55.17
+          "spread_bias": -29.75,
+          "spread_mae": 34.94
         },
         {
           "origin": "2023-06-01",
+          "train_start": "2019-01-19",
+          "predicts_until": "2023-08-31",
           "train_rows": 73969,
           "rmse": 29.77,
           "mae": 22.02,
           "spearman": 0.511,
+          "spike_rmse": 40.5,
           "n_samples": 4414,
-          "spike_rmse": 40.5
+          "spread_bias": -12.98,
+          "spread_mae": 24.24
         },
         {
           "origin": "2023-09-01",
+          "train_start": "2019-01-19",
+          "predicts_until": "2023-11-30",
           "train_rows": 78383,
           "rmse": 30.27,
           "mae": 23.04,
           "spearman": 0.563,
+          "spike_rmse": 40.13,
           "n_samples": 4367,
-          "spike_rmse": 40.13
+          "spread_bias": -30.33,
+          "spread_mae": 35.2
         },
         {
           "origin": "2023-12-01",
+          "train_start": "2019-01-19",
+          "predicts_until": "2024-02-29",
           "train_rows": 82750,
           "rmse": 26.38,
           "mae": 20.91,
           "spearman": 0.642,
+          "spike_rmse": 37.3,
           "n_samples": 4367,
-          "spike_rmse": 37.3
+          "spread_bias": -7.16,
+          "spread_mae": 18.4
         },
         {
           "origin": "2024-03-01",
+          "train_start": "2019-01-19",
+          "predicts_until": "2024-05-31",
           "train_rows": 87117,
           "rmse": 25.99,
           "mae": 20.32,
           "spearman": 0.52,
+          "spike_rmse": 34.43,
           "n_samples": 4413,
-          "spike_rmse": 34.43
+          "spread_bias": -18.28,
+          "spread_mae": 23.37
         },
         {
           "origin": "2024-06-01",
+          "train_start": "2019-01-19",
+          "predicts_until": "2024-08-31",
           "train_rows": 91530,
           "rmse": 30.26,
           "mae": 23.25,
           "spearman": 0.471,
+          "spike_rmse": 38.59,
           "n_samples": 4416,
-          "spike_rmse": 38.59
+          "spread_bias": -14.47,
+          "spread_mae": 24.44
         },
         {
           "origin": "2024-09-01",
+          "train_start": "2019-01-19",
+          "predicts_until": "2024-11-30",
           "train_rows": 95946,
           "rmse": 36.18,
           "mae": 27.14,
           "spearman": 0.597,
+          "spike_rmse": 61.26,
           "n_samples": 4368,
-          "spike_rmse": 61.26
+          "spread_bias": -12.84,
+          "spread_mae": 26.07
         },
         {
           "origin": "2024-12-01",
+          "train_start": "2019-01-19",
+          "predicts_until": "2025-02-28",
           "train_rows": 100314,
           "rmse": 56.84,
           "mae": 25.76,
           "spearman": 0.715,
+          "spike_rmse": 160.3,
           "n_samples": 4320,
-          "spike_rmse": 160.3
+          "spread_bias": -36.79,
+          "spread_mae": 42.88
         },
         {
           "origin": "2025-03-01",
+          "train_start": "2019-01-19",
+          "predicts_until": "2025-05-31",
           "train_rows": 104634,
           "rmse": 28.05,
           "mae": 21.39,
           "spearman": 0.618,
+          "spike_rmse": 33.11,
           "n_samples": 4414,
-          "spike_rmse": 33.11
+          "spread_bias": -17.65,
+          "spread_mae": 24.7
         },
         {
           "origin": "2025-06-01",
+          "train_start": "2019-01-19",
+          "predicts_until": "2025-08-31",
           "train_rows": 109048,
           "rmse": 33.32,
           "mae": 26.58,
           "spearman": 0.547,
+          "spike_rmse": 41.93,
           "n_samples": 4416,
-          "spike_rmse": 41.93
+          "spread_bias": -4.67,
+          "spread_mae": 28.18
         },
         {
           "origin": "2025-09-01",
+          "train_start": "2019-01-19",
+          "predicts_until": "2025-11-30",
           "train_rows": 113464,
           "rmse": 33.33,
           "mae": 25.9,
           "spearman": 0.601,
+          "spike_rmse": 50.37,
           "n_samples": 4368,
-          "spike_rmse": 50.37
+          "spread_bias": -13.85,
+          "spread_mae": 28.79
         },
         {
           "origin": "2025-12-01",
+          "train_start": "2019-01-19",
+          "predicts_until": "2026-02-28",
           "train_rows": 117832,
           "rmse": 25.7,
           "mae": 17.82,
           "spearman": 0.578,
+          "spike_rmse": 47.69,
           "n_samples": 4320,
-          "spike_rmse": 47.69
+          "spread_bias": -7.16,
+          "spread_mae": 21.01
         },
         {
           "origin": "2026-03-01",
+          "train_start": "2019-01-19",
+          "predicts_until": "2026-05-31",
           "train_rows": 122152,
           "rmse": 46.49,
           "mae": 38.32,
           "spearman": 0.469,
+          "spike_rmse": 56.41,
           "n_samples": 4414,
-          "spike_rmse": 56.41
+          "spread_bias": -12.8,
+          "spread_mae": 36.09
         },
         {
           "origin": "2026-06-01",
+          "train_start": "2019-01-19",
+          "predicts_until": "2026-08-17",
           "train_rows": 126566,
           "rmse": 40.9,
           "mae": 29.94,
           "spearman": 0.677,
+          "spike_rmse": 62.66,
           "n_samples": 3744,
-          "spike_rmse": 62.66
+          "spread_bias": -20.23,
+          "spread_mae": 39.77
         }
       ],
       "fixed_split": {
@@ -549,14 +631,18 @@
           "mae": 7.28,
           "spearman": 0.984,
           "n_samples": 104634,
-          "spike_rmse": 50.72
+          "spike_rmse": 50.72,
+          "spread_bias": -26.06,
+          "spread_mae": 26.28
         },
         "test": {
           "rmse": 34.14,
           "mae": 25.5,
           "spearman": 0.607,
           "n_samples": 25678,
-          "spike_rmse": 50.92
+          "spike_rmse": 50.92,
+          "spread_bias": -16.75,
+          "spread_mae": 29.07
         }
       }
     },

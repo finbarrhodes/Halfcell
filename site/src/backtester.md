@@ -662,8 +662,10 @@ display(folds.length ? Plot.plot({
   marks: [
     Plot.ruleY([0]),
     Plot.barY(folds, {x: "origin", y: "rmse", fill: "#0D7680", tip: true,
-                      channels: {"training rows": "train_rows", "Spearman": "spearman",
-                                 "spread bias": "spread_bias"}}),
+                      channels: folds[0]?.spread_bias == null
+                        ? {"training rows": "train_rows", "Spearman": "spearman"}
+                        : {"training rows": "train_rows", "Spearman": "spearman",
+                           "spread bias": "spread_bias"}}),
     Plot.ruleY([wf.rmse], {stroke: "#C9400A", strokeDasharray: "4 3"}),
   ],
 }) : html`<i>No per-fold metrics in the manifest — re-run scripts/precompute_cache.py.</i>`);
