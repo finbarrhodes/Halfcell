@@ -246,8 +246,19 @@ Dispatch decisions execute unconditionally at actual prices. Per-period revenue 
 negative when forecast error causes an unfavourable trade — that is the realistic
 operational outcome and is intentional.
 
-The **foresight ratio** summarises how much of the theoretical ceiling each strategy
-achieves. For LP-based joint co-optimisation of arbitrage and frequency response in GB, see
+The **foresight ratio** measures how much of the gap between those two bounds a forecast
+closes: `(ML − Naive) / (Perfect Foresight − Naive)`, on net revenue. Published GB and
+European price-forecasting literature treats 70–85% as strong performance.
+
+Read it together with its denominator. The ratio is a share of the *capturable* headroom, so
+anything that narrows the gap between the floor and the ceiling lowers it without the forecast
+changing at all. Modelling response delivery did exactly that: once a Low contract has to buy
+back the energy it gives away, arbitrage-driven revenue falls for all three strategies and the
+floor rises towards the ceiling, so the same Random Forest scores several points lower than it
+did against a delivery-free model. The absolute revenues, and the share of perfect-foresight
+trading revenue the forecast captures, are the steadier readings.
+
+For LP-based joint co-optimisation of arbitrage and frequency response in GB, see
 [Swierczynski et al. (2021)](https://doi.org/10.3390/en14248365).
 
 ## Ancillary service availability revenue
@@ -501,6 +512,13 @@ importances are on the [Forecasting & Dispatch](./backtester) page.
   only the periods that start outside the requirement, so it understates that exposure.
 - *Expected delivery costs are recent averages.* Offers price delivery on the previous four
   weeks and the previous week's prices, not on a forecast of either.
+- *One train/test split.* The ML model trains on everything before a fixed date and is
+  tested after it, so every forecast figure here rests on a single window. The August 2026
+  refresh showed how much that matters: on the six months it added, test RMSE rose from 29.1
+  to 48.6 and rank correlation fell from 0.615 to 0.544, with prices 28% higher and a third
+  more volatile than in training. Tree models cannot extrapolate beyond the price range they
+  were trained on, so this is a real limit on the forecast rather than noise. Walk-forward
+  validation across several windows is the fix, and is not yet done.
 - *Price-taker.* The battery's offers are assumed not to move clearing prices, backed by the
   20% auction-size limit. That is why results scale linearly with power, and why the dispatch
   page stops at 100 MW.
