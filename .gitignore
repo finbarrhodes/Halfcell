@@ -52,6 +52,8 @@ data/processed/*.json
 # prediction table: without it a fresh clone has forecasts but no per-fold
 # metrics, and the backtester's fold chart falls back to its empty state.
 !data/processed/forecast_walk_forward_folds.json
+# Per-model benchmark prediction tables: regenerable, one per model tried
+data/processed/benchmarks/
 data/raw/*.pkl
 data/processed/*.pkl
 
