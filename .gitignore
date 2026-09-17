@@ -117,3 +117,6 @@ site/src/.observablehq/
 
 # NESO one-second frequency files (~4 GB); only the derived half-hourly table is committed
 data/raw/frequency/
+
+# NESO day-ahead wind forecast history (~9 MB CSV); the tidied table is committed
+data/raw/wind_forecast/

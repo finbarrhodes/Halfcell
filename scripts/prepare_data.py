@@ -37,7 +37,8 @@ import pandas as pd
 ROOT      = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
-from src.analysis.response_delivery import build_delivery_table  # noqa: E402
+from src.analysis.response_delivery import build_delivery_table
+from src.analysis.wind_forecast import build_wind_forecast_table  # noqa: E402
 
 RAW       = ROOT / "data" / "raw"
 PROCESSED = ROOT / "data" / "processed"
@@ -326,6 +327,28 @@ def prepare_response_delivery(raw: Path, processed: Path, append: bool) -> None:
     _write(table, processed, "response_delivery.parquet", unit="settlement periods")
 
 
+def prepare_wind_forecast(raw: Path, processed: Path, append: bool) -> None:
+    print("Processing day-ahead wind forecast (NESO)...")
+    files = sorted((raw / "wind_forecast").glob("day_ahead_wind_forecast*.csv"))
+
+    # One CSV carries the whole history, so a slice-only collection leaves the
+    # committed table alone rather than rebuilding it from nothing.
+    if not files:
+        if (processed / "wind_forecast.parquet").exists():
+            print("  no forecast CSV in this slice — existing Parquet left as is")
+        else:
+            print(
+                "  SKIP: no files in data/raw/wind_forecast/. Download with:\n"
+                "    python -m src.data_collection.wind_forecast_collector"
+            )
+        return
+
+    base = _read_base(processed, "wind_forecast.parquet", append)
+    table = _merge(build_wind_forecast_table(files), base, ["settlementDate", "settlementPeriod"])
+    table = table.sort_values(["settlementDate", "settlementPeriod"]).reset_index(drop=True)
+    _write(table, processed, "wind_forecast.parquet", unit="settlement periods")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Convert raw CSVs into the committed processed Parquets."
@@ -361,6 +384,7 @@ def main() -> None:
         prepare_generation,
         prepare_bess_fleet,
         prepare_response_delivery,
+        prepare_wind_forecast,
     ):
         step(args.raw_dir, args.processed_dir, args.append)
 
