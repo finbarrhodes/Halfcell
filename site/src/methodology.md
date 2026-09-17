@@ -484,6 +484,40 @@ that stretch against £2.3k in the 18 genuinely held-out months. The fixed split
 as a diagnostic on the [Forecasting & Dispatch](./backtester) page, and as the fit that
 supplies feature importances.
 
+**Why the model is not chosen by accuracy.** All four candidates were benchmarked on the same
+walk-forward folds, with the folds from 2025 held back so the choice could not be made on the
+evidence used to report it. The most accurate forecaster was the worst earner, and not
+marginally.
+
+| Model | RMSE | Spearman ρ | Spike RMSE | £k/MW/yr | Foresight ratio |
+|---|---|---|---|---|---|
+| Random Forest | 35.2 | 0.587 | 52.5 | **87.3** | **19.7%** |
+| LightGBM | 34.4 | 0.588 | 51.4 | 87.0 | 18.2% |
+| XGBoost | 36.3 | 0.559 | 53.5 | — | — |
+| LEAR | **33.2** | **0.647** | **46.4** | 64.1 | −91.5% |
+
+Accuracy columns are the held-back folds; revenue is the full backtest. LEAR wins every
+accuracy column and earns £19k/MW/yr *less than reusing yesterday's prices*.
+
+The cause is calibration in the one dimension dispatch consumes. LEAR over-predicts the daily
+price spread by £272/MWh across the backtest and by £29.5 even in the calm recent market, while
+the trees under-predict it — Random Forest by £31.5. For a price-taker battery that asymmetry
+is protective. A spread that fails to materialise costs money twice: once in the trade itself,
+and again at the offer stage, where an inflated shadow arbitrage value makes the model decline
+frequency response contracts worth having. Over 2025 onward, LEAR held 23 MW of Low products
+against Random Forest's 30, sat out 30% of EFA blocks against 12%, and gave up £0.71M of
+availability revenue to gain £0.07M of trading revenue while cycling 48% more energy.
+
+Clipping LEAR's forecasts to the price range observed before each origin — a guardrail any
+operator would have — cut its worst prediction from £67,062/MWh to £1,984 and recovered almost
+nothing (£64.9k), because in the recent folds nothing needed clipping. The problem is the
+systematic bias, not the tail.
+
+So Random Forest ships for robustness rather than accuracy, and the reported metrics are known
+to be blind to the failure that decided this: spike-RMSE scores error on spikes that *happened*,
+so a forecast inventing spikes is never charged for it. Spread calibration belongs in the
+metrics table, and is queued.
+
 **Known limitations.** Tree-based models cannot extrapolate beyond price ranges seen in
 training; electricity price forecasting is inherently noisy; and the model improves dispatch
 quality on average without eliminating error on individual days. Current metrics and feature

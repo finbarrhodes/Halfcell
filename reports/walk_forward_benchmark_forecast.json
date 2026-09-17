@@ -1,0 +1,114 @@
+[
+  {
+    "model": "rf",
+    "fit_minutes": 0.01,
+    "folds": 20,
+    "metrics": {
+      "all": {
+        "rmse": 48.46,
+        "mae": 31.21,
+        "spearman": 0.793,
+        "spike_rmse": 110.83,
+        "n_samples": 86233
+      },
+      "selection": {
+        "rmse": 53.09,
+        "mae": 33.16,
+        "spearman": 0.841,
+        "spike_rmse": 125.1,
+        "n_samples": 60557
+      },
+      "confirmation": {
+        "rmse": 35.24,
+        "mae": 26.61,
+        "spearman": 0.587,
+        "spike_rmse": 52.49,
+        "n_samples": 25676
+      }
+    }
+  },
+  {
+    "model": "lgb",
+    "fit_minutes": 1.8,
+    "folds": 20,
+    "metrics": {
+      "all": {
+        "rmse": 49.4,
+        "mae": 31.55,
+        "spearman": 0.791,
+        "spike_rmse": 116.35,
+        "n_samples": 86233
+      },
+      "selection": {
+        "rmse": 54.52,
+        "mae": 33.85,
+        "spearman": 0.836,
+        "spike_rmse": 131.99,
+        "n_samples": 60557
+      },
+      "confirmation": {
+        "rmse": 34.41,
+        "mae": 26.11,
+        "spearman": 0.588,
+        "spike_rmse": 51.37,
+        "n_samples": 25676
+      }
+    }
+  },
+  {
+    "model": "xgb",
+    "fit_minutes": 0.45,
+    "folds": 20,
+    "metrics": {
+      "all": {
+        "rmse": 51.43,
+        "mae": 32.93,
+        "spearman": 0.782,
+        "spike_rmse": 119.63,
+        "n_samples": 86233
+      },
+      "selection": {
+        "rmse": 56.63,
+        "mae": 35.29,
+        "spearman": 0.833,
+        "spike_rmse": 135.98,
+        "n_samples": 60557
+      },
+      "confirmation": {
+        "rmse": 36.32,
+        "mae": 27.36,
+        "spearman": 0.559,
+        "spike_rmse": 53.52,
+        "n_samples": 25676
+      }
+    }
+  },
+  {
+    "model": "lear",
+    "fit_minutes": 9.32,
+    "folds": 20,
+    "metrics": {
+      "all": {
+        "rmse": 585.7,
+        "mae": 85.1,
+        "spearman": 0.766,
+        "spike_rmse": 1667.5,
+        "n_samples": 86233
+      },
+      "selection": {
+        "rmse": 698.58,
+        "mae": 110.59,
+        "spearman": 0.794,
+        "spike_rmse": 1974.99,
+        "n_samples": 60557
+      },
+      "confirmation": {
+        "rmse": 33.24,
+        "mae": 25.0,
+        "spearman": 0.647,
+        "spike_rmse": 46.39,
+        "n_samples": 25676
+      }
+    }
+  }
+]
