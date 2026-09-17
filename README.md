@@ -20,16 +20,22 @@ Annualised net revenue per MW:
 | Strategy | Full stack | Arbitrage only | What it represents |
 |---|---|---|---|
 | Perfect Foresight | £104.1k | £62.5k | Theoretical ceiling; requires knowing day-D prices |
-| **ML (Random Forest)** | **£97.0k** | **£48.9k** | Realistic case, using only data available at the bid deadline |
+| **ML (Random Forest)** | **£87.3k** | **£31.4k** | Realistic case: every forecast out-of-sample, from data available at the bid deadline |
 | Naive (D-1 prices) | £83.2k | £25.3k | Zero-skill floor; any real forecast must beat it |
 | FR only | £82.2k | — | A site that ignores arbitrage entirely |
 
-- **Foresight ratio 66%** — the share of the naive-to-perfect gap the forecast closes,
-  `(ML − Naive) / (PF − Naive)`. On trading revenue alone the forecast captures 78% of what
-  perfect foresight earns.
-- **Frequency response dominates the stack.** FR-only earns £82.2k of the ML strategy's
-  £97.0k, so arbitrage is the margin, not the business.
-- **The battery stays compliant.** It starts 0.4–0.55% of settlement periods outside the
+- **Foresight ratio 20%** — the share of the naive-to-perfect gap the forecast closes,
+  `(ML − Naive) / (PF − Naive)`. It sits at 19% through the 2021–22 gas crisis and 21% from
+  2023 onward, so it is not an artefact of one strange market.
+- **Every forecast is out-of-sample.** The model is refit quarterly on the history available
+  at that point and predicts only the days that follow, so no day is forecast by a model that
+  trained on it. An earlier version trained once and then backtested across its own training
+  period, which put this same ratio at 66% — the gap between those two numbers is what
+  in-sample forecasting is worth, and it is not small.
+- **Frequency response dominates the stack.** FR only earns £82.2k of the ML strategy's
+  £87.3k, so arbitrage is the margin rather than the business — and what the forecast adds
+  now arrives mostly through better capacity allocation, not better trading.
+- **The battery stays compliant.** It starts 0.4–0.6% of settlement periods outside the
   state-of-energy range its contracts require, and almost every one is a single half-hour at
   an EFA block boundary.
 
@@ -45,8 +51,9 @@ The figures describe one hypothetical 50 MW / 2-hour asset, under assumptions do
 the methodology page, priced against historical public data. They are not a projection for
 any real site, portfolio or market, and are not without methodological limitations: the model
 excludes the Balancing Mechanism and the Capacity Market, assumes every offer clears at the
-auction price, and rests on a single train/test split. These elements mark where I intend to
-take Halfcell as much as where I am conscious of its current limits.
+auction price, and rests on one model whose hyperparameters were chosen once rather than
+re-selected as the market moved. These elements mark where I intend to take Halfcell as much
+as where I am conscious of its current limits.
 
 ## The model
 
@@ -75,8 +82,11 @@ holding.
 
 **Forecasts.** Three price signals drive the same engine: actual prices (ceiling), yesterday's
 prices (floor), and a Random Forest on lagged prices, generation mix, cyclical time features
-and BESS fleet capacity. A LEAR ensemble is implemented but not yet benchmarked against the
-Random Forest.
+and BESS fleet capacity. The Random Forest is refit at quarterly origins on the history
+available at each one and predicts only the days until the next, which is what makes the
+five-year comparison out-of-sample throughout. A LEAR ensemble is implemented but not yet
+benchmarked against it — and that benchmark has to run on the same walk-forward footing,
+since a single split flatters whichever model fits its training data hardest.
 
 ## NESO rules, with citations
 

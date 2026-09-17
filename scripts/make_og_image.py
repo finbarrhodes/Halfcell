@@ -77,7 +77,7 @@ def main() -> None:
     stats = [
         (f"£{summary['annualised_per_mw'] / 1e3:,.0f}k", "per MW per year, modelled"),
         (f"{summary['years_covered']:.1f} yrs", f"backtested to {params['end_date']}"),
-        (f"{ml['model_metrics']['test']['n_samples']:,}", "held-out test observations"),
+        (f"{ml['model_metrics']['walk_forward']['n_samples']:,}", "out-of-sample observations"),
     ]
     panel_x, top = 0.665, 0.60
     fig.patches.append(plt.Rectangle(

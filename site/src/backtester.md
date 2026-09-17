@@ -573,9 +573,11 @@ the question is how close it gets to the ceiling.</p>
 <p>The <b>foresight ratio</b> quantifies this as a fraction of the capturable improvement:
 <code>(ML − Naive) / (PF − Naive)</code>. Published GB and European price-forecasting
 literature treats 70–85% as strong performance.</p>
-<p>It is a share of the <i>capturable</i> gap, so it moves when that gap moves. Charging the
-model for the energy its frequency response contracts deliver lifted the floor towards the
-ceiling, which lowers the ratio without the forecast having changed.</p>
+<p>It is a share of the <i>capturable</i> gap, so it moves when that gap moves: charging the
+model for the energy its contracts deliver lifted the floor towards the ceiling. The bigger
+shift came from retraining. While a single fixed split left most of the backtest forecast by a
+model that had trained on it, this read near 66%; with every forecast out-of-sample it sits
+near a fifth, and holds there in every sub-period.</p>
 <p><span class="big">${foresightRatio == null ? "—" : (foresightRatio * 100).toFixed(1) + "%"}</span><br>
 <span class="muted">foresight ratio${arbRatio == null ? "" : ` · ${(arbRatio * 100).toFixed(1)}% of perfect-foresight arbitrage captured`}</span></p>
 </div>
@@ -619,24 +621,58 @@ display(importances.length ? Plot.plot({
 ```
 
 ```js
-const m = manifest.ml_mpc.model_metrics;
+const metrics = manifest.ml_mpc.model_metrics;
+const wf = metrics.walk_forward, fixed = metrics.fixed_split;
+const folds = metrics.folds ?? [];
+
 display(Inputs.table([
-  {Metric: "RMSE (£/MWh)", Train: m.train.rmse, Test: m.test.rmse},
-  {Metric: "MAE (£/MWh)", Train: m.train.mae, Test: m.test.mae},
-  {Metric: "Spearman ρ", Train: m.train.spearman, Test: m.test.spearman},
-  {Metric: "Spike-RMSE (£/MWh)", Train: m.train.spike_rmse, Test: m.test.spike_rmse},
-  {Metric: "Observations", Train: d3.format(",")(m.train.n_samples), Test: d3.format(",")(m.test.n_samples)},
+  {Metric: "RMSE (£/MWh)", "Walk-forward": wf.rmse, "In-sample fit": fixed.train.rmse, "Single held-out split": fixed.test.rmse},
+  {Metric: "MAE (£/MWh)", "Walk-forward": wf.mae, "In-sample fit": fixed.train.mae, "Single held-out split": fixed.test.mae},
+  {Metric: "Spearman ρ", "Walk-forward": wf.spearman, "In-sample fit": fixed.train.spearman, "Single held-out split": fixed.test.spearman},
+  {Metric: "Spike-RMSE (£/MWh)", "Walk-forward": wf.spike_rmse, "In-sample fit": fixed.train.spike_rmse, "Single held-out split": fixed.test.spike_rmse},
+  {Metric: "Observations", "Walk-forward": d3.format(",")(wf.n_samples), "In-sample fit": d3.format(",")(fixed.train.n_samples), "Single held-out split": d3.format(",")(fixed.test.n_samples)},
 ], {rows: 6, width: {Metric: 190}}));
 ```
 
-Training uses an expanding window ending before **${manifest.ml_mpc.params.test_start}**;
-everything after that date is held out. Spike-RMSE measures error on top-decile price
-periods, where arbitrage revenue concentrates. Spearman ρ matters more than RMSE for
-dispatch quality — the LP only needs the *ordering* of prices to be right.
+**Every forecast behind the revenue figures is out-of-sample.** The model is refit every
+${manifest.ml_mpc.params.walk_forward_cadence_months} months on the history available at
+that point and predicts only the days that follow, so no day is forecast by a model that
+trained on it — ${folds.length} refits across the backtest. The other two columns are
+diagnostics, not the basis of anything: the in-sample fit shows how well the model
+reproduces days it has already seen, and the single held-out split is the conventional
+one-boundary estimate. The distance between them is why this page reports the first column.
+
+```js
+display(folds.length ? Plot.plot({
+  height: 240, marginLeft: 52, marginBottom: 34,
+  x: {label: null, type: "band", tickFormat: (d) => d.slice(0, 7), ticks: folds.filter((_, i) => i % 2 === 0).map((f) => f.origin)},
+  y: {label: "Fold RMSE (£/MWh)", grid: true, zero: true},
+  marks: [
+    Plot.ruleY([0]),
+    Plot.barY(folds, {x: "origin", y: "rmse", fill: "#0D7680", tip: true,
+                      channels: {"training rows": "train_rows", "Spearman": "spearman"}}),
+    Plot.ruleY([wf.rmse], {stroke: "#C9400A", strokeDasharray: "4 3"}),
+  ],
+}) : html`<i>No per-fold metrics in the manifest — re-run scripts/precompute_cache.py.</i>`);
+```
+
+<p class="muted">Error per refit, against the pooled walk-forward RMSE (dashed). Spearman ρ
+ranges ${d3.format(".2f")(d3.min(folds, (d) => d.spearman))}–${d3.format(".2f")(d3.max(folds, (d) => d.spearman))}
+across folds, which is the spread a single split cannot show.</p>
+
+Spike-RMSE measures error on top-decile price periods, where arbitrage revenue concentrates.
+Spearman ρ matters more than RMSE for dispatch quality — the LP only needs the *ordering* of
+prices to be right.
+
+Read the Spearman row with care: each column pools every period in its own window, so the
+three cover different spans and are not directly comparable, and pooling across years mixes
+the variation *between* days into a number meant to describe ordering *within* a day. The
+per-fold range above is the better guide, and a within-day measure would be better still.
 
 **Known limitations:** tree-based models cannot extrapolate beyond price ranges seen in
-training; electricity price forecasting is inherently noisy; and the model improves dispatch
-quality on average without eliminating error on individual days.
+training; electricity price forecasting is inherently noisy; the model improves dispatch
+quality on average without eliminating error on individual days; and hyperparameters were
+chosen once rather than re-selected inside each fold.
 
 ## Sensitivity
 

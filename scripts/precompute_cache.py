@@ -24,6 +24,11 @@ Every run is capped at a fifth of each auction's cleared volume, calls contracts
 as GB frequency actually moved (data/processed/response_delivery.parquet), and
 prices that delivery into offers.
 
+The ML strategy's forecasts come from data/processed/forecast_walk_forward.parquet,
+where the model is refit at quarterly origins and predicts only the days after each
+one, so no day is forecast by a model that trained on it. Missing origins are fitted
+and cached on the way through; see scripts/build_forecast_walk_forward.py.
+
 Strategies:
   1. Perfect Foresight + MPC  — revenue ceiling
   2. Naive (D-1 prices) + MPC — zero-skill floor
@@ -46,8 +51,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pandas as pd
 
+from scripts.build_forecast_walk_forward import load_or_build, pooled_metrics
 from src.analysis.price_forecast import (
     DEFAULT_TEST_START,
+    WALK_FORWARD_CADENCE_MONTHS,
     build_feature_matrix,
     get_feature_importances,
     load_bess_capacity,
@@ -221,30 +228,42 @@ def main() -> None:
     # ------------------------------------------------------------------
     _print_section(4, 4, "ML (Random Forest) + MPC")
 
-    print("  Building feature matrix…")
-    feature_df = build_feature_matrix(mkt_index, gen_daily, load_bess_capacity())
-
-    print(f"  Training {ML_MODEL_TYPE.upper()} model (test split: {DEFAULT_TEST_START})…")
-    model, feature_cols, train_metrics, test_metrics = train_forecast_model(
-        feature_df, model_type=ML_MODEL_TYPE, test_start=DEFAULT_TEST_START
-    )
-    print(f"  Test RMSE: {test_metrics['rmse']:.2f} £/MWh  |  "
-          f"Spearman ρ: {test_metrics['spearman']:.3f}")
+    print(f"  Walk-forward forecasts, refit every {WALK_FORWARD_CADENCE_MONTHS} months "
+          f"(cached in data/processed)…")
+    predictions, folds = load_or_build(model_type=ML_MODEL_TYPE)
+    walk_forward = pooled_metrics(predictions, mkt_index)
+    print(f"  Out-of-sample over {len(folds)} folds: RMSE {walk_forward['rmse']:.2f} £/MWh  |  "
+          f"Spearman ρ: {walk_forward['spearman']:.3f}")
 
     ml, ml_scenarios = run_pair("ml_mpc", lambda svc: run_forecast_backtest(
         strategy="ml", market_index=mkt_index, auctions=auctions, battery=BATTERY,
-        services=svc, start_date=start_date, end_date=end_date,
-        model=model, feature_df=feature_df, feature_cols=feature_cols,
+        services=svc, start_date=start_date, end_date=end_date, predictions=predictions,
         initial_soc_frac=INITIAL_SOC, horizon=HORIZON, pre_eac_rule=PRE_EAC_RULE, delivery=delivery,
     ))
 
-    # Feature importances are stored here so the site never has to train a model
-    # — the chart needs ~20 numbers, not a fresh Random Forest fit.
+    # Feature importances describe the data, not any one forecast, so they come from a
+    # single fit over all history — never used to predict anything. The same fit yields
+    # the fixed-split metrics the methodology page cites when explaining why walk-forward
+    # replaced them. Stored so the site never has to train a model: the chart needs ~20
+    # numbers, not a Random Forest.
+    print("  One fit over all history, for feature importances…")
+    feature_df = build_feature_matrix(mkt_index, gen_daily, load_bess_capacity())
+    model, feature_cols, fixed_train, fixed_test = train_forecast_model(
+        feature_df, model_type=ML_MODEL_TYPE, test_start=DEFAULT_TEST_START
+    )
     importances = get_feature_importances(model, feature_cols).head(N_IMPORTANCES)
     manifest["ml_mpc"] = entry(
         ml, ml_scenarios,
-        params={**base_params, "ml_model_type": ML_MODEL_TYPE, "test_start": str(DEFAULT_TEST_START)},
-        model_metrics={"train": train_metrics, "test": test_metrics},
+        params={**base_params, "ml_model_type": ML_MODEL_TYPE,
+                "forecast_validation": "walk-forward",
+                "walk_forward_cadence_months": WALK_FORWARD_CADENCE_MONTHS,
+                "test_start": str(DEFAULT_TEST_START)},
+        model_metrics={
+            "walk_forward": walk_forward,
+            "folds": [{"origin": f["origin"], "train_rows": f["train_rows"], **f["metrics"]}
+                      for f in folds],
+            "fixed_split": {"train": fixed_train, "test": fixed_test},
+        },
         feature_importances=[
             {"feature": str(k), "importance": float(v)} for k, v in importances.items()
         ],
