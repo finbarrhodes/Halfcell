@@ -48,6 +48,10 @@ data/raw/*.json
 data/raw/*.parquet
 data/processed/*.csv
 data/processed/*.json
+# ... except the walk-forward fold metadata, which pairs with the committed
+# prediction table: without it a fresh clone has forecasts but no per-fold
+# metrics, and the backtester's fold chart falls back to its empty state.
+!data/processed/forecast_walk_forward_folds.json
 data/raw/*.pkl
 data/processed/*.pkl
 
