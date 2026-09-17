@@ -553,6 +553,9 @@ the question is how close it gets to the ceiling.</p>
 <p>The <b>foresight ratio</b> quantifies this as a fraction of the capturable improvement:
 <code>(ML − Naive) / (PF − Naive)</code>. Published GB and European price-forecasting
 literature treats 70–85% as strong performance.</p>
+<p>It is a share of the <i>capturable</i> gap, so it moves when that gap moves. Charging the
+model for the energy its frequency response contracts deliver lifted the floor towards the
+ceiling, which lowers the ratio without the forecast having changed.</p>
 <p><span class="big">${foresightRatio == null ? "—" : (foresightRatio * 100).toFixed(1) + "%"}</span><br>
 <span class="muted">foresight ratio${arbRatio == null ? "" : ` · ${(arbRatio * 100).toFixed(1)}% of perfect-foresight arbitrage captured`}</span></p>
 </div>
