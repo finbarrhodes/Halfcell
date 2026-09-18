@@ -45,6 +45,22 @@ TABLE = PROCESSED / "forecast_walk_forward.parquet"
 FOLDS = PROCESSED / "forecast_walk_forward_folds.json"
 FEATURES = PROCESSED / "forecast_walk_forward_features.json"
 
+# The early table: each day forecast from data to D-2, as it stood before the
+# previous day ended. Offers for D use it (they close at 14:00 on D-1), and so
+# does dispatch for tomorrow's periods; see price_forecast.run_forecast_backtest.
+EARLY_TABLE = PROCESSED / "forecast_walk_forward_early.parquet"
+EARLY_FOLDS = PROCESSED / "forecast_walk_forward_early_folds.json"
+EARLY_FEATURES = PROCESSED / "forecast_walk_forward_early_features.json"
+
+
+def table_paths(information_lag_days: int = 1) -> tuple:
+    """(predictions, folds, fingerprint) paths for the day-ahead or the early table."""
+    if information_lag_days == 1:
+        return TABLE, FOLDS, FEATURES
+    if information_lag_days == 2:
+        return EARLY_TABLE, EARLY_FOLDS, EARLY_FEATURES
+    raise ValueError(f"no cached table for information_lag_days={information_lag_days}")
+
 
 def backtest_window(auctions: pd.DataFrame, market_index: pd.DataFrame) -> tuple:
     """The overlapping range the backtest runs over — the same bounds precompute uses."""
@@ -60,18 +76,25 @@ def load_or_build(
     train_years: float | None = None,
     rebuild: bool = False,
     verbose: bool = True,
+    information_lag_days: int = 1,
 ) -> tuple:
     """
     The cached walk-forward table, extended with any origins it is missing.
 
+    information_lag_days=1 is the day-ahead table dispatch uses for today; 2 is
+    the early table (see EARLY_TABLE). Each has its own files and fingerprint,
+    and the fingerprint records the lag so one can never extend the other.
+
     Returns (predictions, folds). Writes both back to data/processed/ when anything
     was fitted.
     """
+    TABLE, FOLDS, FEATURES = table_paths(information_lag_days)
     auctions = pd.read_parquet(PROCESSED / "auctions.parquet")
     market_index = pd.read_parquet(PROCESSED / "market_index.parquet")
     generation = pd.read_parquet(PROCESSED / "generation_daily.parquet")
     capacity = load_bess_capacity(PROCESSED / "bess_fleet_capacity.parquet")
-    features = build_feature_matrix(market_index, generation, capacity)
+    features = build_feature_matrix(market_index, generation, capacity,
+                                    information_lag_days=information_lag_days)
     start, end = backtest_window(auctions, market_index)
 
     # What the model will actually be given, which is not the same as the declared
@@ -96,9 +119,17 @@ def load_or_build(
                                             "model_type": model_type,
                                             "cadence_months": cadence_months,
                                             "train_years": train_years,
+                                            "information_lag_days": information_lag_days,
                                             "note": logger_note}, indent=2) + "\n")
         if FEATURES.exists():
-            previous = json.loads(FEATURES.read_text())["feature_cols"]
+            fingerprint = json.loads(FEATURES.read_text())
+            # Fingerprints written before the early table existed are day-ahead ones
+            if fingerprint.get("information_lag_days", 1) != information_lag_days:
+                raise RuntimeError(
+                    f"{TABLE.name} was built with information_lag_days="
+                    f"{fingerprint.get('information_lag_days', 1)}, not {information_lag_days}."
+                )
+            previous = fingerprint["feature_cols"]
             if previous != feature_cols:
                 added = sorted(set(feature_cols) - set(previous))
                 removed = sorted(set(previous) - set(feature_cols))
@@ -139,47 +170,12 @@ def load_or_build(
     FEATURES.write_text(json.dumps({"feature_cols": feature_cols,
                                     "model_type": model_type,
                                     "cadence_months": cadence_months,
-                                    "train_years": train_years}, indent=2) + "\n")
+                                    "train_years": train_years,
+                                    "information_lag_days": information_lag_days}, indent=2) + "\n")
     if verbose:
         mins = (time.time() - started) / 60
         print(f"Fitted {len(new_folds)} origin(s) in {mins:.1f} min → {TABLE.name} "
               f"({len(predictions):,} rows, {len(folds)} folds)")
-    return predictions, folds
-
-
-BID_TIME_TABLE = PROCESSED / "benchmarks" / "forecast_wf_rf_3m_bid_time.parquet"
-
-
-def load_or_build_bid_time(verbose: bool = True) -> tuple:
-    """
-    Walk-forward forecasts of day D as they would stand at D's bid deadline.
-
-    The shipped table forecasts D once D-1 has ended, which is right for dispatch
-    on D but not for the offers made at 14:00 on D-1 - it needs ten hours that had
-    not happened yet. This table is built the same way with information_lag_days=2,
-    so every price and generation feature comes from D-2 or earlier. Built whole
-    and cached; delete the file to rebuild.
-
-    Returns (predictions, folds).
-    """
-    folds_file = BID_TIME_TABLE.with_suffix(".folds.json")
-    if BID_TIME_TABLE.exists() and folds_file.exists():
-        return pd.read_parquet(BID_TIME_TABLE), json.loads(folds_file.read_text())
-
-    auctions = pd.read_parquet(PROCESSED / "auctions.parquet")
-    market_index = pd.read_parquet(PROCESSED / "market_index.parquet")
-    generation = pd.read_parquet(PROCESSED / "generation_daily.parquet")
-    capacity = load_bess_capacity(PROCESSED / "bess_fleet_capacity.parquet")
-    features = build_feature_matrix(market_index, generation, capacity, information_lag_days=2)
-    start, end = backtest_window(auctions, market_index)
-    predictions, folds = walk_forward_predictions(
-        features, start, end, model_type="rf", cadence_months=WALK_FORWARD_CADENCE_MONTHS,
-        on_fold=(lambda f: print(f"  {f['origin']}: RMSE {f['metrics']['rmse']}, "
-                                 f"ρ {f['metrics']['spearman']}", flush=True)) if verbose else None,
-    )
-    BID_TIME_TABLE.parent.mkdir(parents=True, exist_ok=True)
-    predictions.to_parquet(BID_TIME_TABLE, index=False)
-    folds_file.write_text(json.dumps(folds, indent=2) + "\n")
     return predictions, folds
 
 
@@ -241,11 +237,14 @@ def main() -> None:
     parser.add_argument("--train-years", type=float, default=None,
                         help="cap the training window (rolling); omit for an expanding window")
     parser.add_argument("--rebuild", action="store_true", help="refit every origin")
+    parser.add_argument("--early", action="store_true",
+                        help="the early table: forecasts from data to D-2, for offers and tomorrow")
     args = parser.parse_args()
 
     predictions, folds = load_or_build(
         model_type=args.model, cadence_months=args.cadence,
         train_years=args.train_years, rebuild=args.rebuild,
+        information_lag_days=2 if args.early else 1,
     )
     market_index = pd.read_parquet(PROCESSED / "market_index.parquet")
     metrics = pooled_metrics(predictions, market_index)

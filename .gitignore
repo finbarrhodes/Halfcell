@@ -55,6 +55,9 @@ data/processed/*.json
 # ... and the feature-set fingerprint beside it, or a fresh clone (and the monthly
 # refresh) re-creates it by assumption and the check it exists for never runs
 !data/processed/forecast_walk_forward_features.json
+# The early table's metadata, for the same reasons
+!data/processed/forecast_walk_forward_early_folds.json
+!data/processed/forecast_walk_forward_early_features.json
 # Per-model benchmark prediction tables: regenerable, one per model tried
 data/processed/benchmarks/
 data/raw/*.pkl
