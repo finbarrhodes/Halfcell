@@ -16,7 +16,7 @@ const fmt = (d) => new Date(d).toLocaleDateString("en-GB", {year: "numeric", mon
 
 The backtester separates frequency response (FR) availability revenue from energy arbitrage
 without counting the same capacity twice, and within the rules NESO sets for Dynamic
-Response providers.
+Services providers.
 
 **Stage 1: what to offer, at the bid deadline.** Offers for all six EFA blocks of day D close
 the afternoon before: 14:00 on D-1 since the Enduring Auction Capability (EAC) went live on
@@ -517,8 +517,9 @@ systematic bias, not the tail.
 
 So Random Forest ships for robustness rather than accuracy, and the reported metrics are known
 to be blind to the failure that decided this: spike-RMSE scores error on spikes that *happened*,
-so a forecast inventing spikes is never charged for it. Spread calibration belongs in the
-metrics table, and is queued.
+so a forecast inventing spikes is never charged for it. Spread calibration, the signed error in
+each day's predicted spread, is now reported beside them on the
+[Forecasting & Dispatch](./backtester) page for that reason.
 
 ### Why a better forecast stopped helping
 
