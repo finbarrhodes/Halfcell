@@ -52,7 +52,7 @@ def test_the_bid_time_naive_forecast_is_the_last_complete_day():
 
 
 def test_ml_offers_at_bid_time_need_their_own_forecast_table():
-    with pytest.raises(ValueError, match="offer_predictions"):
+    with pytest.raises(ValueError, match="early_predictions"):
         run_forecast_backtest(strategy="ml", market_index=_prices(), auctions=pd.DataFrame(),
                               battery=REFERENCE_BATTERY, services=[], start_date=None, end_date=None,
                               predictions=pd.DataFrame({"settlementDate": [], "settlementPeriod": [],
@@ -82,3 +82,79 @@ def test_offers_see_the_bid_time_forecast_of_d_and_yesterdays_forecast_of_d_minu
     # 14:00 to midnight is still calendar D-1, including EFA 1's first hour from 23:00
     path = scheduler._forecast_path(view, pd.Timestamp("2025-03-09 14:00"), 22)
     assert np.all(path[:20] == 1.0) and np.all(path[20:] == 9.0)
+
+
+# --- Dispatch plans only on forecasts that already exist ---------------------------------
+
+def _record_plans(monkeypatch):
+    """Capture the price path and length of every dispatch plan, and trade nothing."""
+    import src.optimisation.mpc as mpc
+    plans = []
+
+    def fake_solve(**kwargs):
+        plans.append(np.asarray(kwargs["price_forecast"], dtype=float))
+        return 0.0, 0.0
+
+    monkeypatch.setattr(mpc, "solve_mpc", fake_solve)
+    return plans
+
+
+def _dispatch(days, *, vintages, early=True, horizon=96):
+    """Three-day run where each forecast is tagged by where it came from."""
+    from src.analysis.revenue_stack import run_dispatch
+    flat = lambda value: pd.Series(float(value), index=range(1, 49))
+    actual = {d: flat(50) for d in days}
+    # Day-ahead forecast of day k reads 100 + k, the early one 200 + k
+    day_ahead = {d: flat(100 + k) for k, d in enumerate(days)}
+    early_fc = {d: flat(200 + k) for k, d in enumerate(days)} if early else None
+    schedule = pd.DataFrame([
+        {"date": d, "efa": efa, "family": "none", "apply_reserve": False, "soc_min_mwh": 0.0,
+         "soc_max_mwh": 100.0, "discharge_max_mw": 50.0, "charge_max_mw": 50.0, "arb_mw": 50.0,
+         **{f"q_{p}": 0.0 for p in ("DCH", "DCL", "DMH", "DML", "DRH", "DRL")}}
+        for d in days for efa in range(1, 7)
+    ]).set_index(["date", "efa"])
+    run_dispatch(actual, REFERENCE_BATTERY, days, day_ahead, schedule=schedule, horizon=horizon,
+                 forecast_vintages=vintages, early_forecast_prices_by_date=early_fc)
+
+
+DAYS3 = [pd.Timestamp("2025-03-10") + pd.Timedelta(days=k) for k in range(3)]
+
+
+def test_without_vintages_tomorrow_is_planned_on_a_forecast_that_needs_today(monkeypatch):
+    """The leak being fixed: at 14:00 on day 0 the plan reads day 1's day-ahead forecast."""
+    plans = _record_plans(monkeypatch)
+    _dispatch(DAYS3, vintages=False)
+    at_1400 = plans[28]
+    assert len(at_1400) == 96
+    assert set(at_1400[20:68]) == {101.0}          # tomorrow, from a forecast built on all of today
+
+
+def test_with_vintages_today_uses_the_day_ahead_forecast_and_tomorrow_the_early_one(monkeypatch):
+    plans = _record_plans(monkeypatch)
+    _dispatch(DAYS3, vintages=True)
+    at_1400 = plans[28]                            # day 0, period 29
+    assert len(at_1400) == 20 + 48                 # the rest of today, then all of tomorrow
+    assert set(at_1400[:20]) == {100.0}
+    assert set(at_1400[20:]) == {201.0}
+
+
+def test_with_vintages_the_plan_ends_after_tomorrow(monkeypatch):
+    plans = _record_plans(monkeypatch)
+    _dispatch(DAYS3, vintages=True)
+    lengths = [len(p) for p in plans]
+    assert lengths[0] == 96 and lengths[47] == 49  # 00:00 and 23:30 on day 0
+    assert lengths[48] == 96                       # a new day moves the limit on
+    assert lengths[-1] == 1                        # the last day has no tomorrow in the data
+
+
+def test_perfect_foresight_keeps_its_prices_and_only_loses_horizon(monkeypatch):
+    plans = _record_plans(monkeypatch)
+    _dispatch(DAYS3, vintages=True, early=False)
+    at_1400 = plans[28]
+    assert len(at_1400) == 68 and set(at_1400[20:]) == {101.0}
+
+
+def test_a_missing_tomorrow_ends_the_plan_tonight(monkeypatch):
+    plans = _record_plans(monkeypatch)
+    _dispatch([DAYS3[0], DAYS3[2]], vintages=True)
+    assert len(plans[28]) == 20

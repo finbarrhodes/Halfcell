@@ -13,10 +13,12 @@ construction. Under a real forecast the plan can also be misled - it will pay
 for headroom to chase a cross-block spread the forecast invents - which is what
 price_shrink is for. Choose the shrink on the selection folds only.
 
-A trailing ":bid" gives naive and ML offers only what existed at the bid
-deadline (run_forecast_backtest's offer_information="bid_time"). Without it,
-offers see a forecast of D built from all of D-1, ten hours of which had not
-happened when the offers closed. Perfect foresight is hindsight either way.
+":bid" gives naive and ML offers only what existed at the bid deadline
+(run_forecast_backtest's offer_information="bid_time"). Without it, offers see a
+forecast of D built from all of D-1, ten hours of which had not happened when
+the offers closed. ":vint" does the same for dispatch: tomorrow is planned on
+the early forecast and the plan ends after it (forecast_vintages). For perfect
+foresight "bid" means nothing and "vint" only shortens the horizon.
 
 Each run is cached under data/processed/benchmarks/, keyed by its settings and
 by the source files the engine is built from, so a rerun after a code change
@@ -26,7 +28,7 @@ Usage:
     python scripts/compare_offer_valuation.py                        # default grid, 4 at a time
     python scripts/compare_offer_valuation.py --runs pf:formula,pf:lp
     python scripts/compare_offer_valuation.py --runs ml:lp:0.5 --jobs 1
-    python scripts/compare_offer_valuation.py --runs naive:lp:1:bid,ml:lp:1:bid
+    python scripts/compare_offer_valuation.py --runs naive:lp:bid,ml:lp:0.5:bid:vint
 """
 
 import argparse
@@ -56,15 +58,19 @@ ENGINE_SOURCES = [
 
 
 def parse_run(spec: str) -> tuple:
-    """"ml:lp:0.5:bid" -> ("ml", "lp", 0.5, True). Shrink defaults to 1, bid-time to off."""
+    """
+    "ml:lp:0.5:bid:vint" -> ("ml", "lp", 0.5, True, True). After strategy and
+    valuation come any of: a shrink (default 1), "bid" for bid-time offers, and
+    "vint" for forecast vintages in dispatch. Perfect foresight ignores "bid".
+    """
     parts = spec.strip().split(":")
-    bid_time = parts[-1] == "bid"
-    parts = parts[:-1] if bid_time else parts
-    strategy, valuation = parts[0], parts[1]
-    shrink = float(parts[2]) if len(parts) > 2 else 1.0
-    if strategy not in ("pf", "naive", "ml") or valuation not in ("formula", "lp"):
+    strategy, valuation, rest = parts[0], parts[1], parts[2:]
+    flags = {part for part in rest if part in ("bid", "vint")}
+    numbers = [part for part in rest if part not in flags]
+    if strategy not in ("pf", "naive", "ml") or valuation not in ("formula", "lp") or len(numbers) > 1:
         raise ValueError(f"bad run spec {spec!r}")
-    return strategy, valuation, shrink, bid_time and strategy != "pf"
+    shrink = float(numbers[0]) if numbers else 1.0
+    return strategy, valuation, shrink, "bid" in flags and strategy != "pf", "vint" in flags
 
 
 def engine_fingerprint() -> str:
@@ -74,18 +80,19 @@ def engine_fingerprint() -> str:
     return digest.hexdigest()[:12]
 
 
-def run_name(strategy: str, valuation: str, shrink: float, bid_time: bool = False) -> str:
+def run_name(strategy: str, valuation: str, shrink: float, bid_time: bool = False, vintages: bool = False) -> str:
     return (f"{strategy}_{valuation}" + (f"_shrink{shrink:g}" if valuation == "lp" and shrink != 1.0 else "")
-            + ("_bid" if bid_time else ""))
+            + ("_bid" if bid_time else "") + ("_vint" if vintages else ""))
 
 
-def backtest(strategy: str, valuation: str, shrink: float, bid_time: bool, fingerprint: str, fresh: bool) -> tuple:
+def backtest(strategy: str, valuation: str, shrink: float, bid_time: bool, vintages: bool,
+             fingerprint: str, fresh: bool) -> tuple:
     """One full-window backtest, cached. Runs in a worker process."""
-    from scripts.build_forecast_walk_forward import backtest_window, load_or_build, load_or_build_bid_time
+    from scripts.build_forecast_walk_forward import backtest_window, load_or_build
     from src.analysis.price_forecast import run_forecast_backtest
     from src.analysis.revenue_stack import ALL_SERVICES, REFERENCE_BATTERY, run_backtest
 
-    name = run_name(strategy, valuation, shrink, bid_time)
+    name = run_name(strategy, valuation, shrink, bid_time, vintages)
     monthly_file = BENCH / f"offer_valuation_{name}_{fingerprint}.parquet"
     summary_file = monthly_file.with_suffix(".json")
     if monthly_file.exists() and summary_file.exists() and not fresh:
@@ -99,15 +106,17 @@ def backtest(strategy: str, valuation: str, shrink: float, bid_time: bool, finge
     common = dict(services=ALL_SERVICES, start_date=start, end_date=end, delivery=delivery,
                   offer_valuation=valuation, price_shrink=shrink)
     if strategy == "pf":
-        result = run_backtest(auctions, market_index, REFERENCE_BATTERY, **common)
+        result = run_backtest(auctions, market_index, REFERENCE_BATTERY, forecast_vintages=vintages, **common)
     else:
         ml = strategy == "ml"
         predictions = load_or_build(model_type="rf", verbose=False)[0] if ml else None
-        offer_predictions = load_or_build_bid_time(verbose=False)[0] if ml and bid_time else None
+        early_predictions = (load_or_build(model_type="rf", verbose=False, information_lag_days=2)[0]
+                             if ml and (bid_time or vintages) else None)
         result = run_forecast_backtest(strategy=strategy, market_index=market_index, auctions=auctions,
                                        battery=REFERENCE_BATTERY, predictions=predictions,
                                        offer_information="bid_time" if bid_time else "day_ahead",
-                                       offer_predictions=offer_predictions, **common)
+                                       forecast_vintages=vintages,
+                                       early_predictions=early_predictions, **common)
 
     BENCH.mkdir(parents=True, exist_ok=True)
     monthly = result["monthly"]
@@ -143,7 +152,8 @@ def split_revenue(monthly: pd.DataFrame, power_mw: float, select_before: str) ->
 
 def foresight(rows: dict, valuation_key: str, half: str) -> float | None:
     """(ML − naive) / (PF − naive) within one valuation; PF is the same with or without _bid."""
-    pf_key = valuation_key.removesuffix("_bid").split("_shrink")[0]
+    vint = valuation_key.endswith("_vint")
+    pf_key = valuation_key.split("_shrink")[0].split("_bid")[0].removesuffix("_vint") + ("_vint" if vint else "")
     try:
         pf = rows[f"pf_{pf_key}"]["revenue"][half]["net"]
         naive, ml = (rows[f"{s}_{valuation_key}"]["revenue"][half]["net"] for s in ("naive", "ml"))

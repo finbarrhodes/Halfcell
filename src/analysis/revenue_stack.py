@@ -805,6 +805,8 @@ def run_dispatch(
     horizon: int = 96,
     delivery: pd.DataFrame | None = None,
     price_seeking: bool = True,
+    forecast_vintages: bool = False,
+    early_forecast_prices_by_date: dict | None = None,
 ) -> tuple[list, list, dict]:
     """
     Rolling MPC dispatch over every settlement period, around FR commitments.
@@ -840,6 +842,17 @@ def run_dispatch(
     forecast misleads, or when recovering delivered energy costs money; both are
     realistic outcomes.
 
+    forecast_vintages=True plans only on forecasts that existed at the time. A
+    forecast of day X from forecast_prices_by_date uses all of X-1, so it is known
+    from midnight on X and drives today's periods. Tomorrow's come from
+    early_forecast_prices_by_date, each day's forecast as it stood before the
+    previous day ended (data to X-2); with none given, as for perfect foresight,
+    forecast_prices_by_date is used for tomorrow too. No honest forecast exists
+    for the day after tomorrow, so the plan ends at midnight after tomorrow: 49 to
+    96 periods rather than `horizon`. Without vintages every period of the horizon
+    reads forecast_prices_by_date, which for naive means tomorrow's slot holds
+    today's actual prices.
+
     Returns
     -------
     energy_rows : list of {date, imbalance_revenue_gbp, cycling_cost_gbp, mwh_cycled,
@@ -860,10 +873,13 @@ def run_dispatch(
     n = len(periods)
     position = {p: i for i, p in enumerate(periods)}
     forecast = {pd.Timestamp(d).normalize(): s for d, s in forecast_prices_by_date.items()}
+    early = (forecast if early_forecast_prices_by_date is None else
+             {pd.Timestamp(d).normalize(): s for d, s in early_forecast_prices_by_date.items()})
     fixed = schedule.to_dict("index") if schedule is not None else {}
 
     actual  = np.full(n, np.nan)
     predict = np.full(n, np.nan)
+    predict_early = np.full(n, np.nan)
     soc_lo  = np.zeros(n)      # full Low requirement for the period's block: MWh in store
     soc_hi  = np.full(n, E)    # E less the full High requirement: MWh of headroom
     rev_hi  = np.zeros(n)
@@ -902,6 +918,9 @@ def run_dispatch(
         f = forecast.get(d)
         if f is not None and sp in f.index:
             predict[i] = float(f.loc[sp])
+        f = early.get(d)
+        if f is not None and sp in f.index:
+            predict_early[i] = float(f.loc[sp])
         key = _period_block(d, sp)
         blocks.append(key)
         block_periods[key].append(i)
@@ -929,6 +948,12 @@ def run_dispatch(
         need_lo[j] = min(soc_lo[j], need_lo[k] - delivered_out[k] + adjust_lo[k])
         need_hi[j] = min(rev_hi[j], need_hi[k] - delivered_in[k] + adjust_hi[k])
 
+    def plan_prices(i, idx):
+        """Today's periods on the day-ahead forecast; with vintages, tomorrow's on the early one."""
+        if not forecast_vintages:
+            return predict[idx]
+        return np.where(day_of[idx] == day_of[i], predict[idx], predict_early[idx])
+
     def planning_range(i, last):
         """
         State-of-energy range the LP plans against at the start of periods i..last:
@@ -953,6 +978,13 @@ def run_dispatch(
             else:
                 hi[: end - i] = E - projected
         return lo, hi
+
+    # With vintages, where each period's plan must end: after tomorrow, the last day
+    # with a forecast that already exists (or after today if tomorrow is missing)
+    day_of = np.repeat(np.arange(len(dates)), 48)
+    consecutive = np.array([dates[k + 1] - dates[k] == pd.Timedelta(days=1) for k in range(len(dates) - 1)]
+                           + [False])
+    plan_limit = np.where(consecutive[day_of], (day_of + 2) * 48, (day_of + 1) * 48)
 
     tol_mwh = 1e-3
     soc = initial_soc_frac * E
@@ -988,7 +1020,7 @@ def run_dispatch(
 
         e_dis = e_chg = 0.0
         if not np.isnan(actual[i]):
-            h_end = min(i + horizon, n)
+            h_end = min(i + horizon, n, plan_limit[i]) if forecast_vintages else min(i + horizon, n)
             idx = np.arange(i, h_end)
             last = min(h_end, n - 1)
             lo, hi = planning_range(i, last)
@@ -1005,7 +1037,8 @@ def run_dispatch(
             # period of the plan may use it to keep a requirement reachable
             e_dis, e_chg = solve_mpc(
                 soc_current=soc,
-                price_forecast=np.nan_to_num(predict[idx], nan=0.0) if price_seeking else np.zeros(len(idx)),
+                price_forecast=(np.nan_to_num(plan_prices(i, idx), nan=0.0) if price_seeking
+                                else np.zeros(len(idx))),
                 arb_mw_schedule=dis_max[idx],
                 soc_min=lo,
                 soc_max=hi,
@@ -1059,7 +1092,9 @@ def run_strategy(
     delivery: pd.DataFrame | None = None,
     offer_valuation: str = "formula",
     price_shrink: float = 1.0,
-    offer_forecast_prices_by_date: dict | None = None,
+    early_forecast_prices_by_date: dict | None = None,
+    offers_at_bid_time: bool = False,
+    forecast_vintages: bool = False,
 ) -> dict:
     """
     The shared engine behind every strategy: schedule, dispatch, settle.
@@ -1078,15 +1113,21 @@ def run_strategy(
     Without one they are never called on.
 
     offer_valuation and price_shrink choose how offers price the trading they
-    give up; see OFFER_VALUATIONS and _Scheduler. offer_forecast_prices_by_date,
-    if given, is the forecast offers see at the bid deadline, in place of the
-    one dispatch uses.
+    give up; see OFFER_VALUATIONS and _Scheduler.
+
+    early_forecast_prices_by_date is each day's forecast as it stood before the
+    previous day ended, built from data to D-2. offers_at_bid_time gives it to
+    the offers for D, which close at 14:00 on D-1; forecast_vintages gives it to
+    dispatch for tomorrow's periods and ends each plan after tomorrow (see
+    run_dispatch). Perfect foresight passes none: its prices are known either way,
+    and vintages then only shorten the horizon, keeping the engine identical
+    across strategies.
     """
     services = ALL_SERVICES if services is None else list(services)
     apx_by_date = _apx_by_date(market_index)
     dates = [d for d in sorted(apx_by_date) if _in_range(d, start_date, end_date)]
     if not include_arbitrage:
-        forecast_prices_by_date, offer_forecast_prices_by_date = {}, None
+        forecast_prices_by_date, early_forecast_prices_by_date = {}, None
 
     has_delivery = delivery is not None and not delivery.empty
     scheduler = _Scheduler(
@@ -1095,7 +1136,7 @@ def run_strategy(
         expected_delivery=_expected_delivery(delivery) if has_delivery else None,
         expected_prices=_expected_block_prices(market_index) if has_delivery else None,
         offer_valuation=offer_valuation, price_shrink=price_shrink,
-        offer_forecast_prices_by_date=offer_forecast_prices_by_date,
+        offer_forecast_prices_by_date=early_forecast_prices_by_date if offers_at_bid_time else None,
     )
     if dates:
         energy_rows, soc_traj, breaches = run_dispatch(
@@ -1103,6 +1144,8 @@ def run_strategy(
             initial_soc_frac=initial_soc_frac, horizon=horizon,
             delivery=delivery if has_delivery else None,
             price_seeking=include_arbitrage,
+            forecast_vintages=forecast_vintages,
+            early_forecast_prices_by_date=early_forecast_prices_by_date,
         )
     else:
         energy_rows, soc_traj, breaches = [], [], {}
@@ -1144,7 +1187,8 @@ def run_strategy(
         "delivery_modelled":   has_delivery,
         "offer_valuation":     offer_valuation,
         "price_shrink":        price_shrink,
-        "offer_forecast":      "separate" if offer_forecast_prices_by_date is not None else "dispatch",
+        "offers_at_bid_time":  offers_at_bid_time,
+        "forecast_vintages":   forecast_vintages,
     }
     result = _build_result(anc_wide, imb_wide, battery, avg_fr_mw, avg_arb_mw, soc_traj, extras)
     result["schedule"] = schedule
@@ -1166,6 +1210,7 @@ def run_backtest(
     delivery: pd.DataFrame | None = None,
     offer_valuation: str = "formula",
     price_shrink: float = 1.0,
+    forecast_vintages: bool = False,
 ) -> dict:
     """
     Perfect-foresight revenue backtest: actual day-D prices are the signal.
@@ -1186,6 +1231,8 @@ def run_backtest(
     delivery      : response delivery table (response_delivery.parquet), or None to
                     leave contracts uncalled
     offer_valuation, price_shrink : how offers price trading; see run_strategy
+    forecast_vintages : end each dispatch plan after tomorrow, as the forecast
+                    strategies must; see run_strategy
 
     Returns
     -------
@@ -1202,6 +1249,7 @@ def run_backtest(
         initial_soc_frac=initial_soc_frac, horizon=horizon,
         include_arbitrage=include_arbitrage, pre_eac_rule=pre_eac_rule, delivery=delivery,
         offer_valuation=offer_valuation, price_shrink=price_shrink,
+        forecast_vintages=forecast_vintages,
     )
 
 
