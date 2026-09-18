@@ -147,6 +147,42 @@ def load_or_build(
     return predictions, folds
 
 
+BID_TIME_TABLE = PROCESSED / "benchmarks" / "forecast_wf_rf_3m_bid_time.parquet"
+
+
+def load_or_build_bid_time(verbose: bool = True) -> tuple:
+    """
+    Walk-forward forecasts of day D as they would stand at D's bid deadline.
+
+    The shipped table forecasts D once D-1 has ended, which is right for dispatch
+    on D but not for the offers made at 14:00 on D-1 - it needs ten hours that had
+    not happened yet. This table is built the same way with information_lag_days=2,
+    so every price and generation feature comes from D-2 or earlier. Built whole
+    and cached; delete the file to rebuild.
+
+    Returns (predictions, folds).
+    """
+    folds_file = BID_TIME_TABLE.with_suffix(".folds.json")
+    if BID_TIME_TABLE.exists() and folds_file.exists():
+        return pd.read_parquet(BID_TIME_TABLE), json.loads(folds_file.read_text())
+
+    auctions = pd.read_parquet(PROCESSED / "auctions.parquet")
+    market_index = pd.read_parquet(PROCESSED / "market_index.parquet")
+    generation = pd.read_parquet(PROCESSED / "generation_daily.parquet")
+    capacity = load_bess_capacity(PROCESSED / "bess_fleet_capacity.parquet")
+    features = build_feature_matrix(market_index, generation, capacity, information_lag_days=2)
+    start, end = backtest_window(auctions, market_index)
+    predictions, folds = walk_forward_predictions(
+        features, start, end, model_type="rf", cadence_months=WALK_FORWARD_CADENCE_MONTHS,
+        on_fold=(lambda f: print(f"  {f['origin']}: RMSE {f['metrics']['rmse']}, "
+                                 f"ρ {f['metrics']['spearman']}", flush=True)) if verbose else None,
+    )
+    BID_TIME_TABLE.parent.mkdir(parents=True, exist_ok=True)
+    predictions.to_parquet(BID_TIME_TABLE, index=False)
+    folds_file.write_text(json.dumps(folds, indent=2) + "\n")
+    return predictions, folds
+
+
 def pooled_metrics(predictions: pd.DataFrame, market_index: pd.DataFrame) -> dict:
     """Metrics over every walk-forward prediction, as one out-of-sample series."""
     from scipy.stats import spearmanr

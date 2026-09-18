@@ -57,6 +57,7 @@ import numpy as np
 import pandas as pd
 
 from src.analysis.fr_allocation import allocate_day, choose_family
+from src.optimisation.day_ahead import plan_day
 from src.analysis.response_delivery import DELIVERY_COLUMNS
 from src.analysis.neso_rules import (
     EAC_BID_CLOSE,
@@ -117,6 +118,13 @@ SERVICE_COLOURS = {
 # habit was dropped 2026-09-16, because a full-power DC stack in both directions
 # cannot recover what it delivers and spent a fifth of the era unavailable.
 PRE_EAC_RULES = ("d1",)
+
+# How an offer prices the trading it gives up. "formula" values each block alone,
+# as one cycle between its own cheapest and dearest periods
+# (_shadow_arb_value_per_mw). "lp" chooses the day's holdings together with a
+# half-hourly trading plan (src/optimisation/day_ahead.py), so the value of free
+# capacity depends on direction, hour, state of energy and the other blocks.
+OFFER_VALUATIONS = ("formula", "lp")
 
 # A modelling limit, not a NESO rule: the battery never holds more than this share
 # of an auction's cleared volume. Before EAC the DM and DR auctions were often
@@ -483,21 +491,40 @@ class _Scheduler:
     Each product is capped at AUCTION_SHARE_CAP of its auction's cleared volume.
     Given expected delivery and prices, each offer also carries the expected cost
     of making good the energy the product will deliver.
+
+    offer_valuation="lp" replaces the per-block arbitrage value with a trading plan
+    for every period from the deadline to the end of the service day, solved
+    together with the holdings (day_ahead.plan_day), and picks each pre-EAC
+    block's one service jointly across the day. price_shrink pulls that plan's
+    forecast towards its mean. With include_arbitrage=False there is nothing to
+    plan for, and both valuations hold the same.
+
+    offer_forecast_prices_by_date is the forecast of the service day as it stood
+    at the bid deadline, for strategies whose day-ahead forecast needs all of D-1
+    (see price_forecast.run_forecast_backtest's offer_information). The periods of
+    D-1 itself still come from forecast_prices_by_date, which was complete by then.
     """
 
     def __init__(self, auctions, battery, forecast_prices_by_date=None, services=None, *,
-                 include_arbitrage=True, pre_eac_rule="d1", expected_delivery=None, expected_prices=None):
+                 include_arbitrage=True, pre_eac_rule="d1", expected_delivery=None, expected_prices=None,
+                 offer_valuation="formula", price_shrink=1.0, offer_forecast_prices_by_date=None):
         if pre_eac_rule not in PRE_EAC_RULES:
             raise ValueError(f"pre_eac_rule must be one of {PRE_EAC_RULES}, got {pre_eac_rule!r}")
+        if offer_valuation not in OFFER_VALUATIONS:
+            raise ValueError(f"offer_valuation must be one of {OFFER_VALUATIONS}, got {offer_valuation!r}")
         services = ALL_SERVICES if services is None else list(services)
         self.table = _clearing_prices(auctions, services)
         self.volumes = _cleared_volumes(auctions, services)
         self.expected_delivery = expected_delivery or {}
         self.expected_prices = expected_prices or {}
         self.forecast = {pd.Timestamp(d).normalize(): s for d, s in (forecast_prices_by_date or {}).items()}
+        self.offer_forecast = (self.forecast if offer_forecast_prices_by_date is None else
+                               {pd.Timestamp(d).normalize(): s for d, s in offer_forecast_prices_by_date.items()})
         self.battery = battery
         self.include_arbitrage = include_arbitrage
         self.pre_eac_rule = pre_eac_rule
+        self.plan_trading = offer_valuation == "lp" and include_arbitrage
+        self.price_shrink = float(price_shrink)
         self.rows = {}    # (service day, EFA) -> schedule row
         self.plans = {}   # service day -> [(SoE at block's first period, at its last)]
 
@@ -531,31 +558,11 @@ class _Scheduler:
         # in sample fortnights stayed within the requirement without it (2026-09-15).
         apply_reserve = splitting_allowed(day)
 
-        blocks, labels = [], []
-        for efa in range(1, 7):
-            key = (service_date, efa)
-            prices = self.table.get(key, {})
-            caps = _caps(self.volumes.get(key, {}))
-            costs = _delivery_offer_costs(self.expected_delivery.get(key), self.expected_prices.get(key), b)
-            arb_value = (
-                _shadow_arb_value_per_mw(_efa_prices(self.forecast, service_date, efa), b)
-                if self.include_arbitrage else 0.0
-            )
-            if splitting_allowed(day):
-                families, label = FAMILIES, "ALL"
-            else:
-                reference = (service_date - pd.Timedelta(days=1), efa)
-                chosen = choose_family(self.table.get(reference, {}), arb_value, b.power_mw, b.energy_mwh,
-                                       b.duration_h, apply_reserve=apply_reserve,
-                                       caps=_caps(self.volumes.get(reference, {})), offer_costs=costs)
-                families, label = ((chosen,), chosen) if chosen else ((), "none")
-            blocks.append({"prices": prices, "arb_value": arb_value, "families": families,
-                           "caps": caps, "costs": costs})
-            labels.append(label)
-
-        out = allocate_day(blocks, b.power_mw, b.energy_mwh, b.duration_h, b.efficiency_rt,
-                           soc_now_mwh, apply_reserve=apply_reserve,
-                           lead_in=self._lead_in(service_date, now))
+        lead_in = self._lead_in(service_date, now)
+        if self.plan_trading:
+            out, labels = self._allocate_with_plan(service_date, now, soc_now_mwh, apply_reserve, lead_in)
+        else:
+            out, labels = self._allocate_with_formula(service_date, soc_now_mwh, apply_reserve, lead_in)
 
         for efa, (alloc, label) in enumerate(zip(out["blocks"], labels), start=1):
             q = alloc["q"]
@@ -570,6 +577,90 @@ class _Scheduler:
             row.update({f"q_{p}": q.get(p, 0.0) for p in PRODUCTS})
             self.rows[(service_date, efa)] = row
         self.plans[service_date] = out["soc_plan_mwh"]
+
+    def _offers(self, key: tuple) -> dict:
+        """What the battery could offer into one block: prices, caps and delivery costs."""
+        return {
+            "prices": self.table.get(key, {}),
+            "caps": _caps(self.volumes.get(key, {})),
+            "costs": _delivery_offer_costs(self.expected_delivery.get(key), self.expected_prices.get(key),
+                                           self.battery),
+        }
+
+    def _offer_view(self, service_date: pd.Timestamp) -> dict:
+        """The forecasts an offer can see: D-1 as forecast the day before, D as at the deadline."""
+        previous = service_date - pd.Timedelta(days=1)
+        return {day: series for day, series in ((previous, self.forecast.get(previous)),
+                                                (service_date, self.offer_forecast.get(service_date)))
+                if series is not None}
+
+    def _allocate_with_formula(self, service_date, soc_now_mwh, apply_reserve, lead_in):
+        b, day = self.battery, service_date.date()
+        view = self._offer_view(service_date)
+        blocks, labels = [], []
+        for efa in range(1, 7):
+            offers = self._offers((service_date, efa))
+            arb_value = (
+                _shadow_arb_value_per_mw(_efa_prices(view, service_date, efa), b)
+                if self.include_arbitrage else 0.0
+            )
+            if splitting_allowed(day):
+                families, label = FAMILIES, "ALL"
+            else:
+                reference = (service_date - pd.Timedelta(days=1), efa)
+                chosen = choose_family(self.table.get(reference, {}), arb_value, b.power_mw, b.energy_mwh,
+                                       b.duration_h, apply_reserve=apply_reserve,
+                                       caps=_caps(self.volumes.get(reference, {})),
+                                       offer_costs=offers["costs"])
+                families, label = ((chosen,), chosen) if chosen else ((), "none")
+            blocks.append({**offers, "arb_value": arb_value, "families": families})
+            labels.append(label)
+        out = allocate_day(blocks, b.power_mw, b.energy_mwh, b.duration_h, b.efficiency_rt,
+                           soc_now_mwh, apply_reserve=apply_reserve, lead_in=lead_in)
+        return out, labels
+
+    @staticmethod
+    def _forecast_path(view: dict, start: pd.Timestamp, n_periods: int) -> np.ndarray:
+        """Forecast price of each of n_periods settlement periods from `start`, NaN where unknown."""
+        path = np.full(n_periods, np.nan)
+        for k in range(n_periods):
+            ts = start + pd.Timedelta(minutes=30 * k)
+            series = view.get(ts.normalize())
+            if series is not None:
+                path[k] = series.get(_settlement_period(ts), np.nan)
+        return path
+
+    def _allocate_with_plan(self, service_date, now, soc_now_mwh, apply_reserve, lead_in):
+        """
+        Holdings chosen with the day's trading plan (day_ahead.plan_day). Before EAC
+        each block's one service is picked first, on the previous day's clearing
+        prices as choose_family does, but jointly across the day and priced by the
+        same plan.
+        """
+        b = self.battery
+        n_lead = sum(seg["n_sp"] for seg in lead_in)
+        view = self._offer_view(service_date)
+        prices = np.concatenate([self._forecast_path(view, now, n_lead),
+                                 self._forecast_path(view, _block_start(service_date, 1),
+                                                     6 * _SETTLEMENT_PERIODS_PER_BLOCK)])
+
+        def plan(blocks, one_service=False):
+            return plan_day(blocks, b.power_mw, b.energy_mwh, b.efficiency_rt, b.cycling_cost_per_mwh,
+                            soc_now_mwh, prices, apply_reserve=apply_reserve, lead_in=lead_in,
+                            one_service=one_service, price_shrink=self.price_shrink)
+
+        offers = [self._offers((service_date, efa)) for efa in range(1, 7)]
+        if splitting_allowed(service_date.date()):
+            families, labels = [FAMILIES] * 6, ["ALL"] * 6
+        else:
+            reference = []
+            for efa, offer in zip(range(1, 7), offers):
+                key = (service_date - pd.Timedelta(days=1), efa)
+                reference.append({"prices": self.table.get(key, {}), "caps": _caps(self.volumes.get(key, {})),
+                                  "costs": offer["costs"], "families": FAMILIES})
+            families = plan(reference, one_service=True)["families"]
+            labels = [chosen[0] if chosen else "none" for chosen in families]
+        return plan([{**offer, "families": fams} for offer, fams in zip(offers, families)]), labels
 
     def planned_soc(self, date: pd.Timestamp, sp: int) -> float | None:
         """State of energy the plans pass through at the start of a settlement period."""
@@ -966,6 +1057,9 @@ def run_strategy(
     include_arbitrage: bool = True,
     pre_eac_rule: str = "d1",
     delivery: pd.DataFrame | None = None,
+    offer_valuation: str = "formula",
+    price_shrink: float = 1.0,
+    offer_forecast_prices_by_date: dict | None = None,
 ) -> dict:
     """
     The shared engine behind every strategy: schedule, dispatch, settle.
@@ -982,12 +1076,17 @@ def run_strategy(
     With a `delivery` table the contracts are called on as GB frequency actually
     moved, and the expected cost of that energy is priced into each offer.
     Without one they are never called on.
+
+    offer_valuation and price_shrink choose how offers price the trading they
+    give up; see OFFER_VALUATIONS and _Scheduler. offer_forecast_prices_by_date,
+    if given, is the forecast offers see at the bid deadline, in place of the
+    one dispatch uses.
     """
     services = ALL_SERVICES if services is None else list(services)
     apx_by_date = _apx_by_date(market_index)
     dates = [d for d in sorted(apx_by_date) if _in_range(d, start_date, end_date)]
     if not include_arbitrage:
-        forecast_prices_by_date = {}
+        forecast_prices_by_date, offer_forecast_prices_by_date = {}, None
 
     has_delivery = delivery is not None and not delivery.empty
     scheduler = _Scheduler(
@@ -995,6 +1094,8 @@ def run_strategy(
         include_arbitrage=include_arbitrage, pre_eac_rule=pre_eac_rule,
         expected_delivery=_expected_delivery(delivery) if has_delivery else None,
         expected_prices=_expected_block_prices(market_index) if has_delivery else None,
+        offer_valuation=offer_valuation, price_shrink=price_shrink,
+        offer_forecast_prices_by_date=offer_forecast_prices_by_date,
     )
     if dates:
         energy_rows, soc_traj, breaches = run_dispatch(
@@ -1041,6 +1142,9 @@ def run_strategy(
         "soe_breach_blocks":   len(breaches),
         "auction_share_cap":   AUCTION_SHARE_CAP,
         "delivery_modelled":   has_delivery,
+        "offer_valuation":     offer_valuation,
+        "price_shrink":        price_shrink,
+        "offer_forecast":      "separate" if offer_forecast_prices_by_date is not None else "dispatch",
     }
     result = _build_result(anc_wide, imb_wide, battery, avg_fr_mw, avg_arb_mw, soc_traj, extras)
     result["schedule"] = schedule
@@ -1060,6 +1164,8 @@ def run_backtest(
     include_arbitrage: bool = True,
     pre_eac_rule: str = "d1",
     delivery: pd.DataFrame | None = None,
+    offer_valuation: str = "formula",
+    price_shrink: float = 1.0,
 ) -> dict:
     """
     Perfect-foresight revenue backtest: actual day-D prices are the signal.
@@ -1079,6 +1185,7 @@ def run_backtest(
     pre_eac_rule  : "d1" — see compute_fr_schedule
     delivery      : response delivery table (response_delivery.parquet), or None to
                     leave contracts uncalled
+    offer_valuation, price_shrink : how offers price trading; see run_strategy
 
     Returns
     -------
@@ -1094,6 +1201,7 @@ def run_backtest(
         auctions, market_index, battery, forecast, services, start_date, end_date,
         initial_soc_frac=initial_soc_frac, horizon=horizon,
         include_arbitrage=include_arbitrage, pre_eac_rule=pre_eac_rule, delivery=delivery,
+        offer_valuation=offer_valuation, price_shrink=price_shrink,
     )
 
 
