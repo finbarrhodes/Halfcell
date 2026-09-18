@@ -484,7 +484,9 @@ that stretch against £2.3k in the 18 genuinely held-out months. The fixed split
 as a diagnostic on the [Forecasting & Dispatch](./backtester) page, and as the fit that
 supplies feature importances.
 
-**Why the model is not chosen by accuracy.** All four candidates were benchmarked on the same
+### Why the model is not chosen by accuracy
+
+All four candidates were benchmarked on the same
 walk-forward folds, with the folds from 2025 held back so the choice could not be made on the
 evidence used to report it. The most accurate forecaster was the worst earner, and not
 marginally.
@@ -517,6 +519,43 @@ So Random Forest ships for robustness rather than accuracy, and the reported met
 to be blind to the failure that decided this: spike-RMSE scores error on spikes that *happened*,
 so a forecast inventing spikes is never charged for it. Spread calibration belongs in the
 metrics table, and is queued.
+
+### Why a better forecast stopped helping
+
+Adding NESO's day-ahead wind forecast to the feature set produces a much better forecast and
+exactly no more money. Across the held-back folds it cuts RMSE by 16% (35.2 to 29.7), lifts
+rank correlation from 0.587 to 0.699 and improves error on price spikes by 13% — and revenue
+moves from £87.3k to £87.1k per MW per year.
+
+Decomposing the headroom shows why. Perfect foresight beats the naive floor by £20.9k/MW/yr,
+and every penny of that is wholesale trading: £21.2k of trading advantage against £0.4k *less*
+availability revenue. The realistic model captures none of it. It trades £0.8k/MW/yr worse
+than simply reusing yesterday's prices, and the £4.1k it does earn comes entirely from holding
+better frequency response positions — £4.5k of extra availability revenue bought by valuing
+each block's arbitrage opportunity more accurately when the offers are made.
+
+| £k / MW / yr | Frequency response | Trading | Wear | Net |
+|---|---|---|---|---|
+| Perfect foresight | 53.2 | 53.5 | −2.7 | 104.1 |
+| Naive (D-1 prices) | 53.6 | 32.3 | −2.7 | 83.2 |
+| ML model | 58.1 | 31.5 | −2.3 | 87.3 |
+
+So the model earns through one channel while the ceiling is built on another, and the two
+respond to different things. Beating persistence at trading needs a forecast that identifies
+*which* half-hours will be extreme; lowering average error across all of them does not do
+that, and a 30 £/MWh error is still wide enough to trade the wrong periods. The allocation
+channel, meanwhile, consumes a block-level summary of the forecast, which a sharper
+half-hourly curve barely moves.
+
+The useful conclusion is about where to spend effort. More features are not the lever — this
+is the second time a large accuracy gain has produced no revenue, after a more accurate model
+produced considerably less. The lever is dispatch that knows what it does not know: trading
+only where the forecast is confident enough to beat persistence, and leaving the rest alone.
+That is queued rather than done.
+
+The wind collector and features are in the repository but not in the shipped model, because
+adopting them would add a monthly data dependency for no measured gain. They stay available
+for the confidence work, where a forecast's sharpness may matter once it is allowed to abstain.
 
 **Known limitations.** Tree-based models cannot extrapolate beyond price ranges seen in
 training; electricity price forecasting is inherently noisy; and the model improves dispatch

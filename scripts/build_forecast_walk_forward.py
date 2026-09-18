@@ -36,12 +36,14 @@ from src.analysis.price_forecast import (
     WALK_FORWARD_CADENCE_MONTHS,
     build_feature_matrix,
     load_bess_capacity,
+    resolve_feature_cols,
     walk_forward_predictions,
 )
 
 PROCESSED = Path(__file__).parent.parent / "data" / "processed"
 TABLE = PROCESSED / "forecast_walk_forward.parquet"
 FOLDS = PROCESSED / "forecast_walk_forward_folds.json"
+FEATURES = PROCESSED / "forecast_walk_forward_features.json"
 
 
 def backtest_window(auctions: pd.DataFrame, market_index: pd.DataFrame) -> tuple:
@@ -72,12 +74,40 @@ def load_or_build(
     features = build_feature_matrix(market_index, generation, capacity)
     start, end = backtest_window(auctions, market_index)
 
+    # What the model will actually be given, which is not the same as the declared
+    # list: a feature group is present or absent depending on what was passed to
+    # build_feature_matrix. Extending a cached table under a different feature set
+    # would mix two models' predictions into one series without anything saying so.
+    feature_cols = resolve_feature_cols(features)
+
     cached = pd.DataFrame()
     folds: list = []
     if TABLE.exists() and not rebuild:
         cached = pd.read_parquet(TABLE)
         if FOLDS.exists():
             folds = json.loads(FOLDS.read_text())
+        if not FEATURES.exists() and not cached.empty:
+            # One-time migration: tables built before 2026-09-17 carry no fingerprint.
+            # Recording the current set is an assumption, so it says so out loud.
+            logger_note = ("no feature fingerprint recorded for the cached table; "
+                           "assuming it was built from the current feature set")
+            print(f"  {logger_note}")
+            FEATURES.write_text(json.dumps({"feature_cols": feature_cols,
+                                            "model_type": model_type,
+                                            "cadence_months": cadence_months,
+                                            "train_years": train_years,
+                                            "note": logger_note}, indent=2) + "\n")
+        if FEATURES.exists():
+            previous = json.loads(FEATURES.read_text())["feature_cols"]
+            if previous != feature_cols:
+                added = sorted(set(feature_cols) - set(previous))
+                removed = sorted(set(previous) - set(feature_cols))
+                raise RuntimeError(
+                    "The cached forecast table was built from a different feature set "
+                    f"(added: {added or 'none'}; removed: {removed or 'none'}). Extending it "
+                    "would mix two models into one prediction series. Re-run with --rebuild, "
+                    "or build this variant somewhere else."
+                )
     done = sorted(pd.to_datetime(cached["origin"]).unique()) if not cached.empty else []
     if verbose:
         print(f"Window {start.date()} → {end.date()}; {len(done)} origin(s) already cached")
@@ -106,6 +136,10 @@ def load_or_build(
     folds = sorted(folds + new_folds, key=lambda f: f["origin"])
     predictions.to_parquet(TABLE, index=False)
     FOLDS.write_text(json.dumps(folds, indent=2) + "\n")
+    FEATURES.write_text(json.dumps({"feature_cols": feature_cols,
+                                    "model_type": model_type,
+                                    "cadence_months": cadence_months,
+                                    "train_years": train_years}, indent=2) + "\n")
     if verbose:
         mins = (time.time() - started) / 60
         print(f"Fitted {len(new_folds)} origin(s) in {mins:.1f} min → {TABLE.name} "
@@ -119,6 +153,8 @@ def pooled_metrics(predictions: pd.DataFrame, market_index: pd.DataFrame) -> dic
     from sklearn.metrics import mean_absolute_error, mean_squared_error
     import numpy as np
 
+    from src.analysis.price_forecast import spread_calibration
+
     actual = (market_index[market_index["dataProvider"] == "APXMIDP"]
               .assign(settlementDate=lambda d: d["settlementDate"].dt.normalize())
               [["settlementDate", "settlementPeriod", "price"]])
@@ -131,7 +167,34 @@ def pooled_metrics(predictions: pd.DataFrame, market_index: pd.DataFrame) -> dic
         "spearman": round(float(spearmanr(y, p).statistic), 3),
         "spike_rmse": round(float(np.sqrt(mean_squared_error(y[spike], p[spike]))), 2),
         "n_samples": int(len(joined)),
+        **spread_calibration(joined["settlementDate"], y, p),
     }
+
+
+def fold_metrics(predictions: pd.DataFrame, market_index: pd.DataFrame, folds: list | None = None) -> list:
+    """
+    Per-origin metrics, computed from the prediction table rather than read back.
+
+    Fold metadata is written when a fold is fitted, so any metric added later is
+    missing from every cached fold — which is what happened when spread
+    calibration arrived on 2026-09-17 and all 20 folds came back without it.
+    Computing from the predictions keeps the numbers consistent with whatever the
+    metric code currently says. Build-time facts (training span and row count)
+    still come from the metadata, since the predictions cannot reveal them.
+    """
+    facts = {str(f.get("origin")): f for f in (folds or [])}
+    rows = []
+    for origin, group in predictions.groupby("origin"):
+        key = pd.Timestamp(origin).date().isoformat()
+        fact = facts.get(key, {})
+        rows.append({
+            "origin": key,
+            "train_start": fact.get("train_start"),
+            "predicts_until": fact.get("predicts_until"),
+            "train_rows": fact.get("train_rows"),
+            **pooled_metrics(group, market_index),
+        })
+    return sorted(rows, key=lambda row: row["origin"])
 
 
 def main() -> None:

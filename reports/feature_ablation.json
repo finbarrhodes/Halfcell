@@ -1,0 +1,155 @@
+[
+  {
+    "model": "rf",
+    "variant": "baseline",
+    "feature_cols": [
+      "apx_lag_1d",
+      "apx_lag_2d",
+      "apx_lag_7d",
+      "apx_lag_14d",
+      "prev_day_mean",
+      "prev_day_std",
+      "prev_day_max",
+      "prev_day_min",
+      "rolling_7d_mean",
+      "gen_total",
+      "gen_renewable_frac",
+      "gen_fossil_frac",
+      "sp_sin",
+      "sp_cos",
+      "dow_sin",
+      "dow_cos",
+      "doy_sin",
+      "doy_cos",
+      "is_weekend",
+      "is_bank_holiday",
+      "bess_fleet_mw",
+      "bess_spread_suppression",
+      "gen_biomass",
+      "gen_coal",
+      "gen_gas",
+      "gen_hydro",
+      "gen_interconnectors",
+      "gen_nuclear",
+      "gen_oil",
+      "gen_other",
+      "gen_pumped_storage",
+      "gen_solar",
+      "gen_wind"
+    ],
+    "fit_minutes": 9.22,
+    "metrics": {
+      "all": {
+        "rmse": 48.46,
+        "mae": 31.21,
+        "spearman": 0.793,
+        "spike_rmse": 110.83,
+        "n_samples": 86233,
+        "spread_bias": -31.52,
+        "spread_mae": 45.09
+      },
+      "selection": {
+        "rmse": 53.09,
+        "mae": 33.16,
+        "spearman": 0.841,
+        "spike_rmse": 125.1,
+        "n_samples": 60557,
+        "spread_bias": -39.55,
+        "spread_mae": 51.68
+      },
+      "confirmation": {
+        "rmse": 35.24,
+        "mae": 26.61,
+        "spearman": 0.587,
+        "spike_rmse": 52.49,
+        "n_samples": 25676,
+        "spread_bias": -12.55,
+        "spread_mae": 29.53
+      }
+    },
+    "revenue": {
+      "annualised_per_mw": 87279.0,
+      "foresight_ratio": 0.1969,
+      "breach_periods": 494
+    }
+  },
+  {
+    "model": "rf",
+    "variant": "wind",
+    "feature_cols": [
+      "apx_lag_1d",
+      "apx_lag_2d",
+      "apx_lag_7d",
+      "apx_lag_14d",
+      "prev_day_mean",
+      "prev_day_std",
+      "prev_day_max",
+      "prev_day_min",
+      "rolling_7d_mean",
+      "gen_total",
+      "gen_renewable_frac",
+      "gen_fossil_frac",
+      "sp_sin",
+      "sp_cos",
+      "dow_sin",
+      "dow_cos",
+      "doy_sin",
+      "doy_cos",
+      "is_weekend",
+      "is_bank_holiday",
+      "bess_fleet_mw",
+      "bess_spread_suppression",
+      "wind_fc_mw",
+      "wind_fc_load_factor",
+      "wind_fc_day_mean",
+      "wind_fc_day_range",
+      "wind_fc_vs_day_mean",
+      "gen_biomass",
+      "gen_coal",
+      "gen_gas",
+      "gen_hydro",
+      "gen_interconnectors",
+      "gen_nuclear",
+      "gen_oil",
+      "gen_other",
+      "gen_pumped_storage",
+      "gen_solar",
+      "gen_wind"
+    ],
+    "fit_minutes": 11.24,
+    "metrics": {
+      "all": {
+        "rmse": 46.14,
+        "mae": 28.65,
+        "spearman": 0.824,
+        "spike_rmse": 108.96,
+        "n_samples": 86233,
+        "spread_bias": -33.46,
+        "spread_mae": 45.44
+      },
+      "selection": {
+        "rmse": 51.56,
+        "mae": 31.53,
+        "spearman": 0.854,
+        "spike_rmse": 123.08,
+        "n_samples": 60557,
+        "spread_bias": -40.61,
+        "spread_mae": 52.46
+      },
+      "confirmation": {
+        "rmse": 29.67,
+        "mae": 21.86,
+        "spearman": 0.699,
+        "spike_rmse": 45.9,
+        "n_samples": 25676,
+        "spread_bias": -16.6,
+        "spread_mae": 28.89
+      }
+    },
+    "revenue": {
+      "annualised_per_mw": 87091.0,
+      "foresight_ratio": 0.1879,
+      "breach_periods": 624
+    }
+  }
+]

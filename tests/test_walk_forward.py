@@ -139,3 +139,40 @@ def test_skipping_origins_leaves_them_unfitted_so_a_cache_can_be_extended():
         skip_origins=origins[:-1],
     )
     assert [f["origin"] for f in folds] == origins[-1:]
+
+
+# --- Spread calibration -----------------------------------------------------------
+
+def test_spread_calibration_is_signed_so_over_and_under_prediction_differ():
+    from src.analysis.price_forecast import spread_calibration
+
+    dates = ["2026-01-01"] * 3 + ["2026-01-02"] * 3
+    actual = [10.0, 20.0, 30.0, 10.0, 20.0, 30.0]           # spread 20 on both days
+    wide = [0.0, 25.0, 50.0, 0.0, 25.0, 50.0]               # spread 50: over by 30
+    narrow = [18.0, 20.0, 22.0, 18.0, 20.0, 22.0]           # spread 4: under by 16
+
+    assert spread_calibration(dates, actual, wide) == {"spread_bias": 30.0, "spread_mae": 30.0}
+    assert spread_calibration(dates, actual, narrow) == {"spread_bias": -16.0, "spread_mae": 16.0}
+
+
+def test_opposite_errors_cancel_in_the_bias_but_not_in_the_mae():
+    """The pair a single RMSE would hide: one day too wide, one too narrow."""
+    from src.analysis.price_forecast import spread_calibration
+
+    dates = ["2026-01-01"] * 2 + ["2026-01-02"] * 2
+    actual = [10.0, 30.0, 10.0, 30.0]
+    predicted = [0.0, 40.0, 15.0, 25.0]                     # +20 then -10
+    assert spread_calibration(dates, actual, predicted) == {"spread_bias": 5.0, "spread_mae": 15.0}
+
+
+def test_a_perfect_spread_forecast_scores_zero_on_both():
+    from src.analysis.price_forecast import spread_calibration
+
+    dates = ["2026-01-01"] * 2
+    assert spread_calibration(dates, [10.0, 30.0], [12.0, 32.0]) == {"spread_bias": 0.0, "spread_mae": 0.0}
+
+
+def test_fold_metrics_carry_the_spread_statistics(walked):
+    _frame, _predictions, folds = walked
+    for fold in folds:
+        assert "spread_bias" in fold["metrics"] and "spread_mae" in fold["metrics"]

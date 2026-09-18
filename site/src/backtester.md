@@ -625,13 +625,25 @@ const metrics = manifest.ml_mpc.model_metrics;
 const wf = metrics.walk_forward, fixed = metrics.fixed_split;
 const folds = metrics.folds ?? [];
 
-display(Inputs.table([
-  {Metric: "RMSE (£/MWh)", "Walk-forward": wf.rmse, "In-sample fit": fixed.train.rmse, "Single held-out split": fixed.test.rmse},
-  {Metric: "MAE (£/MWh)", "Walk-forward": wf.mae, "In-sample fit": fixed.train.mae, "Single held-out split": fixed.test.mae},
-  {Metric: "Spearman ρ", "Walk-forward": wf.spearman, "In-sample fit": fixed.train.spearman, "Single held-out split": fixed.test.spearman},
-  {Metric: "Spike-RMSE (£/MWh)", "Walk-forward": wf.spike_rmse, "In-sample fit": fixed.train.spike_rmse, "Single held-out split": fixed.test.spike_rmse},
-  {Metric: "Observations", "Walk-forward": d3.format(",")(wf.n_samples), "In-sample fit": d3.format(",")(fixed.train.n_samples), "Single held-out split": d3.format(",")(fixed.test.n_samples)},
-], {rows: 6, width: {Metric: 190}}));
+const row = (label, key, format = (v) => v) => ({
+  Metric: label,
+  "Walk-forward": format(wf[key]),
+  "In-sample fit": format(fixed.train[key]),
+  "Single held-out split": format(fixed.test[key]),
+});
+
+const metricRows = [
+  row("RMSE (£/MWh)", "rmse"),
+  row("MAE (£/MWh)", "mae"),
+  row("Spearman ρ", "spearman"),
+  row("Spike-RMSE (£/MWh)", "spike_rmse"),
+];
+// Added 2026-09-17; absent from caches built before then
+if (wf.spread_bias != null) metricRows.push(row("Spread bias (£/MWh)", "spread_bias"),
+                                            row("Spread MAE (£/MWh)", "spread_mae"));
+metricRows.push(row("Observations", "n_samples", d3.format(",")));
+
+display(Inputs.table(metricRows, {rows: 8, width: {Metric: 190}}));
 ```
 
 **Every forecast behind the revenue figures is out-of-sample.** The model is refit every
@@ -650,7 +662,10 @@ display(folds.length ? Plot.plot({
   marks: [
     Plot.ruleY([0]),
     Plot.barY(folds, {x: "origin", y: "rmse", fill: "#0D7680", tip: true,
-                      channels: {"training rows": "train_rows", "Spearman": "spearman"}}),
+                      channels: folds[0]?.spread_bias == null
+                        ? {"training rows": "train_rows", "Spearman": "spearman"}
+                        : {"training rows": "train_rows", "Spearman": "spearman",
+                           "spread bias": "spread_bias"}}),
     Plot.ruleY([wf.rmse], {stroke: "#C9400A", strokeDasharray: "4 3"}),
   ],
 }) : html`<i>No per-fold metrics in the manifest — re-run scripts/precompute_cache.py.</i>`);
@@ -663,6 +678,16 @@ across folds, which is the spread a single split cannot show.</p>
 Spike-RMSE measures error on top-decile price periods, where arbitrage revenue concentrates.
 Spearman ρ matters more than RMSE for dispatch quality — the LP only needs the *ordering* of
 prices to be right.
+
+**Spread bias is the row to watch.** It is the mean signed error in each day's predicted price
+spread — max minus min — which is what arbitrage actually trades on. Negative means the
+forecast is conservative, under-calling how wide the day will be; positive means it invents
+spread that never arrives. The asymmetry matters: a phantom spread costs a bad trade and then
+inflates the shadow arbitrage value until the offer stage declines frequency response contracts
+worth having, while missing a real spread only forgoes upside. This is the metric that decided
+the model choice, and none of the rows above it can see that failure — spike-RMSE scores error
+on spikes that *happened*, so inventing them is free. See
+[why the model is not chosen by accuracy](./methodology#why-the-model-is-not-chosen-by-accuracy).
 
 Read the Spearman row with care: each column pools every period in its own window, so the
 three cover different spans and are not directly comparable, and pooling across years mixes

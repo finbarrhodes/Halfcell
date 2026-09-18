@@ -52,6 +52,9 @@ data/processed/*.json
 # prediction table: without it a fresh clone has forecasts but no per-fold
 # metrics, and the backtester's fold chart falls back to its empty state.
 !data/processed/forecast_walk_forward_folds.json
+# ... and the feature-set fingerprint beside it, or a fresh clone (and the monthly
+# refresh) re-creates it by assumption and the check it exists for never runs
+!data/processed/forecast_walk_forward_features.json
 # Per-model benchmark prediction tables: regenerable, one per model tried
 data/processed/benchmarks/
 data/raw/*.pkl
@@ -117,3 +120,6 @@ site/src/.observablehq/
 
 # NESO one-second frequency files (~4 GB); only the derived half-hourly table is committed
 data/raw/frequency/
+
+# NESO day-ahead wind forecast history (~9 MB CSV); the tidied table is committed
+data/raw/wind_forecast/
