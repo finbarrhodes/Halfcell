@@ -96,10 +96,16 @@ on.
 
 ### Stage 1 — decide what to offer
 
-For each of the six EFA blocks, the model offers every product at its opportunity cost: a
-**shadow arbitrage value**, what that MW would earn trading the block, estimated from the
-price forecast, plus the expected cost of the energy the product will deliver. It keeps the
-combination that earns most at the clearing prices, within NESO's rules:
+For each of the six EFA blocks, the model offers every product at its opportunity cost: the
+trading that capacity would otherwise do, plus the expected cost of the energy the product
+will deliver. It prices the trading the way a dispatcher would, by **planning**: the day's
+holdings are chosen together with a half-hourly trading plan from 14:00 to the end of the
+next day, so a holding costs whatever it takes out of that plan. Holding a High product
+overnight, when the plan needs to charge, costs more than holding it at the evening peak, when
+the plan is selling. The plan uses only the forecast that existed at 14:00, pulled halfway
+towards its daily mean so that it does not pay to keep capacity free for spreads the forecast
+merely imagines. It keeps the combination that earns most at the clearing prices, within
+NESO's rules:
 
 - the MW it sells in each direction, plus the share NESO reserves on the other side for
   recovering delivered energy, fit within the battery's power rating
@@ -120,8 +126,9 @@ here on the previous day's prices.
 ### Stage 2 — dispatch under constraint
 
 With the offers set, a **linear programme** plans charge and discharge at half-hourly
-resolution over a rolling 48-hour horizon, re-solving every period and executing only the
-first — model predictive control.
+resolution, re-solving every period and executing only the first — model predictive control.
+Each plan runs to the end of tomorrow, the furthest any forecast yet exists for: today on the
+day-ahead forecast, tomorrow on the one made a day earlier.
 
 The shaded band is the range NESO requires: enough energy in store for the Low contracts
 and enough headroom for the High ones. Each block starts at the full amount. Delivering
@@ -136,9 +143,9 @@ period's payment.
 ### Forecast quality is the variable under test
 
 All three strategies run the *same* allocation and dispatch engine. Only the price signal
-differs: **Perfect Foresight** sees actual day-D prices, **Naive** reuses yesterday's, and
-the **ML model** — a Random Forest on lagged prices, generation mix and cyclical time
-features — predicts them from information available at the end of D-1.
+differs: **Perfect Foresight** sees actual day-D prices, **Naive** reuses the last complete
+day's, and the **ML model** — a Random Forest on lagged prices, generation mix and cyclical
+time features — predicts them from data that already existed when each decision was made.
 
 Where the traces diverge is the cost of forecast error. The analysis below quantifies it.
 </div></div>
@@ -367,7 +374,7 @@ const breachPeriods = manifest[strategyPick].summary.soe_breach_periods;
 Modelling a **${powerMw} MW / ${(powerMw * DURATION_H).toFixed(0)} MWh** asset
 (${DURATION_H}h duration, ${(EFF * 100).toFixed(0)}% round-trip efficiency) in
 **${SCENARIO_LABELS[scenarioPick]}**, using **${STRATEGY_LABELS[strategyPick]}** price signals
-and MPC dispatch over a rolling 48-hour horizon.
+and MPC dispatch over a rolling horizon to the end of tomorrow.
 
 ```js
 if (breachPeriods != null) display(html`<div class="muted">
@@ -526,8 +533,8 @@ isolating how much *forecast quality* — not the optimiser — affects operatio
 | Strategy | Price signal | What it represents |
 |---|---|---|
 | **Perfect Foresight** | Actual day-D wholesale prices | Theoretical ceiling — needs advance knowledge of the future |
-| **Naive\*** | Yesterday's prices (day D-1) | Zero-skill floor — any real model must beat this |
-| **ML Model** | Random Forest forecast | Realistic best case, using features available at end of day D-1 |
+| **Naive\*** | The last complete day's prices | Zero-skill floor — any real model must beat this |
+| **ML Model** | Random Forest forecast | Realistic best case, using only data that existed at each decision |
 
 ```js
 // Apply the identical filter and scaling to all three strategies so the comparison
@@ -566,18 +573,24 @@ const arbRatio = pf?.breakdown[TRADING]
 }))}</div>
 <div class="card">
 <h2>Reading the chart</h2>
-<p>The three bars define a range. <b>Naive*</b> sets the zero-skill floor — what you would
-earn with no forecasting capability at all. <b>Perfect Foresight</b> is the ceiling, the
-maximum extractable revenue if you knew the future. <b>ML Model</b> sits between them, and
-the question is how close it gets to the ceiling.</p>
+<p>The three bars define a range. <b>Naive*</b> sets the floor — what you would earn by
+reusing the last complete day's prices. <b>Perfect Foresight</b> is the ceiling, the revenue
+available if you knew the future. <b>ML Model</b> sits between them, and the question is how
+close it gets to the ceiling.</p>
+<p>*The floor is not quite zero-skill: its offers, like the model's, plan on a forecast pulled
+halfway towards its daily mean, a setting chosen on the years before 2025. That one parameter
+is worth about £4k/MW/yr to it, which makes it a stronger and fairer benchmark.</p>
 <p>The <b>foresight ratio</b> quantifies this as a fraction of the capturable improvement:
 <code>(ML − Naive) / (PF − Naive)</code>. Published GB and European price-forecasting
 literature treats 70–85% as strong performance.</p>
 <p>It is a share of the <i>capturable</i> gap, so it moves when that gap moves: charging the
 model for the energy its contracts deliver lifted the floor towards the ceiling. The bigger
 shift came from retraining. While a single fixed split left most of the backtest forecast by a
-model that had trained on it, this read near 66%; with every forecast out-of-sample it sits
-near a fifth, and holds there in every sub-period.</p>
+model that had trained on it, this read near 66%; with every forecast out-of-sample it fell
+to a fifth. Then the engine improved: pricing offers from a trading plan raised the ceiling
+more than either forecast, and the shrink gave the floor the caution the model's trees already
+had. It now reads near an eighth — a better engine made the forecast matter less, not a
+worse forecast.</p>
 <p><span class="big">${foresightRatio == null ? "—" : (foresightRatio * 100).toFixed(1) + "%"}</span><br>
 <span class="muted">foresight ratio${arbRatio == null ? "" : ` · ${(arbRatio * 100).toFixed(1)}% of perfect-foresight arbitrage captured`}</span></p>
 </div>
@@ -600,8 +613,10 @@ display(Inputs.table(
 
 ### ML model detail — Random Forest
 
-The ML strategy predicts the 48 half-hourly APXMIDP prices for day D using features
-available at the end of day D-1. Tree-based ensembles suit this problem: the feature set is
+The ML strategy predicts the 48 half-hourly APXMIDP prices for day D from the last complete
+day's data: D-1 for dispatch on the day, and D-2 for the offers made at 14:00 on D-1 and for
+the next day in each dispatch plan, from a second walk-forward table built one day further
+back. Tree-based ensembles suit this problem: the feature set is
 tabular (lagged prices, generation-mix ratios, temporal encodings) rather than sequential,
 they need no feature scaling, and they yield interpretable importances.
 
@@ -683,8 +698,8 @@ prices to be right.
 spread — max minus min — which is what arbitrage actually trades on. Negative means the
 forecast is conservative, under-calling how wide the day will be; positive means it invents
 spread that never arrives. The asymmetry matters: a phantom spread costs a bad trade and then
-inflates the shadow arbitrage value until the offer stage declines frequency response contracts
-worth having, while missing a real spread only forgoes upside. This is the metric that decided
+makes the offer stage value trading headroom it will never use, declining frequency response
+contracts worth having, while missing a real spread only forgoes upside. This is the metric that decided
 the model choice, and none of the rows above it can see that failure — spike-RMSE scores error
 on spikes that *happened*, so inventing them is free. See
 [why the model is not chosen by accuracy](./methodology#why-the-model-is-not-chosen-by-accuracy).

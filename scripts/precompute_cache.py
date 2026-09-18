@@ -29,6 +29,15 @@ where the model is refit at quarterly origins and predicts only the days after e
 one, so no day is forecast by a model that trained on it. Missing origins are fitted
 and cached on the way through; see scripts/build_forecast_walk_forward.py.
 
+Every forecast is used only once the data behind it exists. Offers for day D close
+at 14:00 on D-1, so they see the early forecast of D, built from data to D-2
+(forecast_walk_forward_early.parquet for ML, D-2's prices for naive); dispatch
+plans today on the day-ahead forecast and tomorrow on the early one, and ends its
+plan there. Offers are priced by the day-ahead plan (src/optimisation/day_ahead.py)
+on a forecast shrunk towards its daily mean by PRICE_SHRINK, chosen per signal on
+the folds before 2025 (reports/offer_valuation_vintages.md). Perfect foresight
+uses the same engine and horizon with actual prices.
+
 Strategies:
   1. Perfect Foresight + MPC  — revenue ceiling
   2. Naive (D-1 prices) + MPC — zero-skill floor
@@ -85,6 +94,14 @@ DISPATCH_METHOD = "mpc"   # recorded in the manifest; MPC is the only dispatch p
 PRE_EAC_RULE    = "d1"    # pre-EAC service chosen on D-1 clearing prices
 HORIZON         = 96    # 48h rolling LP horizon
 SERVICES        = ALL_SERVICES
+OFFER_VALUATION = "lp"        # offers priced by the day-ahead trading plan
+OFFER_INFORMATION = "bid_time"  # offers see only what existed at 14:00 on D-1
+FORECAST_VINTAGES = True      # dispatch plans tomorrow on the early forecast, and stops there
+# Weight on the plan's forecast deviations from its daily mean, per signal. Chosen on
+# the pre-2025 folds only (0.25 / 0.5 / 0.75 / 1 tried; reports/offer_valuation_vintages.md):
+# 0.5 for both, narrowly for ML, whose 0.5 and 0.75 are within £0.3k on either half.
+# Perfect foresight has nothing to hedge against, so it plans on actual prices as they are.
+PRICE_SHRINK = {"pf": 1.0, "naive": 0.5, "ml": 0.5}
 ML_MODEL_TYPE   = "rf"  # Random Forest selected at precompute time (see methodology expander)
 N_IMPORTANCES   = 20    # Top-N feature importances stored in the manifest for display
 
@@ -165,6 +182,9 @@ def main() -> None:
         pre_eac_rule         = PRE_EAC_RULE,
         auction_share_cap    = AUCTION_SHARE_CAP,
         delivery_modelled    = True,
+        offer_valuation      = OFFER_VALUATION,
+        offer_information    = OFFER_INFORMATION,
+        forecast_vintages    = FORECAST_VINTAGES,
         start_date           = str(start_date),
         end_date             = str(end_date),
     )
@@ -185,7 +205,8 @@ def main() -> None:
     # ------------------------------------------------------------------
     _print_section(1, 4, "FR availability only (scenario shared by all strategies)")
     fr_only = run_backtest(auctions, mkt_index, BATTERY, SERVICES, start_date, end_date,
-                           include_arbitrage=False, pre_eac_rule=PRE_EAC_RULE, delivery=delivery)
+                           include_arbitrage=False, pre_eac_rule=PRE_EAC_RULE, delivery=delivery,
+                           forecast_vintages=FORECAST_VINTAGES)
     fr_only["monthly"].to_parquet(CACHE / "fr_only.parquet", index=False)
     _summary_line("FR only", fr_only["summary"])
     fr_scenarios = {"fr_only": fr_only["summary"]}
@@ -209,8 +230,10 @@ def main() -> None:
     pf, pf_scenarios = run_pair("pf_mpc", lambda svc: run_backtest(
         auctions, mkt_index, BATTERY, svc, start_date, end_date,
         initial_soc_frac=INITIAL_SOC, horizon=HORIZON, pre_eac_rule=PRE_EAC_RULE, delivery=delivery,
+        offer_valuation=OFFER_VALUATION, price_shrink=PRICE_SHRINK["pf"],
+        forecast_vintages=FORECAST_VINTAGES,
     ))
-    manifest["pf_mpc"] = entry(pf, pf_scenarios)
+    manifest["pf_mpc"] = entry(pf, pf_scenarios, params={**base_params, "price_shrink": PRICE_SHRINK["pf"]})
 
     # ------------------------------------------------------------------
     # 3. Naive (D-1 prices) + MPC
@@ -220,8 +243,11 @@ def main() -> None:
         strategy="naive", market_index=mkt_index, auctions=auctions, battery=BATTERY,
         services=svc, start_date=start_date, end_date=end_date,
         initial_soc_frac=INITIAL_SOC, horizon=HORIZON, pre_eac_rule=PRE_EAC_RULE, delivery=delivery,
+        offer_valuation=OFFER_VALUATION, price_shrink=PRICE_SHRINK["naive"],
+        offer_information=OFFER_INFORMATION, forecast_vintages=FORECAST_VINTAGES,
     ))
-    manifest["naive_mpc"] = entry(naive, naive_scenarios)
+    manifest["naive_mpc"] = entry(naive, naive_scenarios,
+                                  params={**base_params, "price_shrink": PRICE_SHRINK["naive"]})
 
     # ------------------------------------------------------------------
     # 4. ML (Random Forest) + MPC
@@ -234,11 +260,19 @@ def main() -> None:
     walk_forward = pooled_metrics(predictions, mkt_index)
     print(f"  Out-of-sample over {len(folds)} folds: RMSE {walk_forward['rmse']:.2f} £/MWh  |  "
           f"Spearman ρ: {walk_forward['spearman']:.3f}")
+    print("  Early forecasts, from data to D-2, for offers and tomorrow's dispatch…")
+    early_predictions, early_folds = load_or_build(model_type=ML_MODEL_TYPE, information_lag_days=2)
+    early_metrics = pooled_metrics(early_predictions, mkt_index)
+    print(f"  Early, over {len(early_folds)} folds: RMSE {early_metrics['rmse']:.2f} £/MWh  |  "
+          f"Spearman ρ: {early_metrics['spearman']:.3f}")
 
     ml, ml_scenarios = run_pair("ml_mpc", lambda svc: run_forecast_backtest(
         strategy="ml", market_index=mkt_index, auctions=auctions, battery=BATTERY,
         services=svc, start_date=start_date, end_date=end_date, predictions=predictions,
         initial_soc_frac=INITIAL_SOC, horizon=HORIZON, pre_eac_rule=PRE_EAC_RULE, delivery=delivery,
+        offer_valuation=OFFER_VALUATION, price_shrink=PRICE_SHRINK["ml"],
+        offer_information=OFFER_INFORMATION, forecast_vintages=FORECAST_VINTAGES,
+        early_predictions=early_predictions,
     ))
 
     # Feature importances describe the data, not any one forecast, so they come from a
@@ -254,12 +288,13 @@ def main() -> None:
     importances = get_feature_importances(model, feature_cols).head(N_IMPORTANCES)
     manifest["ml_mpc"] = entry(
         ml, ml_scenarios,
-        params={**base_params, "ml_model_type": ML_MODEL_TYPE,
+        params={**base_params, "price_shrink": PRICE_SHRINK["ml"], "ml_model_type": ML_MODEL_TYPE,
                 "forecast_validation": "walk-forward",
                 "walk_forward_cadence_months": WALK_FORWARD_CADENCE_MONTHS,
                 "test_start": str(DEFAULT_TEST_START)},
         model_metrics={
             "walk_forward": walk_forward,
+            "early": early_metrics,
             "folds": fold_metrics(predictions, mkt_index, folds),
             "fixed_split": {"train": fixed_train, "test": fixed_test},
         },
