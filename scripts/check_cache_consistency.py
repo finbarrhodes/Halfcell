@@ -83,11 +83,13 @@ def main() -> None:
             "they look like separate precompute runs"
         )
 
-    # Params that define the asset and window must agree, or the strategies are
-    # not comparable even if they ran together.
+    # Params that define the asset, the window and the engine must agree, or the
+    # strategies are not comparable even if they ran together. price_shrink is
+    # deliberately absent: it is tuned per signal, like the signal itself.
     shared_keys = ("power_mw", "duration_h", "efficiency_rt", "cycling_cost_per_mwh",
                    "availability_factor", "start_date", "end_date", "dispatch_method",
-                   "pre_eac_rule", "auction_share_cap")
+                   "pre_eac_rule", "auction_share_cap", "horizon", "delivery_modelled",
+                   "offer_valuation", "offer_information", "forecast_vintages")
     ref_params = manifest[STRATEGIES[0]]["params"]
     for strategy in STRATEGIES[1:]:
         params = manifest[strategy]["params"]

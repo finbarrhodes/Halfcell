@@ -16,23 +16,58 @@ const fmt = (d) => new Date(d).toLocaleDateString("en-GB", {year: "numeric", mon
 
 The backtester separates frequency response (FR) availability revenue from energy arbitrage
 without counting the same capacity twice, and within the rules NESO sets for Dynamic
-Response providers.
+Services providers.
 
 **Stage 1: what to offer, at the bid deadline.** Offers for all six EFA blocks of day D close
 the afternoon before: 14:00 on D-1 since the Enduring Auction Capability (EAC) went live on
 2 November 2023, and 14:30 before it. At that moment the model decides how many MW to hold
 in each of the six products (DC, DM and DR, each High and Low) in each block.
 
-It offers every product at its **opportunity cost**: the arbitrage the same MW would
-otherwise earn in the block, estimated from the price forecast used for dispatch as
-`(avg_discharge − avg_charge / η − cycling_cost) × duration_h`. NESO accepts an order when
-the clearing price covers its offer, so a battery bidding at cost ends up holding whichever
-permitted combination earns most at the clearing prices. Each offer also carries the
-expected cost of the energy the product will deliver when called on (see
-[response delivery](#response-delivery)). The model solves for that combination directly
-with a linear programme. This reproduces the outcome of cost-reflective
-bidding rather than assuming foresight, on the assumption that the battery is a price-taker
-whose offers do not move clearing prices.
+It offers every product at its **opportunity cost**: the trading the same capacity would
+otherwise do. The model works that out the way a dispatcher would, by planning. At the
+deadline it chooses the six blocks' holdings together with a half-hourly trading plan from
+the deadline to the end of day D, on the forecast that existed at that moment (see
+[what each forecast is allowed to know](#what-each-forecast-is-allowed-to-know)), so a holding
+costs whatever it takes out of that plan. Three things follow that one price per block cannot
+capture:
+
+- **Direction depends on the hour.** Overnight the plan charges, which High products get in
+  the way of; at the evening peak it sells, which Low products get in the way of.
+- **State of charge matters.** Holding High overnight costs nothing if the store is already
+  nearly full, and a good deal if it is empty.
+- **Values do not add.** Two evening peaks are substitutes, so keeping both free is worth one
+  sale of the store rather than two. A product's first megawatts are often free and its last
+  dear: the stepped price-quantity shape EAC orders are built for.
+
+Each offer also carries the expected cost of the energy the product will deliver when called
+on (see [response delivery](#response-delivery)). NESO accepts an order when the clearing
+price covers its offer, so a battery bidding at cost ends up holding whichever permitted
+combination earns most at the clearing prices. Solving the plan against them reproduces the
+outcome of cost-reflective bidding rather than assuming foresight, on the assumption that the
+battery is a price-taker whose offers do not move clearing prices. The plan is a linear
+programme of about 270 variables, solved in two milliseconds by
+[HiGHS](https://doi.org/10.1007/s12532-017-0130-5), a simplex solver, because holdings often
+tie and only a vertex solution breaks those ties cleanly.
+
+**Two refinements.** The plan's forecast is pulled halfway towards its daily mean before
+planning. A plan chases the hours its forecast shows as most extreme, so forecast errors
+select themselves into it and it overstates what keeping capacity free is worth — the
+optimiser's curse ([Smith & Winkler, 2006](https://doi.org/10.1287/mnsc.1050.0451)) — and the
+error is lopsided: over-valuing headroom costs a contract and then a trade, under-valuing it
+costs only some trading. The weight was chosen on the years before 2025 from 0.25, 0.5, 0.75
+and 1, and held up on 2025 onward. And energy left at the end of day D is valued at the day's
+mean forecast price less wear; valued at nothing, the plan would empty the store in the last
+block and make holding Low response there look expensive for no real reason.
+
+<div class="note">
+<b>Until 18 September offers were priced block by block.</b> Each block's free capacity was
+valued at one cycle between its own cheapest and dearest half-hours,
+<code>(avg_discharge − avg_charge / η − cycling_cost) × duration_h</code>, the same for High and
+Low. The battery's real trade crosses blocks: from 2025 the spread inside a block averaged
+£15.5/MWh against £68.9 across the day, so the old rule valued the wrong trade and valued it
+small. On the same information, planning raised perfect foresight by £11.9k/MW/yr, naive by
+£9.1k and the model by £7.3k, and beat the old rule in every calendar year for all three.
+</div>
 
 NESO's rules set which combinations are permitted:
 
@@ -200,10 +235,11 @@ cost of recovering delivered energy, losses and wear.
 ## Dispatch strategies
 
 Intraday dispatch is driven by a **rolling Model Predictive Control (MPC) linear programme**,
-re-solved at every 30-minute settlement period. At each period *t* the LP plans over a
-${p.horizon}-period (${p.horizon / 2}-hour) horizon, returns only the first period's
-decision, then re-solves — a receding-horizon approach reflecting the real constraint that
-dispatch must be committed before future prices are known.
+re-solved at every 30-minute settlement period. At each period *t* the LP plans to the end of
+tomorrow — the furthest any forecast yet exists for, between 49 and ${p.horizon} periods —
+returns only the first period's decision, then re-solves: a receding-horizon approach
+reflecting the real constraint that dispatch must be committed before future prices are
+known.
 
 **LP formulation.** Decision variables are charge power *p_chg[t]*, discharge power
 *p_dis[t]*, and state of charge *SoC[t+1]* over the horizon. The objective maximises net
@@ -239,36 +275,61 @@ driving dispatch.
 | Strategy | Price signal fed to LP | What it represents |
 |---|---|---|
 | **Perfect Foresight** | Actual day-D wholesale prices | Theoretical ceiling — needs advance knowledge of the future |
-| **Naive (D-1 prices)** | Yesterday's 48 half-hourly prices | Zero-skill floor; any real model must beat this |
-| **ML Model** | Random Forest forecast for day D | Realistic best case using features available at end of D-1 |
+| **Naive** | The last complete day's 48 half-hourly prices | The floor; any real model must beat this |
+| **ML Model** | Random Forest forecast for day D | Realistic best case, using only data that existed at each decision |
 
 Dispatch decisions execute unconditionally at actual prices. Per-period revenue can be
 negative when forecast error causes an unfavourable trade — that is the realistic
 operational outcome and is intentional.
 
+### What each forecast is allowed to know
+
+A forecast of day D built from all of D-1 exists only once D-1 has ended. That is right for
+dispatch on day D and too late for two other uses. Offers for D close at 14:00 on D-1, so they
+are priced on a forecast built from data to D-2: D-2's own prices for naive, and for the model
+a second walk-forward table whose features all sit one day further back. The same early
+forecast drives tomorrow's periods in each dispatch plan, and the plan stops there, because no
+honest forecast yet exists for the day after. Perfect foresight runs the same engine and
+horizon on actual prices.
+
+Until 18 September both uses read forecasts built from all of the previous day before it had
+ended — for naive, tomorrow's slot in the dispatch plan held today's actual prices. At the
+offer stage that was worth £2.4k/MW/yr to naive and £1.6k to the model. In dispatch it was
+worth nothing measurable in the full stack (removing it moved revenue by +£0.2k and +£0.3k),
+but £1.6k to naive in the trading-only scenario, where the whole battery trades and seeing
+today's real prices in tomorrow's slot helps most; £0.1k to the model.
+
+The rule is still stricter than reality. At 14:00 on D-1 a real operator has also seen D-1's
+morning, and the hourly day-ahead auctions for D have already cleared (results by 10:00). The
+model uses neither, so its offer-stage information is conservative.
+
 The **foresight ratio** measures how much of the gap between those two bounds a forecast
 closes: `(ML − Naive) / (Perfect Foresight − Naive)`, on net revenue. Published GB and
 European price-forecasting literature treats 70–85% as strong performance.
 
-Two things have moved this number, and both are worth knowing about.
+Three things have moved this number, and all are worth knowing about.
 
-The larger one was leakage. Until walk-forward retraining replaced the fixed split, most of
-the backtest was forecast by a model that had trained on those same days, which put the ratio
-near 66%. Every forecast is now out-of-sample and it sits near 20% — and it stays there in
-every sub-period, 19% through the 2021–22 gas crisis and 21% from 2023 onward, so the old
-figure was leakage rather than a kind market.
+The largest was leakage. Until walk-forward retraining replaced the fixed split, most of the
+backtest was forecast by a model that had trained on those same days, which put the ratio
+near 66%. With every forecast out-of-sample it fell to about 20%, and stayed there in every
+sub-period, so the old figure was leakage rather than a kind market.
 
-The smaller one is the denominator. The ratio is a share of the *capturable* headroom, so
-anything that narrows the gap between floor and ceiling lowers it without the forecast
-changing at all. Modelling response delivery did that: once a Low contract has to buy back the
-energy it gives away, arbitrage-driven revenue falls for every strategy and the floor rises
-towards the ceiling.
+The second is the denominator. The ratio is a share of the *capturable* headroom, so anything
+that moves the gap between floor and ceiling moves it without the forecast changing at all.
+Modelling response delivery narrowed the gap: once a Low contract has to buy back the energy it
+gives away, arbitrage-driven revenue falls for every strategy.
+
+The third is the engine. Pricing offers from a trading plan earns more for every signal, but
+most for perfect foresight, which can exploit the day's real shape. And shrinking the plan's
+forecast gives naive the caution the Random Forest's conservative spreads already supplied —
+worth about £4k/MW/yr to naive and £1k to the model. The model's lead over naive narrowed from
+£4.1k to £3.2k while the ceiling pulled away, and the ratio fell to about 12%. A better engine
+made the forecast matter less; it did not make the forecast worse.
 
 Published figures of 70–85% come from studies forecasting day-ahead auction prices over
 shorter, calmer windows, usually scored on pure arbitrage rather than a co-optimisation
-against frequency response contracts. The gap to 20% is still the honest headline, and it is
-the reason model choice and feature work are the next things worth doing here: the forecast is
-currently worth about £4k/MW/yr, and the ceiling says there is £21k on the table.
+against frequency response contracts. The honest headline here is that the forecast is worth
+about £3k/MW/yr over the floor, in every year of the backtest, against a ceiling £26k above it.
 
 For LP-based joint co-optimisation of arbitrage and frequency response in GB, see
 [Swierczynski et al. (2021)](https://doi.org/10.3390/en14248365).
@@ -425,8 +486,9 @@ DRL's mild negative correlation reflects.
 
 ## ML price forecast model
 
-A **Random Forest regressor** predicts the 48 half-hourly APXMIDP prices for day D using
-features available at the end of day D-1.
+A **Random Forest regressor** predicts the 48 half-hourly APXMIDP prices for day D from the
+last complete day's data: D-1 for dispatch on day D, and D-2 for offers and for tomorrow's
+periods in each plan (see [what each forecast is allowed to know](#what-each-forecast-is-allowed-to-know)).
 
 *Why Random Forest?* The feature set is tabular (lagged prices, generation-mix ratios,
 temporal encodings) rather than sequential; trees need no feature scaling, are robust at
@@ -436,7 +498,7 @@ learning on short-horizon day-ahead tasks
 ([Lago et al., 2021](https://doi.org/10.1016/j.apenergy.2021.116983);
 [Weron, 2014](https://doi.org/10.1016/j.ijforecast.2014.08.008)).
 
-**Features (all available at end of day D-1):**
+**Features (all from the last complete day or earlier):**
 
 - Same-period lagged prices: 1, 2, 7 and 14 days prior
 - Previous-day price statistics: mean, standard deviation, max, min across all 48 periods
@@ -489,7 +551,8 @@ supplies feature importances.
 All four candidates were benchmarked on the same
 walk-forward folds, with the folds from 2025 held back so the choice could not be made on the
 evidence used to report it. The most accurate forecaster was the worst earner, and not
-marginally.
+marginally. Revenue here was measured on 17 September, under the per-block offer rule that
+the trading plan has since replaced.
 
 | Model | RMSE | Spearman ρ | Spike RMSE | £k/MW/yr | Foresight ratio |
 |---|---|---|---|---|---|
@@ -517,15 +580,17 @@ systematic bias, not the tail.
 
 So Random Forest ships for robustness rather than accuracy, and the reported metrics are known
 to be blind to the failure that decided this: spike-RMSE scores error on spikes that *happened*,
-so a forecast inventing spikes is never charged for it. Spread calibration belongs in the
-metrics table, and is queued.
+so a forecast inventing spikes is never charged for it. Spread calibration, the signed error in
+each day's predicted spread, is now reported beside them on the
+[Forecasting & Dispatch](./backtester) page for that reason.
 
 ### Why a better forecast stopped helping
 
 Adding NESO's day-ahead wind forecast to the feature set produces a much better forecast and
 exactly no more money. Across the held-back folds it cuts RMSE by 16% (35.2 to 29.7), lifts
 rank correlation from 0.587 to 0.699 and improves error on price spikes by 13% — and revenue
-moves from £87.3k to £87.1k per MW per year.
+moves from £87.3k to £87.1k per MW per year (measured on 17 September, under the per-block
+offer rule).
 
 Decomposing the headroom shows why. Perfect foresight beats the naive floor by £20.9k/MW/yr,
 and every penny of that is wholesale trading: £21.2k of trading advantage against £0.4k *less*
@@ -534,11 +599,23 @@ than simply reusing yesterday's prices, and the £4.1k it does earn comes entire
 better frequency response positions — £4.5k of extra availability revenue bought by valuing
 each block's arbitrage opportunity more accurately when the offers are made.
 
-| £k / MW / yr | Frequency response | Trading | Wear | Net |
+| £k / MW / yr, 17 Sep, per-block offers | Frequency response | Trading | Wear | Net |
 |---|---|---|---|---|
 | Perfect foresight | 53.2 | 53.5 | −2.7 | 104.1 |
 | Naive (D-1 prices) | 53.6 | 32.3 | −2.7 | 83.2 |
 | ML model | 58.1 | 31.5 | −2.3 | 87.3 |
+
+Under the current engine — offers priced from a plan, on bid-time information — the same
+split reads:
+
+| £k / MW / yr, current engine | Frequency response | Trading | Wear | Net |
+|---|---|---|---|---|
+| Perfect foresight | 50.7 | 68.4 | −3.2 | 115.9 |
+| Naive | 57.5 | 35.2 | −2.5 | 90.1 |
+| ML model | 59.6 | 35.9 | −2.2 | 93.3 |
+
+The model now edges naive at trading (+£0.7k) but still earns most of its lead through
+response (+£2.1k), and the whole of perfect foresight's advantage is still trading.
 
 So the model earns through one channel while the ceiling is built on another, and the two
 respond to different things. Beating persistence at trading needs a forecast that identifies
@@ -575,18 +652,24 @@ importances are on the [Forecasting & Dispatch](./backtester) page.
 - *Rolling horizon is not globally optimal.* A single LP over the full backtest would yield
   more revenue in theory, but the rolling approach reflects the real constraint that
   dispatch must be committed before future prices are known.
-- *Stored energy has no terminal value.* Energy left in store at the end of the 48-hour
-  horizon is worth nothing to the LP, so each plan sells it down towards the horizon end.
-  Only the first period of each plan is executed, which keeps this from dominating, but a
-  learned terminal value would remove it.
+- *Stored energy has no terminal value in dispatch.* Energy left in store when a plan ends,
+  after tomorrow, is worth nothing to the LP, so each plan sells it down towards its end.
+  Only the first period of each plan is executed, and the end is always at least 24 hours
+  away, which keeps this from dominating; the offer-stage plan values leftover energy at the
+  day's mean forecast less wear instead.
 - *LP relaxation of charge/discharge mutual exclusion.* No binary variables prohibit
   simultaneous charge and discharge; because the objective penalises cycling, this is never
   optimal at a positive spread, so it is not binding in practice.
-- *Offers and dispatch are solved in sequence.* Offers are fixed at the bid deadline from a
-  block-level estimate of arbitrage value, and dispatch then optimises around them. A joint
-  formulation would co-optimise both; see
+- *Offers and dispatch are solved in sequence.* Offers are fixed at the bid deadline together
+  with a trading plan, and dispatch then re-optimises around them as prices and delivery
+  arrive, as an operator would. Treating the forecast as certain in both is the larger
+  simplification: one shrink applies to every day, where a forecast that knew how uncertain
+  each day was could shrink hard on some and barely on others. See
   [Swierczynski et al. (2021)](https://doi.org/10.3390/en14248365) and
-  [Bai et al. (2024)](https://www.sciencedirect.com/science/article/abs/pii/S0306261924015149).
+  [Bai et al. (2024)](https://www.sciencedirect.com/science/article/abs/pii/S0306261924015149)
+  for joint formulations.
+- *Conservative information at the offer stage.* Offers see data only to the end of D-2, not
+  D-1's morning or the day-ahead auction results a real operator has at 14:00.
 - *Delivery follows frequency instantly, product by product.* The Service Terms allow up to
   10 seconds to reach full delivery, which moves little energy over half an hour, and each
   product follows its own curve, which sums to the same stacked curve NESO uses.
@@ -697,6 +780,12 @@ collected later is kept, so a settled value always displaces the estimate it rep
 - Goulart, P., & Chen, Y. (2024). Clarabel: An interior-point solver for conic programs with
   quadratic objectives. *IEEE TAC*.
   [doi:10.1109/TAC.2024.3457633](https://doi.org/10.1109/TAC.2024.3457633)
+- Huangfu, Q., & Hall, J. A. J. (2018). Parallelizing the dual revised simplex method.
+  *Mathematical Programming Computation*, 10, 119–142. The HiGHS solver behind the offer plan.
+  [doi:10.1007/s12532-017-0130-5](https://doi.org/10.1007/s12532-017-0130-5)
+- Smith, J. E., & Winkler, R. L. (2006). The optimizer's curse: Skepticism and postdecision
+  surprise in decision analysis. *Management Science*, 52(3).
+  [doi:10.1287/mnsc.1050.0451](https://doi.org/10.1287/mnsc.1050.0451)
 
 **BESS dispatch optimisation & co-optimisation**
 

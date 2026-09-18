@@ -318,13 +318,16 @@ def predict_day_prices(
 def naive_day_prices(
     market_index: pd.DataFrame,
     target_date: pd.Timestamp,
+    days_back: int = 1,
 ) -> pd.Series:
     """
-    Naive forecast: return yesterday's APXMIDP prices as the forecast for target_date.
+    Naive forecast: the APXMIDP prices of the last complete day, `days_back`
+    before target_date - yesterday's by default, the day before at an offer's
+    bid deadline (see build_feature_matrix's information_lag_days).
     Returns a Series indexed by settlementPeriod (1–48).
-    Returns an empty Series if yesterday's data is unavailable.
+    Returns an empty Series if that day's data is unavailable.
     """
-    yesterday = pd.Timestamp(target_date) - pd.Timedelta(days=1)
+    yesterday = pd.Timestamp(target_date) - pd.Timedelta(days=days_back)
     apx = market_index[market_index["dataProvider"] == "APXMIDP"]
     prev = apx[apx["settlementDate"].dt.normalize() == yesterday]
     if prev.empty:
@@ -476,6 +479,11 @@ def run_forecast_backtest(
     include_arbitrage: bool = True,
     pre_eac_rule: str = "d1",
     delivery: pd.DataFrame | None = None,
+    offer_valuation: str = "formula",
+    price_shrink: float = 1.0,
+    offer_information: str = "day_ahead",
+    forecast_vintages: bool = False,
+    early_predictions: pd.DataFrame | None = None,
 ) -> dict:
     """
     Forecast-driven revenue backtest for the 'naive' or 'ml' strategy.
@@ -507,6 +515,16 @@ def run_forecast_backtest(
     pre_eac_rule     : "d1" — see revenue_stack.compute_fr_schedule
     delivery         : response delivery table (response_delivery.parquet), or None to leave
                        response undelivered
+    offer_valuation, price_shrink : how offers price trading; see revenue_stack.run_strategy
+    offer_information: "day_ahead" gives offers the same forecast of D that dispatch uses,
+                       which needs all of D-1 - ten hours past the 14:00 bid deadline.
+                       "bid_time" gives them the early forecast: only what existed at the
+                       deadline
+    forecast_vintages: dispatch plans tomorrow on the early forecast and stops after it,
+                       rather than reading forecasts for tomorrow and the day after that
+                       need data still to come; see revenue_stack.run_dispatch
+    early_predictions: for ml with either of the above, a walk-forward table built with
+                       information_lag_days=2. For naive the early forecast is D-2's prices
 
     Returns
     -------
@@ -530,8 +548,28 @@ def run_forecast_backtest(
             if not fp.empty:
                 forecast_prices_by_date[date] = fp
 
+    if offer_information not in ("day_ahead", "bid_time"):
+        raise ValueError(f"Unknown offer_information '{offer_information}'")
+    early_forecast = None
+    if include_arbitrage and (offer_information == "bid_time" or forecast_vintages):
+        if strategy == "ml":
+            if early_predictions is None:
+                raise ValueError("bid-time offers or forecast vintages with strategy='ml' need early_predictions")
+            early_forecast = forecast_series_by_date(early_predictions, start_date, end_date)
+        else:
+            early_forecast = {}
+            apx_by_date = _apx_by_date(market_index)
+            for date in sorted(d for d in apx_by_date if _in_range(d, start_date, end_date)):
+                fp = naive_day_prices(market_index, date, days_back=2)
+                if not fp.empty:
+                    early_forecast[date] = fp
+
     return run_strategy(
         auctions, market_index, battery, forecast_prices_by_date, services, start_date, end_date,
         initial_soc_frac=initial_soc_frac, horizon=horizon,
         include_arbitrage=include_arbitrage, pre_eac_rule=pre_eac_rule, delivery=delivery,
+        offer_valuation=offer_valuation, price_shrink=price_shrink,
+        early_forecast_prices_by_date=early_forecast,
+        offers_at_bid_time=offer_information == "bid_time",
+        forecast_vintages=forecast_vintages,
     )

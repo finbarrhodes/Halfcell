@@ -127,7 +127,9 @@ class _CompiledLP:
         self.problem = cp.Problem(cp.Maximize(objective - wear), constraints)
 
 
-@lru_cache(maxsize=32)
+# Vintage-limited plans run from 49 to 96 periods, each length compiled once
+# (about 25 ms), with and without reserve flows
+@lru_cache(maxsize=256)
 def _compiled(H: int, energy_mwh: float, efficiency_rt: float, cycling_cost_per_mwh: float,
               trade_cost_per_mwh: float = 0.0, with_reserve: bool = True) -> _CompiledLP:
     return _CompiledLP(H, energy_mwh, efficiency_rt, cycling_cost_per_mwh, trade_cost_per_mwh, with_reserve)

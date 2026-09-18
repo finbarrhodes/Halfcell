@@ -444,3 +444,47 @@ def test_a_site_without_arbitrage_trades_only_to_make_good_its_delivery():
     assert s["breakdown"]["Arbitrage"] < 0                       # it buys energy back
     assert s["total_mwh_cycled"] == pytest.approx(0.0, abs=1e-6)  # and never sells for profit
     assert s["soe_breach_periods"] == 0
+
+
+# --- Offers valued by the day's trading plan -----------------------------------------------
+
+def test_an_unknown_offer_valuation_is_rejected():
+    with pytest.raises(ValueError, match="offer_valuation"):
+        run_backtest(_auctions({DAYS[0]: EVERYTHING_PAYS}), _market_index(DAYS[:1]), BATTERY,
+                     offer_valuation="hindsight")
+
+
+def test_lp_valued_offers_are_neso_feasible_and_never_out_of_position():
+    for days in (DAYS, ["2023-06-01", "2023-06-02", "2023-06-03"]):
+        result = run_backtest(_auctions({d: EVERYTHING_PAYS for d in days}), _market_index(days), BATTERY,
+                              offer_valuation="lp")
+        assert result["summary"]["soe_breach_periods"] == 0
+        assert result["summary"]["offer_valuation"] == "lp"
+        for (date, _efa), row in result["schedule"].iterrows():
+            assert is_feasible(_held(row), P, P * D, apply_reserve=row["apply_reserve"],
+                               single_family=not splitting_allowed(date.date()), tol=1e-5), (date, row)
+
+
+def test_without_arbitrage_the_valuation_makes_no_difference():
+    auctions = _auctions({d: EVERYTHING_PAYS for d in DAYS})
+    runs = [run_backtest(auctions, _market_index(DAYS), BATTERY, include_arbitrage=False, offer_valuation=v)
+            for v in ("formula", "lp")]
+    pd.testing.assert_frame_equal(runs[0]["schedule"], runs[1]["schedule"])
+
+
+def test_lp_valued_offers_keep_free_the_side_trading_needs_at_each_hour():
+    """
+    Power is £40 until midday and £160 after. The formula sees no spread inside the flat
+    blocks 2-3 and 5-6 and holds DC identically in all four. The plan charges in the
+    morning and sells in the evening, so it keeps the charge side (which DC High takes)
+    freer in the morning and the discharge side (which DC Low takes) freer in the evening.
+    """
+    dc = {"DCH": 10.0, "DCL": 10.0}
+    auctions, market = _auctions({d: dc for d in DAYS}), _market_index(DAYS)
+    formula = run_backtest(auctions, market, BATTERY)["schedule"].loc[pd.Timestamp(DAYS[2])]
+    lp = run_backtest(auctions, market, BATTERY, offer_valuation="lp")["schedule"].loc[pd.Timestamp(DAYS[2])]
+
+    morning, evening = [2, 3], [5, 6]
+    assert formula.loc[morning, "q_DCH"].tolist() == pytest.approx(formula.loc[evening, "q_DCH"].tolist())
+    assert lp.loc[morning, "q_DCH"].sum() < lp.loc[evening, "q_DCH"].sum()
+    assert lp.loc[evening, "q_DCL"].sum() < lp.loc[morning, "q_DCL"].sum()

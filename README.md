@@ -19,22 +19,27 @@ Annualised net revenue per MW:
 
 | Strategy | Full stack | Arbitrage only | What it represents |
 |---|---|---|---|
-| Perfect Foresight | £104.1k | £62.5k | Theoretical ceiling; requires knowing day-D prices |
-| **ML (Random Forest)** | **£87.3k** | **£31.4k** | Realistic case: every forecast out-of-sample, from data available at the bid deadline |
-| Naive (D-1 prices) | £83.2k | £25.3k | Zero-skill floor; any real forecast must beat it |
+| Perfect Foresight | £115.9k | £62.5k | Theoretical ceiling; requires knowing day-D prices |
+| **ML (Random Forest)** | **£93.3k** | **£31.3k** | Realistic case: every forecast out-of-sample, from data that existed at each decision |
+| Naive (last complete day) | £90.1k | £23.7k | The floor; any real forecast must beat it |
 | FR only | £82.2k | — | A site that ignores arbitrage entirely |
 
-- **Foresight ratio 20%** — the share of the naive-to-perfect gap the forecast closes,
-  `(ML − Naive) / (PF − Naive)`. It sits at 19% through the 2021–22 gas crisis and 21% from
-  2023 onward, so it is not an artefact of one strange market.
+- **Foresight ratio 12%** — the share of the naive-to-perfect gap the forecast closes,
+  `(ML − Naive) / (PF − Naive)`. It sits at 10% through the 2021–22 gas crisis and 14% from
+  2023 onward, and the forecast beats naive in every year of the backtest.
+- **Offers are priced by planning the day.** Each day's response offers are chosen together
+  with a half-hourly trading plan, so a MW held back costs what it takes out of that plan.
+  That replaced a block-by-block estimate and added £7–12k/MW/yr to every strategy — more
+  than the forecast itself is worth over naive (£3.2k).
 - **Every forecast is out-of-sample.** The model is refit quarterly on the history available
   at that point and predicts only the days that follow, so no day is forecast by a model that
   trained on it. An earlier version trained once and then backtested across its own training
   period, which put this same ratio at 66% — the gap between those two numbers is what
-  in-sample forecasting is worth, and it is not small.
+  in-sample forecasting is worth, and it is not small. Forecasts are also used only once the
+  data behind them exists: offers made at 14:00 on the day before see data to two days before.
 - **Frequency response dominates the stack.** FR only earns £82.2k of the ML strategy's
-  £87.3k, so arbitrage is the margin rather than the business — and what the forecast adds
-  now arrives mostly through better capacity allocation, not better trading.
+  £93.3k, so arbitrage is the margin rather than the business — and what the forecast adds
+  still arrives mostly through better capacity allocation, not better trading.
 - **The battery stays compliant.** It starts 0.4–0.6% of settlement periods outside the
   state-of-energy range its contracts require, and almost every one is a single half-hour at
   an EFA block boundary.
@@ -58,14 +63,15 @@ as where I am conscious of its current limits.
 ## The model
 
 **Stage 1 — what to offer.** For each of the six EFA blocks, every product is offered at its
-opportunity cost: the shadow arbitrage value of that MW plus the expected cost of the energy
-the contract will deliver. The combination that earns most at the clearing prices is kept,
+opportunity cost: the trading that capacity gives up, valued by a day-ahead trading plan
+solved together with the holdings (cvxpy/HiGHS), plus the expected cost of the energy the
+contract will deliver. The combination that earns most at the clearing prices is kept,
 subject to NESO's rules — per-direction capacity including Reserved Capacity, the response
 energy each contract needs in store or as headroom, whether the required range is reachable
 from the battery's actual state of energy at the bid deadline, and the Maximum Sell Size.
 
 **Stage 2 — dispatch.** A rolling linear programme (cvxpy/Clarabel) plans charge and
-discharge over a 48-hour horizon at half-hourly resolution, re-solving every period and
+discharge to the end of tomorrow at half-hourly resolution, re-solving every period and
 executing only the first — model predictive control. State of energy is held inside NESO's
 running Minimum State of Energy Requirement, which resets each block, falls as the battery
 delivers response, and climbs back at the Energy Recovery rate. Reserved Capacity is

@@ -63,14 +63,16 @@ def build_feature_matrix(
     generation_daily: pd.DataFrame,
     bess_capacity: pd.DataFrame | None = None,
     wind_forecast: pd.DataFrame | None = None,
+    information_lag_days: int = 1,
 ) -> pd.DataFrame:
     """
     Construct a feature matrix for price forecasting.
 
     Each row represents one (settlementDate, settlementPeriod) observation.
     Target column ``apx_price`` is the APXMIDP price for that period.
-    All feature columns use only information available at the end of day D-1,
-    ensuring no look-ahead bias when training or backtesting.
+    All feature columns use only information available at the end of day
+    D - information_lag_days, ensuring no look-ahead bias when training or
+    backtesting.
 
     Parameters
     ----------
@@ -91,6 +93,14 @@ def build_feature_matrix(
         forecast. When provided, adds the WIND_FORECAST_COLS group. Absent by
         default, so the feature set is a deliberate choice rather than whatever
         happens to be on disk; see scripts/ablate_features.py.
+    information_lag_days : int
+        The last complete day the features may use, counted back from D. 1 is a
+        forecast made once D-1 has ended, which is what dispatch on day D has. 2
+        is what an offer has: offers for D close at 14:00 on D-1 (14:30 before
+        EAC), when the last complete day is D-2. Column names keep their
+        day-ahead meaning and shift a day further back, so apx_lag_1d is then the
+        price two days before. The wind forecast for D is published on the
+        morning of D-1, before the deadline, so it is unaffected.
 
     Returns
     -------
@@ -113,11 +123,14 @@ def build_feature_matrix(
     # --- Same-period lagged prices ---
     # Shift by D days within each settlement period group so that day D's feature
     # is the price at that exact same period D days ago.
+    if information_lag_days < 1:
+        raise ValueError("information_lag_days must be at least 1: day D is what is being forecast")
+    extra = information_lag_days - 1
     apx = apx.sort_values(["settlementPeriod", "settlementDate"])
     for lag_days in [1, 2, 7, 14]:
         apx[f"apx_lag_{lag_days}d"] = (
             apx.groupby("settlementPeriod")["apx_price"]
-            .shift(lag_days)
+            .shift(lag_days + extra)
         )
 
     # --- Previous-day aggregate statistics ---
@@ -132,9 +145,9 @@ def build_feature_matrix(
     daily_stats["rolling_7d_mean"] = (
         daily_stats["daily_mean"].rolling(7, min_periods=7).mean()
     )
-    # Shift by 1 day so day D gets D-1's stats
+    # Shift so day D gets the last complete day's stats (D-1 by default)
     daily_stats_lag = daily_stats.copy()
-    daily_stats_lag["settlementDate"] = daily_stats_lag["settlementDate"] + pd.Timedelta(days=1)
+    daily_stats_lag["settlementDate"] = daily_stats_lag["settlementDate"] + pd.Timedelta(days=information_lag_days)
     daily_stats_lag = daily_stats_lag.rename(columns={
         "daily_mean": "prev_day_mean",
         "daily_std":  "prev_day_std",
@@ -182,9 +195,9 @@ def build_feature_matrix(
         / gen_wide["gen_total"].replace(0, np.nan)
     )
 
-    # Shift generation by 1 day: day D gets D-1 generation (available at end-of-D-1)
+    # Shift generation so day D gets the last complete day's (D-1 by default)
     gen_wide_lag = gen_wide.copy()
-    gen_wide_lag["settlementDate"] = gen_wide_lag["settlementDate"] + pd.Timedelta(days=1)
+    gen_wide_lag["settlementDate"] = gen_wide_lag["settlementDate"] + pd.Timedelta(days=information_lag_days)
 
     apx = apx.merge(gen_wide_lag, on="settlementDate", how="left")
 
@@ -196,7 +209,7 @@ def build_feature_matrix(
         bess["month_start"] = pd.to_datetime(bess["month_start"]).dt.normalize()
 
         apx["_feature_month"] = (
-            (apx["settlementDate"] - pd.Timedelta(days=1))
+            (apx["settlementDate"] - pd.Timedelta(days=information_lag_days))
             .dt.to_period("M")
             .dt.to_timestamp()
         )

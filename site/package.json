@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "observable preview",
     "build": "observable build && node scripts/copy-static.mjs",
-    "clean": "rimraf src/.observablehq/cache",
+    "clean": "node -e \"require('fs').rmSync('src/.observablehq/cache', {recursive: true, force: true})\"",
     "preview:dist": "npm run build && node scripts/serve-dist.mjs"
   },
   "dependencies": {
