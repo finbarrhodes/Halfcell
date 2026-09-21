@@ -89,6 +89,19 @@ sensitive to *how much* trading value is discounted and nearly flat in how that 
 shaped. The forecast's real weakness is timing rather than size: it gets a day's magnitude
 roughly right and picks the peak half-hour within one period only 30-40% of the time.
 
+**Why only the offer.** Dispatch plans on a forecast too and is prone to the same bias, but it
+is not discounted. Its mistakes are revisable — it re-solves every half-hour and executes only
+the first — and they cost the trade alone, where a mistake at the deadline also declines a
+response contract that would have paid, and cannot be taken back. A multiplicative discount
+would barely reach it in any case: dispatch turns on the *ordering* of periods and on whether a
+spread clears wear and round-trip losses, and scaling every deviation by the same factor leaves
+that ordering untouched. At the deadline the same operation does something quite different. It
+rescales one of two competing currencies — expected trading value against clearing prices in
+£/MW/h — so halving it changes which side wins the capacity. The offer stage is also the one
+working from the weaker forecast, since it may use data only to D-2 (RMSE 57.7 against 48.5,
+rank correlation 0.736 against 0.793). Worse information and an irreversible, lopsided cost,
+pointing the same way.
+
 NESO's rules set which combinations are permitted:
 
 - **Capacity in each direction.** MW offered into Low products, plus the Reserved Capacity
