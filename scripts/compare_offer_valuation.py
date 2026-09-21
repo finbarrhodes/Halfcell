@@ -67,6 +67,7 @@ def parse_run(spec: str) -> tuple:
     "ml:lp:0.5:bid:vint" -> ("ml", "lp", 0.5, True, True, False). After strategy
     and valuation come numbers and flags. "bid" is bid-time offers, "vint" forecast
     vintages in dispatch, "dyn" a weight fitted per day (Mincer-Zarnowitz slope), and
+    "sm5" smooths dispatch's own plan over five half-hours ("osm5" the offer plan's),
     "tilt" a weight that leans on how loud the day looks, and "cp" conformal guard
     bands, per settlement period unless "blk" (EFA block) or "dayg" (one set) is
     given. The first number is the constant shrink, the risk factor with "dyn", or
@@ -76,7 +77,12 @@ def parse_run(spec: str) -> tuple:
     parts = spec.strip().split(":")
     strategy, valuation, rest = parts[0], parts[1], parts[2:]
     flags = {part for part in rest if part in ("bid", "vint", "dyn", "tilt", "cp", "blk", "dayg")}
-    numbers = [part for part in rest if part not in flags]
+    # "sm5" smooths dispatch's plan over five half-hours, "osm5" the offer plan's
+    smoothing = {part[:-len(part.lstrip("abcdefghijklmnopqrstuvwxyz"))] or part: part
+                 for part in rest if part.startswith(("sm", "osm"))}
+    dispatch_smooth = int(smoothing["sm"][2:]) if "sm" in smoothing else 0
+    offer_smooth = int(smoothing["osm"][3:]) if "osm" in smoothing else 0
+    numbers = [part for part in rest if part not in flags and not part.startswith(("sm", "osm"))]
     if strategy not in ("pf", "naive", "ml") or valuation not in ("formula", "lp") or len(numbers) > 2:
         raise ValueError(f"bad run spec {spec!r}")
     shrink = float(numbers[0]) if numbers else 1.0
@@ -86,7 +92,7 @@ def parse_run(spec: str) -> tuple:
     if "cp" in flags and strategy != "pf":
         guard = (second or 0.2, "block" if "blk" in flags else "day" if "dayg" in flags else "period")
     return (strategy, valuation, shrink, "bid" in flags and strategy != "pf", "vint" in flags,
-            mode if strategy != "pf" else None, second, guard)
+            mode if strategy != "pf" else None, second, guard, dispatch_smooth, offer_smooth)
 
 
 def engine_fingerprint() -> str:
@@ -97,23 +103,27 @@ def engine_fingerprint() -> str:
 
 
 def run_name(strategy: str, valuation: str, shrink: float, bid_time: bool = False,
-             vintages: bool = False, dynamic=None, second: float = 0.0, guard=None) -> str:
+             vintages: bool = False, dynamic=None, second: float = 0.0, guard=None,
+             dispatch_smooth: int = 0, offer_smooth: int = 0) -> str:
     weight = (f"_a{shrink:g}b{second:+g}" if dynamic == "tilt" else
               f"_dyn{shrink:g}" if dynamic else
               f"_shrink{shrink:g}" if valuation == "lp" and shrink != 1.0 else "")
     band = f"_cp{guard[0]:g}{guard[1][:3]}" if guard else ""
-    return (f"{strategy}_{valuation}" + weight + band
+    smooth = (f"_sm{dispatch_smooth}" if dispatch_smooth else "") + (f"_osm{offer_smooth}" if offer_smooth else "")
+    return (f"{strategy}_{valuation}" + weight + band + smooth
             + ("_bid" if bid_time else "") + ("_vint" if vintages else ""))
 
 
 def backtest(strategy: str, valuation: str, shrink: float, bid_time: bool, vintages: bool,
-             dynamic, second: float, guard, fingerprint: str, fresh: bool) -> tuple:
+             dynamic, second: float, guard, dispatch_smooth: int, offer_smooth: int,
+             fingerprint: str, fresh: bool) -> tuple:
     """One full-window backtest, cached. Runs in a worker process."""
     from scripts.build_forecast_walk_forward import backtest_window, load_or_build
     from src.analysis.price_forecast import run_forecast_backtest
     from src.analysis.revenue_stack import ALL_SERVICES, REFERENCE_BATTERY, run_backtest
 
-    name = run_name(strategy, valuation, shrink, bid_time, vintages, dynamic, second, guard)
+    name = run_name(strategy, valuation, shrink, bid_time, vintages, dynamic, second, guard,
+                    dispatch_smooth, offer_smooth)
     monthly_file = BENCH / f"offer_valuation_{name}_{fingerprint}.parquet"
     summary_file = monthly_file.with_suffix(".json")
     if monthly_file.exists() and summary_file.exists() and not fresh:
@@ -130,6 +140,8 @@ def backtest(strategy: str, valuation: str, shrink: float, bid_time: bool, vinta
                   offer_valuation=valuation,
                   price_shrink=DYNAMIC_FALLBACK if dynamic == "slope" else shrink)
     if strategy == "pf":
+        # Smoothing answers forecast error, which perfect foresight does not have - it
+        # keeps actual prices, as it keeps a shrink of 1
         result = run_backtest(auctions, market_index, REFERENCE_BATTERY, forecast_vintages=vintages, **common)
     else:
         ml = strategy == "ml"
@@ -145,7 +157,9 @@ def backtest(strategy: str, valuation: str, shrink: float, bid_time: bool, vinta
                                        shrink_tilt=second,
                                        guard_alpha=guard[0] if guard else None,
                                        guard_group=guard[1] if guard else "period",
-                                       guard_window_days=GUARD_WINDOW_DAYS, **common)
+                                       guard_window_days=GUARD_WINDOW_DAYS,
+                                       plan_smoothing=offer_smooth,
+                                       dispatch_smoothing=dispatch_smooth, **common)
 
     BENCH.mkdir(parents=True, exist_ok=True)
     monthly = result["monthly"]

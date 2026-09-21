@@ -490,6 +490,8 @@ def run_forecast_backtest(
     guard_alpha: float | None = None,
     guard_group: str = "period",
     guard_window_days: int | None = None,
+    plan_smoothing: int = 0,
+    dispatch_smoothing: int = 0,
 ) -> dict:
     """
     Forecast-driven revenue backtest for the 'naive' or 'ml' strategy.
@@ -545,6 +547,9 @@ def run_forecast_backtest(
                        capacity (src/analysis/intervals.py). None plans on the forecast
     guard_group     : which calibration sets the bands come from: "period", "block" or "day"
     guard_window_days: calibrate on a trailing window rather than all history
+    plan_smoothing  : half-hours to smooth the offer plan's forecast over
+    dispatch_smoothing: the same for dispatch's own rolling plan, where the trade is
+                       actually committed (revenue_stack.run_dispatch)
 
     Returns
     -------
@@ -632,4 +637,5 @@ def run_forecast_backtest(
         forecast_vintages=forecast_vintages,
         price_shrink_by_date=shrink_by_date,
         guard_low_by_date=guard_low, guard_high_by_date=guard_high,
+        plan_smoothing=plan_smoothing, dispatch_smoothing=dispatch_smoothing,
     )

@@ -65,6 +65,7 @@ from typing import Mapping, Sequence
 
 import cvxpy as cp
 import numpy as np
+import pandas as pd
 
 from src.analysis.fr_allocation import (
     EFA_HOURS,
@@ -172,15 +173,31 @@ def _compiled(n_lead: int, n_blocks: int, power_mw: float, energy_mwh: float, ef
                        apply_reserve, one_service)
 
 
+def smooth_path(path: np.ndarray, periods: int) -> np.ndarray:
+    """
+    A centred rolling mean over `periods` settlement periods, shrinking at the edges.
+
+    What it expresses is timing uncertainty rather than size uncertainty. The forecast
+    gets the day's magnitude roughly right and the hour wrong: it picks the peak
+    half-hour within one period only 30-40% of the time, and a plan that trusts its
+    timing captures about half the spread that was actually there (2026-09-21).
+    Smoothing turns a sharp peak into a plateau, so the plan spreads a sale across the
+    hours it cannot tell apart instead of committing to one.
+    """
+    if periods <= 1:
+        return path
+    return (pd.Series(path).rolling(periods, center=True, min_periods=1).mean().to_numpy())
+
+
 def planning_prices(prices: Sequence[float], n_service: int, cycling_cost_per_mwh: float,
-                    price_shrink=1.0) -> tuple[np.ndarray, float]:
+                    price_shrink=1.0, smooth_periods: int = 0) -> tuple[np.ndarray, float]:
     """
     The price path the plan trades against, and the value of energy left at its end.
 
     Missing periods take the mean of the rest, so a gap neither invents nor
     removes a spread; with no prices at all, trading has no value. The path is
-    then pulled towards its mean by `price_shrink`, a constant or one weight per
-    period. Leftover energy is worth the mean over the last `n_service` periods
+    then smoothed over `smooth_periods` and pulled towards its mean by `price_shrink`,
+    a constant or one weight per period. Leftover energy is worth the mean over the last `n_service` periods
     (the service day) less wear, and never less than nothing.
     """
     path = np.asarray(prices, dtype=float)
@@ -189,6 +206,8 @@ def planning_prices(prices: Sequence[float], n_service: int, cycling_cost_per_mw
         return np.zeros(len(path)), 0.0
     mean = float(path[known].mean())
     path = np.where(known, path, mean)
+    path = smooth_path(path, smooth_periods)
+    mean = float(path.mean())
     path = mean + np.asarray(price_shrink, dtype=float) * (path - mean)
     terminal = max(0.0, float(path[-n_service:].mean()) - cycling_cost_per_mwh)
     return path, terminal
@@ -207,6 +226,7 @@ def plan_day(
     lead_in: Sequence[Mapping] = (),
     one_service: bool = False,
     price_shrink=1.0,
+    smooth_periods: int = 0,
     guard_low: Sequence[float] | None = None,
     guard_high: Sequence[float] | None = None,
     terminal_value_per_mwh: float | None = None,
@@ -239,6 +259,9 @@ def plan_day(
     price_shrink : float or sequence
         Weight on the forecast's deviations from its mean, one value or one per
         period; see planning_prices.
+    smooth_periods : int
+        Width of a centred rolling mean over the forecast before planning, so the plan
+        spreads a trade over the hours it cannot tell apart; see smooth_path.
     guard_low, guard_high : sequence of £/MWh, optional
         Per-period offsets making the plan sceptical: `guard_low` (at most zero) is
         added to the price a sale is planned against and `guard_high` (at least
@@ -274,7 +297,7 @@ def plan_day(
     soc_now = min(max(float(soc_now_mwh), 0.0), E)
 
     path, terminal = planning_prices(prices, n_blocks * EFA_SETTLEMENT_PERIODS,
-                                     cycling_cost_per_mwh, price_shrink)
+                                     cycling_cost_per_mwh, price_shrink, smooth_periods)
     band = lambda values, cap: (np.zeros(T) if values is None
                                 else cap(np.nan_to_num(np.asarray(values, dtype=float)[:T], nan=0.0)))
     low = band(guard_low, lambda v: np.minimum(v, 0.0))

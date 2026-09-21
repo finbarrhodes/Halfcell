@@ -188,3 +188,43 @@ def test_an_out_of_position_lead_in_still_plans():
     assert len(out["blocks"]) == 6 and out["blocks"][1]["q"]["DCL"] > 0
     # Frozen through the lead-in: no power either way
     assert out["soc_path_mwh"][18] == pytest.approx(20.0)
+
+
+# --- Spreading a trade over the hours the forecast cannot tell apart ----------------------
+
+def test_smoothing_flattens_a_spike_without_moving_the_days_level():
+    from src.optimisation.day_ahead import smooth_path
+
+    spike = np.full(48, 50.0); spike[20] = 500.0
+    smoothed = smooth_path(spike, 5)
+    assert smoothed[20] < spike[20] and smoothed[19] > spike[19]
+    assert smoothed.mean() == pytest.approx(spike.mean(), rel=1e-9)
+
+
+def test_a_window_of_one_leaves_the_forecast_alone():
+    from src.optimisation.day_ahead import smooth_path
+
+    path = np.linspace(10, 90, 48)
+    np.testing.assert_allclose(smooth_path(path, 1), path)
+    np.testing.assert_allclose(smooth_path(path, 0), path)
+
+
+def test_smoothing_stops_the_plan_committing_to_one_half_hour():
+    """
+    A tall half-hour standing alone. Taken at face value the plan empties into it; told
+    it cannot pick the hour that finely, it stops treating that period as special and
+    trades across the window instead.
+
+    The same averaging lifts the spike's genuinely cheap neighbours, which is why this
+    is used in dispatch - re-solving every half-hour as the real shape arrives - rather
+    than in the offer plan, where nothing corrects the relocated value afterwards.
+    """
+    prices = [40.0] * 48
+    prices[20] = 300.0
+    for sp in (34, 35, 36, 37, 38):
+        prices[sp] = 200.0
+    sharp = day([{}] * 6, prices, soc_now=100.0, terminal_value_per_mwh=0.0)
+    spread = day([{}] * 6, prices, soc_now=100.0, terminal_value_per_mwh=0.0, smooth_periods=5)
+    assert sharp["discharge_mw"][20] > 1e-6
+    assert spread["discharge_mw"][20] == pytest.approx(0.0, abs=1e-6)
+    assert int((spread["discharge_mw"][18:23] > 1e-6).sum()) >= 3
