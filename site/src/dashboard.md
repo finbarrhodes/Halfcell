@@ -460,7 +460,7 @@ display(resize((width) => Plot.plot({
 ```
 
 ```js
-if (drMean < 0) display(html`<div class="note">
+if (drMean < 0) display(html`<div class="note figure-note">
 <p><b>Why is the DR spread consistently negative (avg ${drMean.toFixed(2)} £/MW/h)?</b></p>
 <p>Because DR High clears below zero in most blocks while DR Low does not. That started the
 month the Enduring Auction Capability (EAC) went live: no DR High block cleared negative in

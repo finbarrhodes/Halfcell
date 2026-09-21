@@ -248,8 +248,14 @@ svg { color: var(--hc-ink); }
   min-height: 1.9rem;
 }
 
-/* Callout used for scope notes and caveats */
+/* Callout used for scope notes and caveats.
+
+   Framework's note.css caps every callout at a flat 640px — 32px short of this
+   site's prose measure — so a note sitting in running text is very slightly
+   narrower than the paragraphs around it. Match the measure instead, and let a
+   note that belongs to a figure opt out of it below. */
 .note {
+  max-width: var(--hc-measure);
   background: rgba(13, 118, 128, 0.06);
   border-left: 3px solid var(--hc-teal);
   padding: 0.9rem 1.1rem;
@@ -258,6 +264,37 @@ svg { color: var(--hc-ink); }
 }
 .note p:first-child { margin-top: 0; }
 .note p:last-child { margin-bottom: 0; }
+
+/* A note that annotates the chart directly above it reads as part of that
+   figure, not as running text, so it takes the full content column and lines
+   up with the chart instead of stopping 400px short of it.
+
+   Two columns once there is room: at full width a single column would run to
+   ~120 characters a line, which is the thing the prose measure exists to
+   prevent — the box gets wider, the line length does not. The lead question
+   and Framework's "Note" label span both.
+
+   Keyed to the content column rather than the viewport, because Framework
+   makes #observablehq-main a query container and the sidebar means a 1100px
+   window leaves only ~730px of column: wide enough for a viewport media query
+   to fire, but only ~44 characters per column once split. Below the threshold
+   the note keeps the prose measure, since one column at the full width of a
+   narrower page would still be a ~100-character line. */
+@container (min-width: 1000px) {
+  .note.figure-note {
+    max-width: none;
+    columns: 2;
+    column-gap: 2.5rem;
+  }
+  .note.figure-note::before,
+  .note.figure-note > p:first-of-type { column-span: all; }
+
+  /* The column box starts below the spanning lead, so the second column's
+     first line sits flush with the top of that box while the first column is
+     pushed down by the paragraph's own margin. Drop it and let the lead's
+     margin-bottom carry the gap, so both columns start on one line. */
+  .note.figure-note > p:first-of-type + p { margin-top: 0; }
+}
 
 /* Tables: horizontal rules only, FT-style */
 table { font-size: 0.88rem; }
