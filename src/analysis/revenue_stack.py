@@ -496,8 +496,9 @@ class _Scheduler:
     for every period from the deadline to the end of the service day, solved
     together with the holdings (day_ahead.plan_day), and picks each pre-EAC
     block's one service jointly across the day. price_shrink pulls that plan's
-    forecast towards its mean. With include_arbitrage=False there is nothing to
-    plan for, and both valuations hold the same.
+    forecast towards its mean, by price_shrink or, where price_shrink_by_date has
+    a weight for the service day, by that. With include_arbitrage=False there is
+    nothing to plan for, and both valuations hold the same.
 
     offer_forecast_prices_by_date is the forecast of the service day as it stood
     at the bid deadline, for strategies whose day-ahead forecast needs all of D-1
@@ -507,7 +508,9 @@ class _Scheduler:
 
     def __init__(self, auctions, battery, forecast_prices_by_date=None, services=None, *,
                  include_arbitrage=True, pre_eac_rule="d1", expected_delivery=None, expected_prices=None,
-                 offer_valuation="formula", price_shrink=1.0, offer_forecast_prices_by_date=None):
+                 offer_valuation="formula", price_shrink=1.0, offer_forecast_prices_by_date=None,
+                 price_shrink_by_date=None, guard_low_by_date=None, guard_high_by_date=None,
+                 plan_smoothing=0):
         if pre_eac_rule not in PRE_EAC_RULES:
             raise ValueError(f"pre_eac_rule must be one of {PRE_EAC_RULES}, got {pre_eac_rule!r}")
         if offer_valuation not in OFFER_VALUATIONS:
@@ -525,6 +528,19 @@ class _Scheduler:
         self.pre_eac_rule = pre_eac_rule
         self.plan_trading = offer_valuation == "lp" and include_arbitrage
         self.price_shrink = float(price_shrink)
+        # How far to believe each day's forecast shape, when it is estimated per day
+        # (src/analysis/shrink.py) rather than held constant. The service day's weight
+        # applies to the whole plan, including the lead-in hours of D-1.
+        self.price_shrink_by_date = {pd.Timestamp(d).normalize(): float(w)
+                                     for d, w in (price_shrink_by_date or {}).items()}
+        # Conformal guard bands: how much worse than forecast each side plans to trade
+        # at, by settlement period (src/analysis/intervals.py). Empty plans on the
+        # forecast itself.
+        by_date = lambda table: {pd.Timestamp(d).normalize(): v for d, v in (table or {}).items()}
+        self.guard_low_by_date, self.guard_high_by_date = by_date(guard_low_by_date), by_date(guard_high_by_date)
+        # Half-hours the plan smooths the forecast over, so it spreads a trade across the
+        # hours the forecast cannot tell apart rather than committing to one.
+        self.plan_smoothing = int(plan_smoothing)
         self.rows = {}    # (service day, EFA) -> schedule row
         self.plans = {}   # service day -> [(SoE at block's first period, at its last)]
 
@@ -640,14 +656,24 @@ class _Scheduler:
         b = self.battery
         n_lead = sum(seg["n_sp"] for seg in lead_in)
         view = self._offer_view(service_date)
-        prices = np.concatenate([self._forecast_path(view, now, n_lead),
-                                 self._forecast_path(view, _block_start(service_date, 1),
-                                                     6 * _SETTLEMENT_PERIODS_PER_BLOCK)])
+
+        def path(series_by_date):
+            """The plan's periods in order: the lead-in, then the service day's six blocks."""
+            return np.concatenate([
+                self._forecast_path(series_by_date, now, n_lead),
+                self._forecast_path(series_by_date, _block_start(service_date, 1),
+                                    6 * _SETTLEMENT_PERIODS_PER_BLOCK)])
+
+        prices = path(view)
+        guard_low = path(self.guard_low_by_date) if self.guard_low_by_date else None
+        guard_high = path(self.guard_high_by_date) if self.guard_high_by_date else None
 
         def plan(blocks, one_service=False):
             return plan_day(blocks, b.power_mw, b.energy_mwh, b.efficiency_rt, b.cycling_cost_per_mwh,
                             soc_now_mwh, prices, apply_reserve=apply_reserve, lead_in=lead_in,
-                            one_service=one_service, price_shrink=self.price_shrink)
+                            one_service=one_service, guard_low=guard_low, guard_high=guard_high,
+                            smooth_periods=self.plan_smoothing,
+                            price_shrink=self.price_shrink_by_date.get(service_date, self.price_shrink))
 
         offers = [self._offers((service_date, efa)) for efa in range(1, 7)]
         if splitting_allowed(service_date.date()):
@@ -807,6 +833,7 @@ def run_dispatch(
     price_seeking: bool = True,
     forecast_vintages: bool = False,
     early_forecast_prices_by_date: dict | None = None,
+    dispatch_smoothing: int = 0,
 ) -> tuple[list, list, dict]:
     """
     Rolling MPC dispatch over every settlement period, around FR commitments.
@@ -833,6 +860,11 @@ def run_dispatch(
     the full requirement, it plans on delivery continuing at its average over the
     previous day, which the operator has already seen. A settlement period that
     starts outside the requirement counts as unavailable (Service Terms 6.12).
+
+    dispatch_smoothing averages the forecast over neighbouring half-hours before
+    planning, so dispatch spreads a trade across the hours the forecast cannot tell
+    apart rather than committing to the one it happens to name. Settlement is
+    unaffected: trades still execute at actual prices.
 
     price_seeking=False is a site with no interest in wholesale arbitrage: its LP
     ignores prices and trades only to keep state of energy where its contracts
@@ -861,6 +893,7 @@ def run_dispatch(
         each period, with the requirement state of energy must meet at the start of the next
     breaches : {(date, efa): settlement periods started outside the requirement}
     """
+    from src.optimisation.day_ahead import smooth_path
     from src.optimisation.mpc import DT, solve_mpc
 
     if (scheduler is None) == (schedule is None):
@@ -949,10 +982,19 @@ def run_dispatch(
         need_hi[j] = min(rev_hi[j], need_hi[k] - delivered_in[k] + adjust_hi[k])
 
     def plan_prices(i, idx):
-        """Today's periods on the day-ahead forecast; with vintages, tomorrow's on the early one."""
-        if not forecast_vintages:
-            return predict[idx]
-        return np.where(day_of[idx] == day_of[i], predict[idx], predict_early[idx])
+        """
+        Today's periods on the day-ahead forecast; with vintages, tomorrow's on the early one.
+
+        dispatch_smoothing then averages the path over neighbouring half-hours. The
+        forecast gets the day's size roughly right and the hour wrong - it picks the peak
+        within one period 30-40% of the time - so a plan that trusts its timing sells
+        everything into a half-hour that may not be the dear one. Smoothing makes it
+        indifferent across the hours it cannot tell apart, and re-solving every period
+        lets it commit as the real shape arrives.
+        """
+        path = (predict[idx] if not forecast_vintages
+                else np.where(day_of[idx] == day_of[i], predict[idx], predict_early[idx]))
+        return smooth_path(path, dispatch_smoothing) if dispatch_smoothing > 1 else path
 
     def planning_range(i, last):
         """
@@ -1095,6 +1137,11 @@ def run_strategy(
     early_forecast_prices_by_date: dict | None = None,
     offers_at_bid_time: bool = False,
     forecast_vintages: bool = False,
+    price_shrink_by_date: dict | None = None,
+    guard_low_by_date: dict | None = None,
+    guard_high_by_date: dict | None = None,
+    plan_smoothing: int = 0,
+    dispatch_smoothing: int = 0,
 ) -> dict:
     """
     The shared engine behind every strategy: schedule, dispatch, settle.
@@ -1137,6 +1184,10 @@ def run_strategy(
         expected_prices=_expected_block_prices(market_index) if has_delivery else None,
         offer_valuation=offer_valuation, price_shrink=price_shrink,
         offer_forecast_prices_by_date=early_forecast_prices_by_date if offers_at_bid_time else None,
+        price_shrink_by_date=price_shrink_by_date if include_arbitrage else None,
+        guard_low_by_date=guard_low_by_date if include_arbitrage else None,
+        guard_high_by_date=guard_high_by_date if include_arbitrage else None,
+        plan_smoothing=plan_smoothing,
     )
     if dates:
         energy_rows, soc_traj, breaches = run_dispatch(
@@ -1146,6 +1197,7 @@ def run_strategy(
             price_seeking=include_arbitrage,
             forecast_vintages=forecast_vintages,
             early_forecast_prices_by_date=early_forecast_prices_by_date,
+            dispatch_smoothing=dispatch_smoothing,
         )
     else:
         energy_rows, soc_traj, breaches = [], [], {}
@@ -1189,6 +1241,10 @@ def run_strategy(
         "price_shrink":        price_shrink,
         "offers_at_bid_time":  offers_at_bid_time,
         "forecast_vintages":   forecast_vintages,
+        "dynamic_shrink":      bool(price_shrink_by_date) and include_arbitrage,
+        "guard_bands":         bool(guard_low_by_date) and include_arbitrage,
+        "plan_smoothing":      plan_smoothing,
+        "dispatch_smoothing":  dispatch_smoothing,
     }
     result = _build_result(anc_wide, imb_wide, battery, avg_fr_mw, avg_arb_mw, soc_traj, extras)
     result["schedule"] = schedule

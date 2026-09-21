@@ -50,12 +50,11 @@ programme of about 270 variables, solved in two milliseconds by
 tie and only a vertex solution breaks those ties cleanly.
 
 **Two refinements.** The plan's forecast is pulled halfway towards its daily mean before
-planning. A plan chases the hours its forecast shows as most extreme, so forecast errors
-select themselves into it and it overstates what keeping capacity free is worth — the
-optimiser's curse ([Smith & Winkler, 2006](https://doi.org/10.1287/mnsc.1050.0451)) — and the
-error is lopsided: over-valuing headroom costs a contract and then a trade, under-valuing it
-costs only some trading. The weight was chosen on the years before 2025 from 0.25, 0.5, 0.75
-and 1, and held up on 2025 onward. And energy left at the end of day D is valued at the day's
+planning, because a plan built on a forecast overstates what keeping capacity free is worth;
+that is the subject of the next section. The weight was chosen on the years before 2025 from
+0.25, 0.5, 0.75 and 1, and held up on 2025 onward.
+
+Energy left at the end of day D is valued at the day's
 mean forecast price less wear; valued at nothing, the plan would empty the store in the last
 block and make holding Low response there look expensive for no real reason.
 
@@ -68,6 +67,40 @@ Low. The battery's real trade crosses blocks: from 2025 the spread inside a bloc
 small. On the same information, planning raised perfect foresight by £11.9k/MW/yr, naive by
 £9.1k and the model by £7.3k, and beat the old rule in every calendar year for all three.
 </div>
+
+### Scepticism in the offer: the optimiser's curse
+
+A plan built on a forecast does not merely inherit its errors, it *selects* them: it commits
+capacity to the half-hours where the forecast shows the widest spread, so the periods it picks
+are disproportionately the ones the forecast flattered, and its estimate of what free capacity
+is worth is biased upward even when the forecast itself is unbiased — the
+[optimiser's curse](https://doi.org/10.1287/mnsc.1050.0451) (Smith & Winkler, 2006), whose
+remedy is to discount value estimates before choosing rather than be disappointed after.
+Here the error is lopsided too: a spread that fails to arrive costs the trade *and* the
+response contract declined to keep capacity free, while one wrongly passed over costs only the
+trade. Halving the forecast's deviations is worth about £4k/MW/yr to the naive signal and £1k
+to the model, chosen on the folds before 2025. Four attempts to do better than a single
+constant all failed — a weight fitted per day by the
+[Mincer & Zarnowitz (1969)](https://www.nber.org/books-and-chapters/economic-forecasts-and-expectations-analysis-forecasting-behavior-and-performance/evaluation-economic-forecasts)
+slope, a weight leaning on how loud the day looked, conformal
+[guard bands](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6598009) per settlement
+period, and spreading trades across neighbouring half-hours — because revenue turns out to be
+sensitive to *how much* trading value is discounted and nearly flat in how that discount is
+shaped. The forecast's real weakness is timing rather than size: it gets a day's magnitude
+roughly right and picks the peak half-hour within one period only 30-40% of the time.
+
+**Why only the offer.** Dispatch plans on a forecast too and is prone to the same bias, but it
+is not discounted. Its mistakes are revisable — it re-solves every half-hour and executes only
+the first — and they cost the trade alone, where a mistake at the deadline also declines a
+response contract that would have paid, and cannot be taken back. A multiplicative discount
+would barely reach it in any case: dispatch turns on the *ordering* of periods and on whether a
+spread clears wear and round-trip losses, and scaling every deviation by the same factor leaves
+that ordering untouched. At the deadline the same operation does something quite different. It
+rescales one of two competing currencies — expected trading value against clearing prices in
+£/MW/h — so halving it changes which side wins the capacity. The offer stage is also the one
+working from the weaker forecast, since it may use data only to D-2 (RMSE 57.7 against 48.5,
+rank correlation 0.736 against 0.793). Worse information and an irreversible, lopsided cost,
+pointing the same way.
 
 NESO's rules set which combinations are permitted:
 
