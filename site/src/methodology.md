@@ -55,7 +55,21 @@ select themselves into it and it overstates what keeping capacity free is worth 
 optimiser's curse ([Smith & Winkler, 2006](https://doi.org/10.1287/mnsc.1050.0451)) — and the
 error is lopsided: over-valuing headroom costs a contract and then a trade, under-valuing it
 costs only some trading. The weight was chosen on the years before 2025 from 0.25, 0.5, 0.75
-and 1, and held up on 2025 onward. And energy left at the end of day D is valued at the day's
+and 1, and held up on 2025 onward.
+
+A weight fitted per day was tried and rejected. The scaling that best matches what happens —
+the slope of a regression of the realised shape on the forecast's, the classic
+[Mincer & Zarnowitz (1969)](https://www.nber.org/books-and-chapters/economic-forecasts-and-expectations-analysis-forecasting-behavior-and-performance/evaluation-economic-forecasts) diagnostic — is 0.69
+pooled, and falls from 1.21 on the calmest fifth of days to 0.56 on the widest, which is
+regression to the mean. Fitted walk-forward and fed to the plan, it *lost* money at every
+risk factor tried, for both the model and naive. The reason is the useful part: that weight is
+calibrated for squared error, and it tells the plan to disbelieve the loudest days most — but
+those are the days whose spread is real, so the plan sells that capacity into response and
+then cannot hold its state of energy, roughly doubling missed half-hours. A constant is a
+blunter instrument that leans the right way. The third time here that a better statistic has
+not been better money.
+
+Energy left at the end of day D is valued at the day's
 mean forecast price less wear; valued at nothing, the plan would empty the store in the last
 block and make holding Low response there look expensive for no real reason.
 
