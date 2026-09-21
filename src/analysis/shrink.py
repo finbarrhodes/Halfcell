@@ -196,3 +196,53 @@ def naive_predictions(market_index: pd.DataFrame, days_back: int = 2) -> pd.Data
     table = apx.assign(settlementDate=pd.to_datetime(apx["settlementDate"]).dt.normalize()
                        + pd.Timedelta(days=days_back))
     return table[["settlementDate", "settlementPeriod", "price"]].rename(columns={"price": "prediction"})
+
+
+def tilted_weights(
+    predictions: pd.DataFrame,
+    market_index: pd.DataFrame,
+    *,
+    intercept: float = 0.5,
+    tilt: float = 0.0,
+    cadence_months: int = 3,
+    fallback: float | None = None,
+) -> dict:
+    """
+    A weight that moves with how loud the day's forecast is, by construction rather
+    than by calibration: `intercept + tilt x (percentile - 0.5)`.
+
+    The fitted slope (walk_forward_slopes) believes loud days *least*, because that is
+    what squared error asks for, and measured on revenue it lost to a constant at every
+    risk factor (2026-09-21). The days it disbelieves are the ones whose spread turns
+    out to be real, so this family lets the weight lean either way and asks the
+    backtest which. tilt=0 reproduces the constant exactly; a positive tilt believes
+    the loudest days more.
+
+    The percentile comes from the amplitudes seen before the day's origin only, so a
+    day is ranked against history rather than against the whole backtest.
+    """
+    forecast = day_matrix(predictions, "prediction")
+    apx = market_index[(market_index["dataProvider"] == "APXMIDP")
+                       & (market_index["settlementPeriod"] <= 48)]
+    days = forecast.index.intersection(day_matrix(apx, "price").index).sort_values()
+    if not len(days):
+        return {}
+
+    width = amplitude(forecast.loc[days])
+    origins = pd.date_range(days.min().normalize().replace(day=1), days.max(),
+                            freq=f"{cadence_months}MS")
+    flat = float(intercept if fallback is None else fallback)
+    weights = {}
+    for k, origin in enumerate(origins):
+        upto = origins[k + 1] if k + 1 < len(origins) else days.max() + pd.Timedelta(days=1)
+        served = days[(days >= origin) & (days < upto)]
+        history = width[width.index < origin].dropna()
+        if not len(served):
+            continue
+        if len(history) < FALLBACK_MIN_DAYS:
+            weights.update({day: flat for day in served})
+            continue
+        ranked = np.searchsorted(np.sort(history.to_numpy()), width.loc[served].to_numpy()) / len(history)
+        weights.update({day: float(np.clip(intercept + tilt * (u - 0.5), 0.0, MAX_WEIGHT))
+                        for day, u in zip(served, ranked)})
+    return weights

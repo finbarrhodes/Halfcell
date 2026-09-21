@@ -62,20 +62,24 @@ ENGINE_SOURCES = [
 def parse_run(spec: str) -> tuple:
     """
     "ml:lp:0.5:bid:vint" -> ("ml", "lp", 0.5, True, True, False). After strategy
-    and valuation come any of: a number, "bid" for bid-time offers, "vint" for
-    forecast vintages in dispatch, and "dyn" for a shrink estimated per day. The
-    number is the constant shrink, or with "dyn" the risk factor on each fitted
-    weight. Perfect foresight ignores "bid" and "dyn".
+    and valuation come numbers and flags. "bid" is bid-time offers, "vint" forecast
+    vintages in dispatch, "dyn" a weight fitted per day (Mincer-Zarnowitz slope), and
+    "tilt" a weight that leans on how loud the day looks. The first number is the
+    constant shrink, the risk factor with "dyn", or the intercept with "tilt"; the
+    second is the tilt per unit of amplitude percentile. Perfect foresight ignores
+    everything but "vint".
     """
     parts = spec.strip().split(":")
     strategy, valuation, rest = parts[0], parts[1], parts[2:]
-    flags = {part for part in rest if part in ("bid", "vint", "dyn")}
+    flags = {part for part in rest if part in ("bid", "vint", "dyn", "tilt")}
     numbers = [part for part in rest if part not in flags]
-    if strategy not in ("pf", "naive", "ml") or valuation not in ("formula", "lp") or len(numbers) > 1:
+    if strategy not in ("pf", "naive", "ml") or valuation not in ("formula", "lp") or len(numbers) > 2:
         raise ValueError(f"bad run spec {spec!r}")
     shrink = float(numbers[0]) if numbers else 1.0
+    tilt = float(numbers[1]) if len(numbers) > 1 else 0.0
+    mode = "tilt" if "tilt" in flags else "slope" if "dyn" in flags else None
     return (strategy, valuation, shrink, "bid" in flags and strategy != "pf", "vint" in flags,
-            "dyn" in flags and strategy != "pf")
+            mode if strategy != "pf" else None, tilt)
 
 
 def engine_fingerprint() -> str:
@@ -86,21 +90,22 @@ def engine_fingerprint() -> str:
 
 
 def run_name(strategy: str, valuation: str, shrink: float, bid_time: bool = False,
-             vintages: bool = False, dynamic: bool = False) -> str:
-    weight = (f"_dyn{shrink:g}" if dynamic else
+             vintages: bool = False, dynamic=None, tilt: float = 0.0) -> str:
+    weight = (f"_a{shrink:g}b{tilt:+g}" if dynamic == "tilt" else
+              f"_dyn{shrink:g}" if dynamic else
               f"_shrink{shrink:g}" if valuation == "lp" and shrink != 1.0 else "")
     return (f"{strategy}_{valuation}" + weight
             + ("_bid" if bid_time else "") + ("_vint" if vintages else ""))
 
 
 def backtest(strategy: str, valuation: str, shrink: float, bid_time: bool, vintages: bool,
-             dynamic: bool, fingerprint: str, fresh: bool) -> tuple:
+             dynamic, tilt: float, fingerprint: str, fresh: bool) -> tuple:
     """One full-window backtest, cached. Runs in a worker process."""
     from scripts.build_forecast_walk_forward import backtest_window, load_or_build
     from src.analysis.price_forecast import run_forecast_backtest
     from src.analysis.revenue_stack import ALL_SERVICES, REFERENCE_BATTERY, run_backtest
 
-    name = run_name(strategy, valuation, shrink, bid_time, vintages, dynamic)
+    name = run_name(strategy, valuation, shrink, bid_time, vintages, dynamic, tilt)
     monthly_file = BENCH / f"offer_valuation_{name}_{fingerprint}.parquet"
     summary_file = monthly_file.with_suffix(".json")
     if monthly_file.exists() and summary_file.exists() and not fresh:
@@ -115,7 +120,7 @@ def backtest(strategy: str, valuation: str, shrink: float, bid_time: bool, vinta
     # weight, and the constant becomes only the fallback until there is history to fit.
     common = dict(services=ALL_SERVICES, start_date=start, end_date=end, delivery=delivery,
                   offer_valuation=valuation,
-                  price_shrink=DYNAMIC_FALLBACK if dynamic else shrink)
+                  price_shrink=DYNAMIC_FALLBACK if dynamic == "slope" else shrink)
     if strategy == "pf":
         result = run_backtest(auctions, market_index, REFERENCE_BATTERY, forecast_vintages=vintages, **common)
     else:
@@ -128,7 +133,8 @@ def backtest(strategy: str, valuation: str, shrink: float, bid_time: bool, vinta
                                        offer_information="bid_time" if bid_time else "day_ahead",
                                        forecast_vintages=vintages,
                                        early_predictions=early_predictions,
-                                       dynamic_shrink=dynamic, shrink_risk_factor=shrink, **common)
+                                       dynamic_shrink=dynamic or False, shrink_risk_factor=shrink,
+                                       shrink_tilt=tilt, **common)
 
     BENCH.mkdir(parents=True, exist_ok=True)
     monthly = result["monthly"]
@@ -164,9 +170,10 @@ def split_revenue(monthly: pd.DataFrame, power_mw: float, select_before: str) ->
 
 def foresight(rows: dict, valuation_key: str, half: str) -> float | None:
     """(ML − naive) / (PF − naive) within one valuation; PF is the same with or without _bid."""
-    vint = valuation_key.endswith("_vint")
-    pf_key = (valuation_key.split("_shrink")[0].split("_dyn")[0].split("_bid")[0].removesuffix("_vint")
-              + ("_vint" if vint else ""))
+    # Perfect foresight has one run per valuation and horizon: everything the weight
+    # names add (_shrink, _dyn, _a..b.., _bid) belongs to a forecast, not to it.
+    parts = valuation_key.split("_")
+    pf_key = parts[0] + ("_vint" if valuation_key.endswith("_vint") else "")
     try:
         pf = rows[f"pf_{pf_key}"]["revenue"][half]["net"]
         naive, ml = (rows[f"{s}_{valuation_key}"]["revenue"][half]["net"] for s in ("naive", "ml"))
