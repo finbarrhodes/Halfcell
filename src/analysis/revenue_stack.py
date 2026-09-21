@@ -496,8 +496,9 @@ class _Scheduler:
     for every period from the deadline to the end of the service day, solved
     together with the holdings (day_ahead.plan_day), and picks each pre-EAC
     block's one service jointly across the day. price_shrink pulls that plan's
-    forecast towards its mean. With include_arbitrage=False there is nothing to
-    plan for, and both valuations hold the same.
+    forecast towards its mean, by price_shrink or, where price_shrink_by_date has
+    a weight for the service day, by that. With include_arbitrage=False there is
+    nothing to plan for, and both valuations hold the same.
 
     offer_forecast_prices_by_date is the forecast of the service day as it stood
     at the bid deadline, for strategies whose day-ahead forecast needs all of D-1
@@ -507,7 +508,8 @@ class _Scheduler:
 
     def __init__(self, auctions, battery, forecast_prices_by_date=None, services=None, *,
                  include_arbitrage=True, pre_eac_rule="d1", expected_delivery=None, expected_prices=None,
-                 offer_valuation="formula", price_shrink=1.0, offer_forecast_prices_by_date=None):
+                 offer_valuation="formula", price_shrink=1.0, offer_forecast_prices_by_date=None,
+                 price_shrink_by_date=None):
         if pre_eac_rule not in PRE_EAC_RULES:
             raise ValueError(f"pre_eac_rule must be one of {PRE_EAC_RULES}, got {pre_eac_rule!r}")
         if offer_valuation not in OFFER_VALUATIONS:
@@ -525,6 +527,11 @@ class _Scheduler:
         self.pre_eac_rule = pre_eac_rule
         self.plan_trading = offer_valuation == "lp" and include_arbitrage
         self.price_shrink = float(price_shrink)
+        # How far to believe each day's forecast shape, when it is estimated per day
+        # (src/analysis/shrink.py) rather than held constant. The service day's weight
+        # applies to the whole plan, including the lead-in hours of D-1.
+        self.price_shrink_by_date = {pd.Timestamp(d).normalize(): float(w)
+                                     for d, w in (price_shrink_by_date or {}).items()}
         self.rows = {}    # (service day, EFA) -> schedule row
         self.plans = {}   # service day -> [(SoE at block's first period, at its last)]
 
@@ -647,7 +654,8 @@ class _Scheduler:
         def plan(blocks, one_service=False):
             return plan_day(blocks, b.power_mw, b.energy_mwh, b.efficiency_rt, b.cycling_cost_per_mwh,
                             soc_now_mwh, prices, apply_reserve=apply_reserve, lead_in=lead_in,
-                            one_service=one_service, price_shrink=self.price_shrink)
+                            one_service=one_service,
+                            price_shrink=self.price_shrink_by_date.get(service_date, self.price_shrink))
 
         offers = [self._offers((service_date, efa)) for efa in range(1, 7)]
         if splitting_allowed(service_date.date()):
@@ -1095,6 +1103,7 @@ def run_strategy(
     early_forecast_prices_by_date: dict | None = None,
     offers_at_bid_time: bool = False,
     forecast_vintages: bool = False,
+    price_shrink_by_date: dict | None = None,
 ) -> dict:
     """
     The shared engine behind every strategy: schedule, dispatch, settle.
@@ -1137,6 +1146,7 @@ def run_strategy(
         expected_prices=_expected_block_prices(market_index) if has_delivery else None,
         offer_valuation=offer_valuation, price_shrink=price_shrink,
         offer_forecast_prices_by_date=early_forecast_prices_by_date if offers_at_bid_time else None,
+        price_shrink_by_date=price_shrink_by_date if include_arbitrage else None,
     )
     if dates:
         energy_rows, soc_traj, breaches = run_dispatch(
@@ -1189,6 +1199,7 @@ def run_strategy(
         "price_shrink":        price_shrink,
         "offers_at_bid_time":  offers_at_bid_time,
         "forecast_vintages":   forecast_vintages,
+        "dynamic_shrink":      bool(price_shrink_by_date) and include_arbitrage,
     }
     result = _build_result(anc_wide, imb_wide, battery, avg_fr_mw, avg_arb_mw, soc_traj, extras)
     result["schedule"] = schedule

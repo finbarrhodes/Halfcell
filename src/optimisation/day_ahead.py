@@ -167,15 +167,15 @@ def _compiled(n_lead: int, n_blocks: int, power_mw: float, energy_mwh: float, ef
 
 
 def planning_prices(prices: Sequence[float], n_service: int, cycling_cost_per_mwh: float,
-                    price_shrink: float = 1.0) -> tuple[np.ndarray, float]:
+                    price_shrink=1.0) -> tuple[np.ndarray, float]:
     """
     The price path the plan trades against, and the value of energy left at its end.
 
     Missing periods take the mean of the rest, so a gap neither invents nor
     removes a spread; with no prices at all, trading has no value. The path is
-    then pulled towards its mean by `price_shrink`. Leftover energy is worth the
-    mean over the last `n_service` periods (the service day) less wear, and
-    never less than nothing.
+    then pulled towards its mean by `price_shrink`, a constant or one weight per
+    period. Leftover energy is worth the mean over the last `n_service` periods
+    (the service day) less wear, and never less than nothing.
     """
     path = np.asarray(prices, dtype=float)
     known = np.isfinite(path)
@@ -183,7 +183,7 @@ def planning_prices(prices: Sequence[float], n_service: int, cycling_cost_per_mw
         return np.zeros(len(path)), 0.0
     mean = float(path[known].mean())
     path = np.where(known, path, mean)
-    path = mean + float(price_shrink) * (path - mean)
+    path = mean + np.asarray(price_shrink, dtype=float) * (path - mean)
     terminal = max(0.0, float(path[-n_service:].mean()) - cycling_cost_per_mwh)
     return path, terminal
 
@@ -228,8 +228,9 @@ def plan_day(
         fr_allocation.allocate_day.
     one_service : bool
         Offer at most one of DC, DM or DR per block (before EAC), chosen jointly.
-    price_shrink : float
-        Weight on the forecast's deviations from its mean; see planning_prices.
+    price_shrink : float or sequence
+        Weight on the forecast's deviations from its mean, one value or one per
+        period; see planning_prices.
     terminal_value_per_mwh : float, optional
         Value of energy left at the end. Default: the service day's mean
         forecast price less wear.

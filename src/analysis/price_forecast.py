@@ -484,6 +484,8 @@ def run_forecast_backtest(
     offer_information: str = "day_ahead",
     forecast_vintages: bool = False,
     early_predictions: pd.DataFrame | None = None,
+    dynamic_shrink: bool = False,
+    shrink_risk_factor: float = 1.0,
 ) -> dict:
     """
     Forecast-driven revenue backtest for the 'naive' or 'ml' strategy.
@@ -525,6 +527,12 @@ def run_forecast_backtest(
                        need data still to come; see revenue_stack.run_dispatch
     early_predictions: for ml with either of the above, a walk-forward table built with
                        information_lag_days=2. For naive the early forecast is D-2's prices
+    dynamic_shrink  : estimate how far to believe each day's forecast shape instead of
+                       holding price_shrink constant, walk-forward from the same early
+                       forecasts the offers see (src/analysis/shrink.py); price_shrink is
+                       the fallback until there is enough history
+    shrink_risk_factor: multiplies every fitted weight, for the caution an asymmetric
+                       decision cost calls for. Tune it on selection folds only
 
     Returns
     -------
@@ -564,6 +572,23 @@ def run_forecast_backtest(
                 if not fp.empty:
                     early_forecast[date] = fp
 
+    shrink_by_date = None
+    if include_arbitrage and dynamic_shrink:
+        from src.analysis.shrink import naive_predictions, walk_forward_slopes
+
+        # Calibrate whichever forecast the offers actually see, so the weight measures
+        # the belief owed to that forecast rather than to a sharper one
+        bid_time = offer_information == "bid_time"
+        if strategy == "ml":
+            source = early_predictions if bid_time else predictions
+            if source is None:
+                raise ValueError("dynamic_shrink with strategy='ml' needs a prediction table")
+        else:
+            source = naive_predictions(market_index, days_back=2 if bid_time else 1)
+        shrink_by_date = walk_forward_slopes(
+            source, market_index, risk_factor=shrink_risk_factor, fallback=price_shrink)[0]
+        shrink_by_date = {d: w for d, w in shrink_by_date.items() if _in_range(d, start_date, end_date)}
+
     return run_strategy(
         auctions, market_index, battery, forecast_prices_by_date, services, start_date, end_date,
         initial_soc_frac=initial_soc_frac, horizon=horizon,
@@ -572,4 +597,5 @@ def run_forecast_backtest(
         early_forecast_prices_by_date=early_forecast,
         offers_at_bid_time=offer_information == "bid_time",
         forecast_vintages=forecast_vintages,
+        price_shrink_by_date=shrink_by_date,
     )
