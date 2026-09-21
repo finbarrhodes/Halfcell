@@ -281,7 +281,7 @@ function clearingChart({era, focus, zero}, width) {
   const inFocus = (d) => !focus || focus.includes(d.service);
   const markers = RULE_MARKERS.filter((d) => d.date > x0 && d.date < x1);
   return Plot.plot({
-    width, height: 420, marginLeft: 45, marginRight: 10, marginTop: 24,
+    width, height: 420, marginLeft: 45, marginRight: 10, marginTop: 24, marginBottom: 36,
     x: {label: null, domain: [x0, x1]},
     y: {label: "£/MW/h", grid: true},
     color: {legend: true, domain: SERVICE_ORDER, range: SERVICE_ORDER.map((s) => SERVICE_COLOURS[s])},
@@ -448,7 +448,7 @@ const dailySpread = Array.from(
 ).flat();
 
 display(resize((width) => Plot.plot({
-  width, height: 400, marginLeft: 55,
+  width, height: 400, marginLeft: 55, marginBottom: 36,
   x: {label: null},
   y: {label: "£/MW/h", grid: true},
   color: {legend: true, domain: Object.keys(MARKET_COLOURS), range: Object.values(MARKET_COLOURS)},
@@ -533,7 +533,7 @@ const heatColour = (lim) => ({type: "diverging", scheme: "RdBu", domain: [-lim, 
 
 function heatStrip({market, cells, lim}, width) {
   return Plot.plot({
-    width, height: 140, marginLeft: 50, marginRight: 10, marginTop: 4, marginBottom: 22,
+    width, height: 140, marginLeft: 50, marginRight: 10, marginTop: 4, marginBottom: 34,
     x: {type: "utc", domain: heatDomain, label: null},
     y: {domain: [0.5, 6.5], reverse: true, ticks: [1, 2, 3, 4, 5, 6], tickFormat: (d) => `EFA ${d}`,
         label: null, tickSize: 0},
@@ -554,7 +554,7 @@ function heatStrip({market, cells, lim}, width) {
 }
 
 display(resize((width) => html`<div class="heat-strips">${heatStrips.map((strip) => html`<div class="heat-strip">
-  <div class="chart-head"><h4>${strip.market}</h4>${Plot.legend({color: {...heatColour(strip.lim), label: "£/MW/h"}, width: 240})}</div>
+  <div class="chart-head"><h4>${strip.market}</h4>${Plot.legend({color: {...heatColour(strip.lim), label: "£/MW/h"}, width: 280})}</div>
   ${heatStrip(strip, width)}
 </div>`)}</div>`));
 ```

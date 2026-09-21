@@ -227,6 +227,27 @@ a:hover { color: var(--hc-teal); }
 figure, .observablehq figure { background: transparent; }
 svg { color: var(--hc-ink); }
 
+/* Chart type. Plot draws ticks, axis labels and legend swatches at 10px
+   system-ui, which next to 17px body text reads as a pasted-in screenshot
+   rather than part of the page. 12px in the page's own sans ties the two
+   together and is the size the axis labels were always meant to be read at.
+   Plot's own rules are written with :where(), so they carry no specificity
+   and a plain selector wins without !important.
+   Matched on the class prefix rather than the generated class itself
+   (.plot-d6a7b5): that hash tracks Plot's version and would silently stop
+   matching on an upgrade. */
+#observablehq-main svg[class^="plot-"],
+#observablehq-main [class^="plot-"][class*="swatches"] {
+  font-family: var(--sans-serif);
+  font-size: 12px;
+}
+
+/* Plot sizes the swatch row's min-height for 10px type, so at 12px the
+   legend crowds the frame beneath it. */
+#observablehq-main [class^="plot-"][class*="swatches-wrap"] {
+  min-height: 1.9rem;
+}
+
 /* Callout used for scope notes and caveats */
 .note {
   background: rgba(13, 118, 128, 0.06);

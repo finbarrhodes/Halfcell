@@ -407,7 +407,7 @@ const streamRange = [...ALL_SERVICES.map((s) => SERVICE_COLOURS[s]),
                      SERVICE_COLOURS.Arbitrage, SERVICE_COLOURS["Cycling cost"]];
 
 display(resize((width) => Plot.plot({
-  width, height: 430, marginLeft: 62,
+  width, height: 430, marginLeft: 62, marginBottom: 36,
   x: {label: null, interval: "month"},
   y: {label: "£k", grid: true},
   color: {domain: streamDomain, range: streamRange, legend: true},
@@ -498,7 +498,7 @@ const cumulative = (() => {
 })();
 
 display(resize((width) => Plot.plot({
-  width, height: 380, marginLeft: 58,
+  width, height: 380, marginLeft: 58, marginBottom: 36,
   x: {label: null},
   y: {label: "Cumulative revenue (£M)", grid: true},
   color: {domain: streamDomain.slice(0, 7), range: streamRange.slice(0, 7), legend: true},
@@ -624,7 +624,7 @@ they need no feature scaling, and they yield interpretable importances.
 const importances = (manifest.ml_mpc.feature_importances ?? []).slice(0, 12);
 
 display(resize((width) => importances.length ? Plot.plot({
-  width, height: 360, marginLeft: 165,
+  width, height: 360, marginLeft: 165, marginRight: 52,
   x: {label: "Importance", grid: true},
   y: {label: null, domain: importances.map((d) => d.feature)},
   marks: [

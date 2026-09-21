@@ -90,7 +90,7 @@ const strategies = Object.keys(labels);
 ```js
 display(resize((width) => Plot.plot({
   width,
-  height: 340,
+  height: 340, marginBottom: 36,
   marginLeft: 60,
   x: {label: null},
   y: {label: "Cumulative net revenue (£M)", transform: (d) => d / 1e6, grid: true},
