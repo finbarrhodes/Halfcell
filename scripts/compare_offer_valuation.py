@@ -50,6 +50,9 @@ BENCH = PROCESSED / "benchmarks"
 REPORTS = ROOT / "reports"
 SELECT_BEFORE = "2025-01-01"
 DYNAMIC_FALLBACK = 0.5        # the shipped constant, used until a weight can be fitted
+# Conformal bands calibrate on a trailing year: on the whole history they inherit the
+# 2021-22 crisis and over-cover (0.72 against a 0.60 target, median width £72 against £50).
+GUARD_WINDOW_DAYS = 365
 DEFAULT_RUNS = "pf:formula,pf:lp,naive:formula,naive:lp,ml:formula,ml:lp"
 
 # The engine: a change to any of these invalidates cached runs
@@ -64,22 +67,26 @@ def parse_run(spec: str) -> tuple:
     "ml:lp:0.5:bid:vint" -> ("ml", "lp", 0.5, True, True, False). After strategy
     and valuation come numbers and flags. "bid" is bid-time offers, "vint" forecast
     vintages in dispatch, "dyn" a weight fitted per day (Mincer-Zarnowitz slope), and
-    "tilt" a weight that leans on how loud the day looks. The first number is the
-    constant shrink, the risk factor with "dyn", or the intercept with "tilt"; the
-    second is the tilt per unit of amplitude percentile. Perfect foresight ignores
-    everything but "vint".
+    "tilt" a weight that leans on how loud the day looks, and "cp" conformal guard
+    bands, per settlement period unless "blk" (EFA block) or "dayg" (one set) is
+    given. The first number is the constant shrink, the risk factor with "dyn", or
+    the intercept with "tilt"; the second is the tilt, or alpha with "cp". Perfect
+    foresight ignores everything but "vint".
     """
     parts = spec.strip().split(":")
     strategy, valuation, rest = parts[0], parts[1], parts[2:]
-    flags = {part for part in rest if part in ("bid", "vint", "dyn", "tilt")}
+    flags = {part for part in rest if part in ("bid", "vint", "dyn", "tilt", "cp", "blk", "dayg")}
     numbers = [part for part in rest if part not in flags]
     if strategy not in ("pf", "naive", "ml") or valuation not in ("formula", "lp") or len(numbers) > 2:
         raise ValueError(f"bad run spec {spec!r}")
     shrink = float(numbers[0]) if numbers else 1.0
-    tilt = float(numbers[1]) if len(numbers) > 1 else 0.0
+    second = float(numbers[1]) if len(numbers) > 1 else 0.0
     mode = "tilt" if "tilt" in flags else "slope" if "dyn" in flags else None
+    guard = None
+    if "cp" in flags and strategy != "pf":
+        guard = (second or 0.2, "block" if "blk" in flags else "day" if "dayg" in flags else "period")
     return (strategy, valuation, shrink, "bid" in flags and strategy != "pf", "vint" in flags,
-            mode if strategy != "pf" else None, tilt)
+            mode if strategy != "pf" else None, second, guard)
 
 
 def engine_fingerprint() -> str:
@@ -90,22 +97,23 @@ def engine_fingerprint() -> str:
 
 
 def run_name(strategy: str, valuation: str, shrink: float, bid_time: bool = False,
-             vintages: bool = False, dynamic=None, tilt: float = 0.0) -> str:
-    weight = (f"_a{shrink:g}b{tilt:+g}" if dynamic == "tilt" else
+             vintages: bool = False, dynamic=None, second: float = 0.0, guard=None) -> str:
+    weight = (f"_a{shrink:g}b{second:+g}" if dynamic == "tilt" else
               f"_dyn{shrink:g}" if dynamic else
               f"_shrink{shrink:g}" if valuation == "lp" and shrink != 1.0 else "")
-    return (f"{strategy}_{valuation}" + weight
+    band = f"_cp{guard[0]:g}{guard[1][:3]}" if guard else ""
+    return (f"{strategy}_{valuation}" + weight + band
             + ("_bid" if bid_time else "") + ("_vint" if vintages else ""))
 
 
 def backtest(strategy: str, valuation: str, shrink: float, bid_time: bool, vintages: bool,
-             dynamic, tilt: float, fingerprint: str, fresh: bool) -> tuple:
+             dynamic, second: float, guard, fingerprint: str, fresh: bool) -> tuple:
     """One full-window backtest, cached. Runs in a worker process."""
     from scripts.build_forecast_walk_forward import backtest_window, load_or_build
     from src.analysis.price_forecast import run_forecast_backtest
     from src.analysis.revenue_stack import ALL_SERVICES, REFERENCE_BATTERY, run_backtest
 
-    name = run_name(strategy, valuation, shrink, bid_time, vintages, dynamic, tilt)
+    name = run_name(strategy, valuation, shrink, bid_time, vintages, dynamic, second, guard)
     monthly_file = BENCH / f"offer_valuation_{name}_{fingerprint}.parquet"
     summary_file = monthly_file.with_suffix(".json")
     if monthly_file.exists() and summary_file.exists() and not fresh:
@@ -134,7 +142,10 @@ def backtest(strategy: str, valuation: str, shrink: float, bid_time: bool, vinta
                                        forecast_vintages=vintages,
                                        early_predictions=early_predictions,
                                        dynamic_shrink=dynamic or False, shrink_risk_factor=shrink,
-                                       shrink_tilt=tilt, **common)
+                                       shrink_tilt=second,
+                                       guard_alpha=guard[0] if guard else None,
+                                       guard_group=guard[1] if guard else "period",
+                                       guard_window_days=GUARD_WINDOW_DAYS, **common)
 
     BENCH.mkdir(parents=True, exist_ok=True)
     monthly = result["monthly"]

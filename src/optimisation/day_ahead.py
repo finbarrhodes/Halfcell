@@ -30,8 +30,13 @@ each product along its marginal cost of supply - fr_allocation's argument, with
 the linear cost generalised to the falling, stepped one that the plan implies.
 
 The plan is priced on a forecast and is only as good as the forecast's shape
-across the day. `price_shrink` pulls the forecast towards its mean before
-planning: 1 takes it as given, 0 gives trading no value.
+across the day. Two devices make it sceptical. `price_shrink` pulls the forecast
+towards its mean before planning: 1 takes it as given, 0 gives trading no value.
+`guard_low`/`guard_high` instead move the two sides apart by what the forecast's
+error has been at that time of day - conformal bands from
+src/analysis/intervals.py - so the plan sells at a pessimistic price and buys at
+a pessimistic one, and keeps capacity only for trades that survive its own
+uncertainty.
 
 Leftover energy
 ---------------
@@ -90,7 +95,8 @@ class _DayAheadLP:
         self.value  = cp.Parameter(shape)               # £ per MW held for the block, net of costs
         self.lower  = cp.Parameter(shape, nonneg=True)  # forced holdings, for pricing; zero to decide
         self.upper  = cp.Parameter(shape, nonneg=True)  # zero where a product is not offered
-        self.prices = cp.Parameter(T)
+        self.price_dis = cp.Parameter(T)   # what a sale is planned to fetch
+        self.price_chg = cp.Parameter(T)   # what a purchase is planned to cost
         self.soc0   = cp.Parameter(nonneg=True)
         self.terminal = cp.Parameter(nonneg=True)       # £ per MWh left in store at the end
 
@@ -145,7 +151,7 @@ class _DayAheadLP:
             constraints += [self.q <= P * (self.z @ member.T), cp.sum(self.z, axis=1) <= 1]
 
         self.fr = cp.sum(cp.multiply(self.value, self.q))
-        self.trading = (self.prices @ (self.d - self.c) * dt
+        self.trading = ((self.price_dis @ self.d - self.price_chg @ self.c) * dt
                         - cycling_cost_per_mwh * cp.sum(self.d) * dt
                         + self.terminal * self.s[T])
         self.problem = cp.Problem(cp.Maximize(self.fr + self.trading - breach), constraints)
@@ -200,7 +206,9 @@ def plan_day(
     apply_reserve: bool,
     lead_in: Sequence[Mapping] = (),
     one_service: bool = False,
-    price_shrink: float = 1.0,
+    price_shrink=1.0,
+    guard_low: Sequence[float] | None = None,
+    guard_high: Sequence[float] | None = None,
     terminal_value_per_mwh: float | None = None,
     fixed: Sequence[Mapping[str, float]] | None = None,
 ) -> dict:
@@ -231,6 +239,12 @@ def plan_day(
     price_shrink : float or sequence
         Weight on the forecast's deviations from its mean, one value or one per
         period; see planning_prices.
+    guard_low, guard_high : sequence of £/MWh, optional
+        Per-period offsets making the plan sceptical: `guard_low` (at most zero) is
+        added to the price a sale is planned against and `guard_high` (at least
+        zero) to the price a purchase is planned against, so a trade has to clear
+        the forecast's own error to be worth capacity. Conformal bands from
+        src/analysis/intervals.py; None plans both sides on the forecast itself.
     terminal_value_per_mwh : float, optional
         Value of energy left at the end. Default: the service day's mean
         forecast price less wear.
@@ -259,7 +273,12 @@ def plan_day(
         raise ValueError(f"expected {T} prices ({n_lead} lead-in + {n_blocks} blocks), got {len(prices)}")
     soc_now = min(max(float(soc_now_mwh), 0.0), E)
 
-    path, terminal = planning_prices(prices, n_blocks * EFA_SETTLEMENT_PERIODS, cycling_cost_per_mwh, price_shrink)
+    path, terminal = planning_prices(prices, n_blocks * EFA_SETTLEMENT_PERIODS,
+                                     cycling_cost_per_mwh, price_shrink)
+    band = lambda values, cap: (np.zeros(T) if values is None
+                                else cap(np.nan_to_num(np.asarray(values, dtype=float)[:T], nan=0.0)))
+    low = band(guard_low, lambda v: np.minimum(v, 0.0))
+    high = band(guard_high, lambda v: np.maximum(v, 0.0))
     if terminal_value_per_mwh is not None:
         terminal = max(0.0, float(terminal_value_per_mwh))
 
@@ -281,7 +300,8 @@ def plan_day(
     lp = _compiled(n_lead, n_blocks, P, E, float(efficiency_rt), float(cycling_cost_per_mwh),
                    bool(apply_reserve), bool(one_service))
     lp.value.value, lp.lower.value, lp.upper.value = value, lower, upper
-    lp.prices.value, lp.soc0.value, lp.terminal.value = path, soc_now, terminal
+    lp.price_dis.value, lp.price_chg.value = path + low, path + high
+    lp.soc0.value, lp.terminal.value = soc_now, terminal
     if n_lead:
         def per_period(key, floor=0.0):
             return np.concatenate([np.full(int(seg["n_sp"]), max(floor, float(seg[key]))) for seg in lead_in])

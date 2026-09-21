@@ -50,24 +50,9 @@ programme of about 270 variables, solved in two milliseconds by
 tie and only a vertex solution breaks those ties cleanly.
 
 **Two refinements.** The plan's forecast is pulled halfway towards its daily mean before
-planning. A plan chases the hours its forecast shows as most extreme, so forecast errors
-select themselves into it and it overstates what keeping capacity free is worth — the
-optimiser's curse ([Smith & Winkler, 2006](https://doi.org/10.1287/mnsc.1050.0451)) — and the
-error is lopsided: over-valuing headroom costs a contract and then a trade, under-valuing it
-costs only some trading. The weight was chosen on the years before 2025 from 0.25, 0.5, 0.75
-and 1, and held up on 2025 onward.
-
-A weight fitted per day was tried and rejected. The scaling that best matches what happens —
-the slope of a regression of the realised shape on the forecast's, the classic
-[Mincer & Zarnowitz (1969)](https://www.nber.org/books-and-chapters/economic-forecasts-and-expectations-analysis-forecasting-behavior-and-performance/evaluation-economic-forecasts) diagnostic — is 0.69
-pooled, and falls from 1.21 on the calmest fifth of days to 0.56 on the widest, which is
-regression to the mean. Fitted walk-forward and fed to the plan, it *lost* money at every
-risk factor tried, for both the model and naive. The reason is the useful part: that weight is
-calibrated for squared error, and it tells the plan to disbelieve the loudest days most — but
-those are the days whose spread is real, so the plan sells that capacity into response and
-then cannot hold its state of energy, roughly doubling missed half-hours. A constant is a
-blunter instrument that leans the right way. The third time here that a better statistic has
-not been better money.
+planning, because a plan built on a forecast overstates what keeping capacity free is worth;
+that is the subject of the next section. The weight was chosen on the years before 2025 from
+0.25, 0.5, 0.75 and 1, and held up on 2025 onward.
 
 Energy left at the end of day D is valued at the day's
 mean forecast price less wear; valued at nothing, the plan would empty the store in the last
@@ -82,6 +67,82 @@ Low. The battery's real trade crosses blocks: from 2025 the spread inside a bloc
 small. On the same information, planning raised perfect foresight by £11.9k/MW/yr, naive by
 £9.1k and the model by £7.3k, and beat the old rule in every calendar year for all three.
 </div>
+
+### Scepticism in the offer: the optimiser's curse
+
+A plan built on a forecast does not merely inherit its errors, it *selects* them. The plan
+looks across 48 half-hours and commits capacity to the ones where the forecast shows the
+widest spread, so the periods it picks are disproportionately the ones the forecast got wrong
+in the flattering direction. Its estimate of what keeping capacity free is worth is therefore
+biased upward even when the forecast itself is unbiased — the
+[optimiser's curse](https://doi.org/10.1287/mnsc.1050.0451), named by Smith and Winkler in
+2006, who proposed exactly the remedy used here: adjust the value estimates downward before
+choosing, rather than trusting them and being disappointed afterwards.
+
+Here the error is lopsided as well as biased. A spread that fails to arrive costs twice — the
+trade itself, and the response contract that was declined to keep the capacity free — while a
+spread wrongly passed over costs only the trade. Leaning the offer towards response is the
+cheaper mistake.
+
+**What the model does:** pulls the forecast's deviations from the day's mean halfway towards
+it before planning. One constant, chosen on the folds before 2025.
+
+**Two attempts to do better, both rejected.** The first fitted the weight per day: the scaling
+that best matches what actually happens is the slope of a regression of the realised shape on
+the forecast's, the classic
+[Mincer & Zarnowitz (1969)](https://www.nber.org/books-and-chapters/economic-forecasts-and-expectations-analysis-forecasting-behavior-and-performance/evaluation-economic-forecasts)
+diagnostic, and the same ratio a Kalman gain takes. It is 0.69 pooled and falls from 1.21 on
+the calmest fifth of days to 0.56 on the widest, which is regression to the mean and is stable
+across eras. Fitted walk-forward and handed to the plan, it lost money at every risk factor
+tried, for both price signals. The second let the weight lean on how loud the day looked, in
+either direction, and the result was flat: every variant landed within about 1% of the
+constant.
+
+| £k/MW/yr, full window | Naive | ML |
+|---|---|---|
+| Constant 0.5 | **90.1** | **93.3** |
+| Fitted per day, believing the statistics | 89.3 | 92.4 |
+| Fitted per day, more cautious | 87.6–88.5 | 91.8–92.7 |
+| Leaning on the day's loudness | 88.4–90.3 | 92.5–93.0 |
+
+The diagnosis is more useful than the result. The fitted weight averaged 0.98 for the ML
+forecast where the constant is 0.5, so it believed the forecast twice as much — and revenue
+turned out to be sensitive to *how much* trading value is discounted overall and nearly flat
+in *which days* are discounted. It also discounted the loudest days most, and those are the
+days whose spread is real: the widest fifth realises an average spread of £151/MWh against £79
+on the calmest, so capacity was sold into response and then the battery could not hold its
+state of energy, roughly doubling missed half-hours.
+
+**A third attempt: measure the error instead of proxying it.** Both attempts above infer
+uncertainty from how loud the forecast is. Conformal prediction measures it: take the
+residuals the forecast has already made and use their empirical quantiles as the interval
+around the next one, with the guarantee coming from an order statistic rather than from any
+assumed distribution ([Lei et al., 2018](https://arxiv.org/pdf/2010.09107)). Calibrated on a
+trailing year and grouped by settlement period, by EFA block, or pooled, the intervals are
+well behaved: 60% nominal coverage comes out at 60.4% on the folds from 2025, with a median
+width of £50/MWh. On a trailing year the evening peak is *narrower* than the small hours —
+£37 against £47 — which is not what one would guess.
+
+Fed to the plan as guard bands, so that it sells at the pessimistic end of the interval and
+buys at the pessimistic end of the other — the construction
+[Matsumoto & Sasanuma](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6598009) use for
+battery arbitrage — they lost as well, and monotonically in how wide the band was: the ML
+strategy earns £89.6k/MW/yr at 90% intervals, £90.4k at 60%, £91.5k at 40%, against £92.2k
+with no band at all and £93.3k with the constant weight. Calibrating per settlement period and
+per EFA block were indistinguishable. Combining bands with the constant was worse than either.
+
+The reason is the difference between subtracting and scaling. A guard band takes a fixed
+number of pounds off every trade, so it kills the small spreads that were real and leaves the
+large ones, which are the uncertain ones, nearly intact. The bias it is meant to correct grows
+with the apparent spread, which is what a multiplicative weight does and an additive band does
+not.
+
+Three corrections, one conclusion: for this decision the *level* of scepticism matters and its
+shape does not. That a statistic calibrated for accuracy makes worse decisions than a blunt
+constant is the third result of its kind here, after a more accurate model earning £19k/MW/yr
+less and a 16% better forecast earning nothing. The intervals themselves are kept — they are
+the honest way to put error bars on any of these figures, and the input a chance constraint on
+the state-of-energy band would need.
 
 NESO's rules set which combinations are permitted:
 

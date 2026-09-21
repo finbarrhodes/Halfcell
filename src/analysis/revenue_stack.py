@@ -509,7 +509,7 @@ class _Scheduler:
     def __init__(self, auctions, battery, forecast_prices_by_date=None, services=None, *,
                  include_arbitrage=True, pre_eac_rule="d1", expected_delivery=None, expected_prices=None,
                  offer_valuation="formula", price_shrink=1.0, offer_forecast_prices_by_date=None,
-                 price_shrink_by_date=None):
+                 price_shrink_by_date=None, guard_low_by_date=None, guard_high_by_date=None):
         if pre_eac_rule not in PRE_EAC_RULES:
             raise ValueError(f"pre_eac_rule must be one of {PRE_EAC_RULES}, got {pre_eac_rule!r}")
         if offer_valuation not in OFFER_VALUATIONS:
@@ -532,6 +532,11 @@ class _Scheduler:
         # applies to the whole plan, including the lead-in hours of D-1.
         self.price_shrink_by_date = {pd.Timestamp(d).normalize(): float(w)
                                      for d, w in (price_shrink_by_date or {}).items()}
+        # Conformal guard bands: how much worse than forecast each side plans to trade
+        # at, by settlement period (src/analysis/intervals.py). Empty plans on the
+        # forecast itself.
+        by_date = lambda table: {pd.Timestamp(d).normalize(): v for d, v in (table or {}).items()}
+        self.guard_low_by_date, self.guard_high_by_date = by_date(guard_low_by_date), by_date(guard_high_by_date)
         self.rows = {}    # (service day, EFA) -> schedule row
         self.plans = {}   # service day -> [(SoE at block's first period, at its last)]
 
@@ -647,14 +652,22 @@ class _Scheduler:
         b = self.battery
         n_lead = sum(seg["n_sp"] for seg in lead_in)
         view = self._offer_view(service_date)
-        prices = np.concatenate([self._forecast_path(view, now, n_lead),
-                                 self._forecast_path(view, _block_start(service_date, 1),
-                                                     6 * _SETTLEMENT_PERIODS_PER_BLOCK)])
+
+        def path(series_by_date):
+            """The plan's periods in order: the lead-in, then the service day's six blocks."""
+            return np.concatenate([
+                self._forecast_path(series_by_date, now, n_lead),
+                self._forecast_path(series_by_date, _block_start(service_date, 1),
+                                    6 * _SETTLEMENT_PERIODS_PER_BLOCK)])
+
+        prices = path(view)
+        guard_low = path(self.guard_low_by_date) if self.guard_low_by_date else None
+        guard_high = path(self.guard_high_by_date) if self.guard_high_by_date else None
 
         def plan(blocks, one_service=False):
             return plan_day(blocks, b.power_mw, b.energy_mwh, b.efficiency_rt, b.cycling_cost_per_mwh,
                             soc_now_mwh, prices, apply_reserve=apply_reserve, lead_in=lead_in,
-                            one_service=one_service,
+                            one_service=one_service, guard_low=guard_low, guard_high=guard_high,
                             price_shrink=self.price_shrink_by_date.get(service_date, self.price_shrink))
 
         offers = [self._offers((service_date, efa)) for efa in range(1, 7)]
@@ -1104,6 +1117,8 @@ def run_strategy(
     offers_at_bid_time: bool = False,
     forecast_vintages: bool = False,
     price_shrink_by_date: dict | None = None,
+    guard_low_by_date: dict | None = None,
+    guard_high_by_date: dict | None = None,
 ) -> dict:
     """
     The shared engine behind every strategy: schedule, dispatch, settle.
@@ -1147,6 +1162,8 @@ def run_strategy(
         offer_valuation=offer_valuation, price_shrink=price_shrink,
         offer_forecast_prices_by_date=early_forecast_prices_by_date if offers_at_bid_time else None,
         price_shrink_by_date=price_shrink_by_date if include_arbitrage else None,
+        guard_low_by_date=guard_low_by_date if include_arbitrage else None,
+        guard_high_by_date=guard_high_by_date if include_arbitrage else None,
     )
     if dates:
         energy_rows, soc_traj, breaches = run_dispatch(
@@ -1200,6 +1217,7 @@ def run_strategy(
         "offers_at_bid_time":  offers_at_bid_time,
         "forecast_vintages":   forecast_vintages,
         "dynamic_shrink":      bool(price_shrink_by_date) and include_arbitrage,
+        "guard_bands":         bool(guard_low_by_date) and include_arbitrage,
     }
     result = _build_result(anc_wide, imb_wide, battery, avg_fr_mw, avg_arb_mw, soc_traj, extras)
     result["schedule"] = schedule

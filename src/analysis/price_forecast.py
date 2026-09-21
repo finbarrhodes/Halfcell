@@ -487,6 +487,9 @@ def run_forecast_backtest(
     dynamic_shrink: str | bool = False,
     shrink_risk_factor: float = 1.0,
     shrink_tilt: float = 0.0,
+    guard_alpha: float | None = None,
+    guard_group: str = "period",
+    guard_window_days: int | None = None,
 ) -> dict:
     """
     Forecast-driven revenue backtest for the 'naive' or 'ml' strategy.
@@ -536,6 +539,12 @@ def run_forecast_backtest(
                        is also the fallback until there is enough history
     shrink_risk_factor: multiplies every fitted weight, for the caution an asymmetric
                        decision cost calls for. Tune it on selection folds only
+    guard_alpha     : plan each side of a trade against a conformal band rather than the
+                       forecast itself - sell at the alpha quantile of past error, buy at
+                       1-alpha - so a trade must clear the forecast's own error to be worth
+                       capacity (src/analysis/intervals.py). None plans on the forecast
+    guard_group     : which calibration sets the bands come from: "period", "block" or "day"
+    guard_window_days: calibrate on a trailing window rather than all history
 
     Returns
     -------
@@ -575,9 +584,11 @@ def run_forecast_backtest(
                 if not fp.empty:
                     early_forecast[date] = fp
 
+    from src.analysis.shrink import naive_predictions
+
     shrink_by_date = None
     if include_arbitrage and dynamic_shrink:
-        from src.analysis.shrink import naive_predictions, tilted_weights, walk_forward_slopes
+        from src.analysis.shrink import tilted_weights, walk_forward_slopes
 
         # Calibrate whichever forecast the offers actually see, so the weight measures
         # the belief owed to that forecast rather than to a sharper one
@@ -599,6 +610,18 @@ def run_forecast_backtest(
                                             tilt=shrink_tilt)
         shrink_by_date = {d: w for d, w in shrink_by_date.items() if _in_range(d, start_date, end_date)}
 
+    guard_low = guard_high = None
+    if include_arbitrage and guard_alpha:
+        from src.analysis.intervals import walk_forward_bands
+
+        banded = (early_predictions if offer_information == "bid_time" else predictions)
+        if strategy != "ml":
+            banded = naive_predictions(market_index, days_back=2 if offer_information == "bid_time" else 1)
+        if banded is None:
+            raise ValueError("guard_alpha with strategy='ml' needs a prediction table")
+        guard_low, guard_high, _ = walk_forward_bands(
+            banded, market_index, alpha=guard_alpha, group=guard_group, window_days=guard_window_days)
+
     return run_strategy(
         auctions, market_index, battery, forecast_prices_by_date, services, start_date, end_date,
         initial_soc_frac=initial_soc_frac, horizon=horizon,
@@ -608,4 +631,5 @@ def run_forecast_backtest(
         offers_at_bid_time=offer_information == "bid_time",
         forecast_vintages=forecast_vintages,
         price_shrink_by_date=shrink_by_date,
+        guard_low_by_date=guard_low, guard_high_by_date=guard_high,
     )
