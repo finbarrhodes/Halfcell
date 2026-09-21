@@ -18,6 +18,8 @@ const [kpis, manifest] = await Promise.all([
 ```
 
 ```js
+import {STRATEGY_COLOURS, rangeFor} from "./components/theme.js";
+
 const revenue = await FileAttachment("data/revenue-monthly.parquet").parquet();
 ```
 
@@ -82,6 +84,7 @@ const cumulative = (() => {
 })();
 
 const labels = {pf_mpc: "Perfect Foresight", naive_mpc: "Naive (D-1)", ml_mpc: "ML Model"};
+const strategies = Object.keys(labels);
 ```
 
 ```js
@@ -91,7 +94,12 @@ display(resize((width) => Plot.plot({
   marginLeft: 60,
   x: {label: null},
   y: {label: "Cumulative net revenue (£M)", transform: (d) => d / 1e6, grid: true},
-  color: {legend: true, domain: Object.keys(labels), tickFormat: (d) => labels[d]},
+  color: {
+    legend: true,
+    domain: strategies,
+    range: rangeFor(STRATEGY_COLOURS, strategies),
+    tickFormat: (d) => labels[d],
+  },
   marks: [
     Plot.ruleY([0]),
     Plot.line(cumulative, {x: "month", y: "total", stroke: "strategy", strokeWidth: 2}),

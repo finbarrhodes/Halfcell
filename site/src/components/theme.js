@@ -22,11 +22,47 @@ export const SERVICE_LABELS = {
   DMH: "DM High", DML: "DM Low",
 };
 
+// Fuel groups on the generation chart. Eleven series, so this cannot lean on the
+// site's three brand colours alone — but it stays on the same warm ground:
+// renewables take the teal/green/amber side, fossils the orange/brown/red side,
+// and every value clears 3:1 against the paper so a thin line stays legible.
+//
+// Without this map Plot falls back to its default `observable10`, which has ten
+// colours for eleven groups — Gas and Pumped Storage came out the same blue.
+export const FUEL_COLOURS = {
+  Wind: "#0D7680",
+  Solar: "#B87A15",
+  Hydro: "#2E6FA7",
+  "Pumped Storage": "#4A8FB5",
+  Biomass: "#4E8A3C",
+  Nuclear: "#7B3FA0",
+  Interconnectors: "#8C7BA6",
+  Gas: "#C9400A",
+  Coal: "#5A4636",
+  Oil: "#8B2020",
+  Other: "#8A8078",
+};
+
+// The three backtest strategies. Previously only the backtester page named these
+// colours, inline and twice; the homepage chart fell through to Plot's default
+// scheme, so the same three series were a different colour on each page.
+export const STRATEGY_COLOURS = {
+  pf_mpc: "#4E8A3C",     // ceiling
+  ml_mpc: "#0D7680",     // the model under test
+  naive_mpc: "#C9400A",  // floor
+};
+
 export const STRATEGY_LABELS = {
   pf_mpc: "Perfect Foresight",
   naive_mpc: "Naive (D-1 prices)",
   ml_mpc: "ML Model",
 };
+
+// Plot wants `range` as an array lined up with `domain`. Callers order their
+// domain by the data (largest series first, say), so build the range from it
+// rather than from the map's own key order.
+export const rangeFor = (colours, domain, fallback = "#8A8078") =>
+  domain.map((key) => colours[key] ?? fallback);
 
 export const gbp = (v) =>
   Math.abs(v) >= 1e6 ? `£${(v / 1e6).toFixed(2)}M` : `£${(v / 1e3).toFixed(0)}k`;

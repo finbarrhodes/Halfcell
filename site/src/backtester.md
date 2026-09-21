@@ -406,8 +406,8 @@ const streamDomain = [...ALL_SERVICES.map((s) => SERVICE_LABELS[s]), TRADING, "C
 const streamRange = [...ALL_SERVICES.map((s) => SERVICE_COLOURS[s]),
                      SERVICE_COLOURS.Arbitrage, SERVICE_COLOURS["Cycling cost"]];
 
-display(Plot.plot({
-  height: 430, marginLeft: 62,
+display(resize((width) => Plot.plot({
+  width, height: 430, marginLeft: 62,
   x: {label: null, interval: "month"},
   y: {label: "£k", grid: true},
   color: {domain: streamDomain, range: streamRange, legend: true},
@@ -416,7 +416,7 @@ display(Plot.plot({
     Plot.rectY(stacked, {x: "month", y: "value", fill: "stream", interval: "month",
                          tip: true, order: streamDomain}),
   ],
-}));
+})));
 ```
 
 Each bar shows gross revenue by stream for that month (positive) and cycling wear cost
@@ -448,10 +448,10 @@ const socWeek = (() => {
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-display(scenarioPick !== "full"
+display(resize((width) => scenarioPick !== "full"
   ? html`<i>The state-of-charge profile is shown for the FR + arbitrage run, where dispatch is simulated.</i>`
   : Plot.plot({
-  height: 340, marginLeft: 55, marginRight: 55,
+  width, height: 340, marginLeft: 55, marginRight: 55,
   x: {label: "Day of week", ticks: d3.range(7).map((d) => d * 48),
       tickFormat: (d) => DAYS[d / 48], domain: [0, 336]},
   y: {label: "State of charge", domain: [0, 1], tickFormat: ".0%", grid: true},
@@ -468,7 +468,7 @@ display(scenarioPick !== "full"
       title: (d) => `${DAYS[Math.floor(d.period / 48)]} SP ${(d.period % 48) + 1}\nmean ${(d.mean * 100).toFixed(1)}%\n±1 sd ${(d.lo * 100).toFixed(1)}–${(d.hi * 100).toFixed(1)}%\nrequired ${(d.reqLo * 100).toFixed(0)}–${(d.reqHi * 100).toFixed(0)}% (avg)`,
     })),
   ],
-}));
+})));
 ```
 
 Mean state of charge at each half-hour of an average week across the selected months. The
@@ -497,8 +497,8 @@ const cumulative = (() => {
   return out;
 })();
 
-display(Plot.plot({
-  height: 380, marginLeft: 58,
+display(resize((width) => Plot.plot({
+  width, height: 380, marginLeft: 58,
   x: {label: null},
   y: {label: "Cumulative revenue (£M)", grid: true},
   color: {domain: streamDomain.slice(0, 7), range: streamRange.slice(0, 7), legend: true},
@@ -506,7 +506,7 @@ display(Plot.plot({
     Plot.ruleY([0]),
     Plot.line(cumulative, {x: "month", y: "value", stroke: "stream", strokeWidth: 1.8}),
   ],
-}));
+})));
 ```
 
 ```js
@@ -623,8 +623,8 @@ they need no feature scaling, and they yield interpretable importances.
 ```js
 const importances = (manifest.ml_mpc.feature_importances ?? []).slice(0, 12);
 
-display(importances.length ? Plot.plot({
-  height: 360, marginLeft: 165,
+display(resize((width) => importances.length ? Plot.plot({
+  width, height: 360, marginLeft: 165,
   x: {label: "Importance", grid: true},
   y: {label: null, domain: importances.map((d) => d.feature)},
   marks: [
@@ -632,7 +632,7 @@ display(importances.length ? Plot.plot({
     Plot.text(importances, {x: "importance", y: "feature", dx: 4, textAnchor: "start",
                             text: (d) => d.importance.toFixed(3)}),
   ],
-}) : html`<i>No feature importances in the manifest — re-run scripts/precompute_cache.py.</i>`);
+}) : html`<i>No feature importances in the manifest — re-run scripts/precompute_cache.py.</i>`));
 ```
 
 ```js
@@ -670,8 +670,8 @@ reproduces days it has already seen, and the single held-out split is the conven
 one-boundary estimate. The distance between them is why this page reports the first column.
 
 ```js
-display(folds.length ? Plot.plot({
-  height: 240, marginLeft: 52, marginBottom: 34,
+display(resize((width) => folds.length ? Plot.plot({
+  width, height: 240, marginLeft: 52, marginBottom: 34,
   x: {label: null, type: "band", tickFormat: (d) => d.slice(0, 7), ticks: folds.filter((_, i) => i % 2 === 0).map((f) => f.origin)},
   y: {label: "Fold RMSE (£/MWh)", grid: true, zero: true},
   marks: [
@@ -683,7 +683,7 @@ display(folds.length ? Plot.plot({
                            "spread bias": "spread_bias"}}),
     Plot.ruleY([wf.rmse], {stroke: "#C9400A", strokeDasharray: "4 3"}),
   ],
-}) : html`<i>No per-fold metrics in the manifest — re-run scripts/precompute_cache.py.</i>`);
+}) : html`<i>No per-fold metrics in the manifest — re-run scripts/precompute_cache.py.</i>`));
 ```
 
 <p class="muted">Error per refit, against the pooled walk-forward RMSE (dashed). Spearman ρ

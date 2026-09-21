@@ -13,7 +13,13 @@
   --hc-rule:         #E0D3C4;
   --hc-teal:         #0D7680;  /* primary */
   --hc-teal-deep:    #095A62;
-  --hc-orange:       #C9400A;  /* accent / links */
+  --hc-orange:       #C9400A;  /* accent — chart marks, rules, focus rings */
+  /* Links carry the accent at body size, where #C9400A lands at 4.49:1 on
+     paper and 4.02:1 on the card ground — under AA on both. Darkened just
+     far enough to clear 4.5:1 in cards too (5.20 / 4.65) while reading as
+     the same orange. Marks on a chart are graphical objects, judged at
+     3:1, so they keep the brighter value above. */
+  --hc-orange-text:  #B83A09;
 
   --theme-foreground:          var(--hc-ink);
   --theme-foreground-muted:    var(--hc-ink-soft);
@@ -106,7 +112,7 @@ figure, figcaption {
   box-sizing: border-box;
 }
 
-a { color: var(--hc-orange); }
+a { color: var(--hc-orange-text); }
 a:hover { color: var(--hc-teal); }
 
 /* Sidebar: slightly deeper than the page so the nav reads as chrome */
@@ -444,11 +450,14 @@ form.oi input[type="checkbox"], form.oi input[type="radio"] { accent-color: var(
   gap: 0.5rem;
 }
 
+/* --hc-ink-faint is a rule colour (2.69:1 on paper) and was never readable as
+   11px uppercase type. These labels name the control beside them, so they take
+   the muted ink the rest of the site uses for secondary text. */
 .control-label {
   font: 600 0.72rem/1 var(--sans-serif);
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--hc-ink-faint);
+  color: var(--hc-ink-soft);
 }
 
 /* The segmented control's own ground is the panel ground, so on the panel it

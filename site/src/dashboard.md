@@ -16,7 +16,7 @@ either direction. That capability is what the frequency response markets buy and
 batteries' roles in the grids of the future will continue to grow. 
 
 ```js
-import {MARKET_COLOURS, EFA_BLOCKS, SERVICE_COLOURS, rollingMean} from "./components/theme.js";
+import {MARKET_COLOURS, EFA_BLOCKS, SERVICE_COLOURS, FUEL_COLOURS, rangeFor, rollingMean} from "./components/theme.js";
 import {choiceGroup} from "./components/controls.js";
 import {watchSteps} from "./components/scrolly.js";
 
@@ -67,16 +67,16 @@ const fuelOrder = Array.from(
   d3.rollup(generation, (v) => d3.sum(v, (d) => d.generation), (d) => d.fuel_group)
 ).sort((a, b) => d3.descending(a[1], b[1])).map((d) => d[0]);
 
-display(Plot.plot({
-  height: 460, marginLeft: 60,
+display(resize((width) => Plot.plot({
+  width, height: 460, marginLeft: 60,
   x: {label: null},
   y: {label: "Daily generation (MWh)", grid: true},
-  color: {legend: true, domain: fuelOrder},
+  color: {legend: true, domain: fuelOrder, range: rangeFor(FUEL_COLOURS, fuelOrder)},
   marks: [
     Plot.ruleY([0], {strokeOpacity: 0.3}),
     Plot.line(genRolling, {x: "date", y: "value", stroke: "fuel", strokeWidth: 1.4}),
   ],
-}));
+})));
 ```
 
 This plot shows a 28-day rolling mean, smoothing day-to-day noise while still capturing seasonal swings.
@@ -91,18 +91,25 @@ const shares = Array.from(
 
 const total = d3.sum(shares, (d) => d.mean);
 
-display(Plot.plot({
-  height: 320, marginLeft: 110,
+const shareOrder = shares.map((d) => d.fuel);
+
+display(resize((width) => Plot.plot({
+  // marginRight leaves room for the value label on the longest bar; at full
+  // column width it otherwise runs past the frame and gets clipped.
+  width, height: 320, marginLeft: 110, marginRight: 46,
   x: {label: "Share of generation (%)", grid: true},
-  y: {label: null, domain: shares.map((d) => d.fuel)},
+  y: {label: null, domain: shareOrder},
+  // Same fuel, same colour as the series chart above, so the two read together.
+  // No legend: the y axis already names every bar.
+  color: {domain: shareOrder, range: rangeFor(FUEL_COLOURS, shareOrder), legend: false},
   marks: [
-    Plot.barX(shares, {x: (d) => (d.mean / total) * 100, y: "fuel", fill: "#0D7680"}),
+    Plot.barX(shares, {x: (d) => (d.mean / total) * 100, y: "fuel", fill: "fuel"}),
     Plot.text(shares, {
       x: (d) => (d.mean / total) * 100, y: "fuel", dx: 4, textAnchor: "start",
       text: (d) => `${((d.mean / total) * 100).toFixed(1)}%`,
     }),
   ],
-}));
+})));
 ```
 
 ## How batteries capitalise
@@ -440,8 +447,8 @@ const dailySpread = Array.from(
   ([market, m]) => Array.from(m, ([date, spread]) => ({market, date: new Date(date), spread}))
 ).flat();
 
-display(Plot.plot({
-  height: 400, marginLeft: 55,
+display(resize((width) => Plot.plot({
+  width, height: 400, marginLeft: 55,
   x: {label: null},
   y: {label: "£/MW/h", grid: true},
   color: {legend: true, domain: Object.keys(MARKET_COLOURS), range: Object.values(MARKET_COLOURS)},
@@ -449,7 +456,7 @@ display(Plot.plot({
     Plot.ruleY([0], {strokeDasharray: "4 3", strokeOpacity: 0.6}),
     Plot.line(dailySpread, {x: "date", y: "spread", stroke: "market", strokeWidth: 1.2}),
   ],
-}));
+})));
 ```
 
 ```js
@@ -613,8 +620,8 @@ const priceBands = [
   ...rollingBand(sysPrices, PRICE_SERIES[1], "price_mean", "price_min", "price_max"),
 ];
 
-display(Plot.plot({
-  height: 420, marginLeft: 55,
+display(resize((width) => Plot.plot({
+  width, height: 420, marginLeft: 55,
   x: {label: null},
   y: {label: "£/MWh", grid: true},
   color: {legend: true, domain: PRICE_SERIES, range: ["#0D7680", "#C9400A"]},
@@ -627,7 +634,7 @@ display(Plot.plot({
       title: (d) => `${d.series}\n${d.date.toDateString()}\n28-day avg £${d.mean.toFixed(0)}/MWh\ntypical day £${d.low.toFixed(0)}–£${d.high.toFixed(0)}`,
     })),
   ],
-}));
+})));
 
 const dailyRange = (rows, lo, hi) => d3.mean(rows, (d) => d[hi] - d[lo]);
 const negativeShare = (rows) => (d3.sum(rows, (d) => d.negative) / d3.sum(rows, (d) => d.n)) * 100;
@@ -646,8 +653,8 @@ Daily peak-to-trough APXMIDP spread — the raw arbitrage opportunity available 
 on any given day, before efficiency losses and cycling cost.
 
 ```js
-display(Plot.plot({
-  height: 340, marginLeft: 55,
+display(resize((width) => Plot.plot({
+  width, height: 340, marginLeft: 55,
   x: {label: null},
   y: {label: "Daily peak-to-trough spread (£/MWh)", grid: true},
   marks: [
@@ -656,7 +663,7 @@ display(Plot.plot({
     Plot.line(rollingMean(marketDaily, 28, "date", "spread"),
       {x: "date", y: "spread", stroke: "#8B2020", strokeWidth: 2}),
   ],
-}));
+})));
 ```
 
 Thin line is the daily spread; heavy line is a 28-day rolling average.
