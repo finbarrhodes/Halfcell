@@ -102,6 +102,19 @@ working from the weaker forecast, since it may use data only to D-2 (RMSE 57.7 a
 rank correlation 0.736 against 0.793). Worse information and an irreversible, lopsided cost,
 pointing the same way.
 
+**The two stages want different things from a forecast, which is why one device does not serve
+both.** The offer needs a block's *shape* to be about right and is hurt by over-confidence in
+how wide the day will be, since that is what makes it decline a contract; discounting size
+answers that. Dispatch needs the *hour* right, and the forecast is weakest there — it picks the
+peak half-hour within one period only 30-40% of the time — so the device that suits it is
+spreading a trade across the hours it cannot tell apart. Measured, that is worth
+£0.64k/MW/yr (95% interval £0.32k to £0.97k) to the naive signal, whose shape is two days
+stale, and nothing at all to the model, £-0.10k [£-0.46k, £0.23k], which has learned some
+timing. Neither is in the shipped engine: the gain accrues to the benchmark rather than to the
+model, and the floor is more useful left as the plain thing it claims to be. It is a tidy
+illustration of the wider point, though — the same forecast feeds two decisions whose failure
+modes differ, and a correction aimed at one is no use to the other.
+
 NESO's rules set which combinations are permitted:
 
 - **Capacity in each direction.** MW offered into Low products, plus the Reserved Capacity
@@ -363,6 +376,21 @@ Published figures of 70–85% come from studies forecasting day-ahead auction pr
 shorter, calmer windows, usually scored on pure arbitrage rather than a co-optimisation
 against frequency response contracts. The honest headline here is that the forecast is worth
 about £3k/MW/yr over the floor, in every year of the backtest, against a ceiling £26k above it.
+
+**How much of that is noise?** Enough of it is not. Resampling the paired daily revenue
+differences in four-week blocks — blocks, because a dispatch decision carries state into the
+next day, so the days are not independent draws
+([Künsch, 1989](https://doi.org/10.1214/aos/1176347265)) — puts the model's lead at
+£3.18k/MW/yr with a 95% interval of £2.05k to £4.37k, and £1.79k [£0.88k, £2.76k] on the folds
+from 2025 alone. Its *accuracy* edge, though, is not distinguishable from persistence at all: a
+[Diebold-Mariano test](https://doi.org/10.1080/07350015.1995.10524599) on paired daily losses,
+with a long-run variance that carries the serial correlation, returns p = 0.26 on squared error
+and p = 0.19 on the error in the day's spread, and on identical days the model wins on RMSE
+(48.5 against 50.9) while losing on mean absolute error (31.2 against 29.0). The two results
+are consistent rather than contradictory: squared-error differences are dominated by a handful
+of spike days, so a 5% edge vanishes into their standard error, while the revenue difference is
+a small, repeated, same-signed gain from holding better response positions day after day. What
+the forecast is measurably worth, it earns through allocation rather than through precision.
 
 For LP-based joint co-optimisation of arbitrage and frequency response in GB, see
 [Swierczynski et al. (2021)](https://doi.org/10.3390/en14248365).

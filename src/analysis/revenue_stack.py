@@ -394,6 +394,36 @@ def _delivery_offer_costs(expected: dict | None, price: float | None, battery: "
     return costs
 
 
+def _daily_revenue(blocks: pd.DataFrame, energy_rows: list, battery: "BatterySpec") -> pd.DataFrame:
+    """
+    Revenue per day: availability, trading, costs and net, after the availability factor.
+
+    Monthly totals are what the site reads, but sixty points is thin for a confidence
+    interval; the daily series is what a block bootstrap resamples. Response revenue is
+    dated by service day and trading by calendar day, which differ by the hour EFA 1
+    takes from the evening before - the same shift for every strategy, so a difference
+    between two of them is unaffected.
+    """
+    columns = ["fr_revenue_gbp", "imbalance_revenue_gbp", "cycling_cost_gbp",
+               "delivery_cycling_cost_gbp", "net_revenue"]
+    fr = (blocks.groupby(blocks["date"].dt.normalize())["revenue_gbp"].sum().rename("fr_revenue_gbp")
+          if not blocks.empty else pd.Series(dtype=float, name="fr_revenue_gbp"))
+    if energy_rows:
+        rows = pd.DataFrame(energy_rows)
+        energy = rows.groupby(pd.to_datetime(rows["date"]).dt.normalize())[
+            ["imbalance_revenue_gbp", "cycling_cost_gbp", "delivery_cycling_cost_gbp"]].sum()
+    else:
+        energy = pd.DataFrame(columns=["imbalance_revenue_gbp", "cycling_cost_gbp",
+                                       "delivery_cycling_cost_gbp"])
+    table = pd.concat([fr, energy], axis=1).fillna(0.0).sort_index()
+    if table.empty:
+        return pd.DataFrame(columns=["date"] + columns)
+    table *= battery.availability_factor
+    table["net_revenue"] = (table["fr_revenue_gbp"] + table["imbalance_revenue_gbp"]
+                            - table["cycling_cost_gbp"] - table["delivery_cycling_cost_gbp"])
+    return table.rename_axis("date").reset_index()[["date"] + columns]
+
+
 def _build_result(
     anc_wide: pd.DataFrame,
     imb_wide: pd.DataFrame,
@@ -785,16 +815,35 @@ def calc_ancillary_revenue(
     -------
     DataFrame with columns: [month (Period), service (str), revenue_gbp (float)]
     """
-    empty = pd.DataFrame(columns=["month", "service", "revenue_gbp"])
+    long = ancillary_revenue_by_block(auctions, schedule, availability)
+    if long.empty:
+        return pd.DataFrame(columns=["month", "service", "revenue_gbp"])
+    long = long.assign(month=long["date"].dt.to_period("M"))
+    return long.groupby(["month", "service"])["revenue_gbp"].sum().reset_index()
+
+
+def ancillary_revenue_by_block(
+    auctions: pd.DataFrame,
+    schedule: pd.DataFrame,
+    availability: dict | None = None,
+) -> pd.DataFrame:
+    """
+    Availability revenue of every product held in every block, before aggregation.
+
+    Columns: [date (service day), efa, service, mw, price, available, revenue_gbp].
+    calc_ancillary_revenue sums this by month for the site; _daily_revenue sums it by
+    day for statistics that need more than sixty points.
+    """
+    columns = ["date", "efa", "service", "mw", "price", "available", "revenue_gbp"]
     if schedule is None or schedule.empty:
-        return empty
+        return pd.DataFrame(columns=columns)
 
     held = schedule[[f"q_{p}" for p in PRODUCTS]].rename(columns=lambda c: c[2:])
     long = held.stack().reset_index()
     long.columns = ["date", "efa", "service", "mw"]
     long = long[long["mw"] > 1e-9]
     if long.empty:
-        return empty
+        return pd.DataFrame(columns=columns)
 
     prices = (
         auctions.assign(date=pd.to_datetime(auctions["EFA Date"]).dt.normalize())
@@ -811,8 +860,7 @@ def calc_ancillary_revenue(
         long["available"] = 1.0
 
     long["revenue_gbp"] = long["price"] * long["mw"] * EFA_HOURS * long["available"]
-    long["month"] = long["date"].dt.to_period("M")
-    return long.groupby(["month", "service"])["revenue_gbp"].sum().reset_index()
+    return long[columns]
 
 
 # ---------------------------------------------------------------------------
@@ -1205,6 +1253,8 @@ def run_strategy(
 
     availability = {k: 1.0 - v / _SETTLEMENT_PERIODS_PER_BLOCK for k, v in breaches.items()}
     anc = calc_ancillary_revenue(auctions, schedule, availability)
+    daily_revenue = _daily_revenue(ancillary_revenue_by_block(auctions, schedule, availability),
+                                   energy_rows, battery)
     if not anc.empty:
         anc_wide = anc.pivot_table(index="month", columns="service", values="revenue_gbp", fill_value=0)
         anc_wide.columns = [f"{c}_rev" for c in anc_wide.columns]
@@ -1248,6 +1298,7 @@ def run_strategy(
     }
     result = _build_result(anc_wide, imb_wide, battery, avg_fr_mw, avg_arb_mw, soc_traj, extras)
     result["schedule"] = schedule
+    result["daily"] = daily_revenue
     return result
 
 
