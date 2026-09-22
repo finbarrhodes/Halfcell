@@ -364,6 +364,21 @@ shorter, calmer windows, usually scored on pure arbitrage rather than a co-optim
 against frequency response contracts. The honest headline here is that the forecast is worth
 about £3k/MW/yr over the floor, in every year of the backtest, against a ceiling £26k above it.
 
+**How much of that is noise?** Enough of it is not. Resampling the paired daily revenue
+differences in four-week blocks — blocks, because a dispatch decision carries state into the
+next day, so the days are not independent draws
+([Künsch, 1989](https://doi.org/10.1214/aos/1176347265)) — puts the model's lead at
+£3.18k/MW/yr with a 95% interval of £2.05k to £4.37k, and £1.79k [£0.88k, £2.76k] on the folds
+from 2025 alone. Its *accuracy* edge, though, is not distinguishable from persistence at all: a
+[Diebold-Mariano test](https://doi.org/10.1080/07350015.1995.10524599) on paired daily losses,
+with a long-run variance that carries the serial correlation, returns p = 0.26 on squared error
+and p = 0.19 on the error in the day's spread, and on identical days the model wins on RMSE
+(48.5 against 50.9) while losing on mean absolute error (31.2 against 29.0). The two results
+are consistent rather than contradictory: squared-error differences are dominated by a handful
+of spike days, so a 5% edge vanishes into their standard error, while the revenue difference is
+a small, repeated, same-signed gain from holding better response positions day after day. What
+the forecast is measurably worth, it earns through allocation rather than through precision.
+
 For LP-based joint co-optimisation of arbitrage and frequency response in GB, see
 [Swierczynski et al. (2021)](https://doi.org/10.3390/en14248365).
 
