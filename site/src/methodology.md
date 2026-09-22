@@ -102,6 +102,19 @@ working from the weaker forecast, since it may use data only to D-2 (RMSE 57.7 a
 rank correlation 0.736 against 0.793). Worse information and an irreversible, lopsided cost,
 pointing the same way.
 
+**The two stages want different things from a forecast, which is why one device does not serve
+both.** The offer needs a block's *shape* to be about right and is hurt by over-confidence in
+how wide the day will be, since that is what makes it decline a contract; discounting size
+answers that. Dispatch needs the *hour* right, and the forecast is weakest there — it picks the
+peak half-hour within one period only 30-40% of the time — so the device that suits it is
+spreading a trade across the hours it cannot tell apart. Measured, that is worth
+£0.64k/MW/yr (95% interval £0.32k to £0.97k) to the naive signal, whose shape is two days
+stale, and nothing at all to the model, £-0.10k [£-0.46k, £0.23k], which has learned some
+timing. Neither is in the shipped engine: the gain accrues to the benchmark rather than to the
+model, and the floor is more useful left as the plain thing it claims to be. It is a tidy
+illustration of the wider point, though — the same forecast feeds two decisions whose failure
+modes differ, and a correction aimed at one is no use to the other.
+
 NESO's rules set which combinations are permitted:
 
 - **Capacity in each direction.** MW offered into Low products, plus the Reserved Capacity
