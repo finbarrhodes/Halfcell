@@ -143,7 +143,7 @@ half-hourly delivery table is committed.
 
 ```bash
 pip install -r requirements.txt -r requirements-dev.txt
-pytest -m "not integration"     # 342 tests, no network — what CI runs
+pytest -m "not integration"     # 343 tests, no network — what CI runs
 pytest -m integration           # live NESO + Elexon contract checks
 pytest --cov=src tests/         # with coverage
 ```

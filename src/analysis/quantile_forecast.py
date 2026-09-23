@@ -92,11 +92,15 @@ class QuantileForest:
         return self
 
     def predict_quantiles(self, X, quantiles=QUANTILES) -> np.ndarray:
-        """(rows, len(quantiles)) in £/MWh, non-decreasing along each row."""
+        """
+        (rows, len(quantiles)) in £/MWh, one column per level in the order given.
+
+        A forest's quantiles are order statistics of one weighted sample, and the
+        transform back is monotone, so higher levels never come out lower: nothing
+        needs sorting, and sorting would mislabel levels passed out of order.
+        """
         q = self._forest.predict(X, quantiles=list(quantiles))
-        # A forest's quantiles are order statistics of one weighted sample, so they
-        # cannot cross; sorting only guards against ties broken by rounding.
-        return np.sort(_signed_exp(np.asarray(q, dtype=float).reshape(len(X), -1)), axis=1)
+        return _signed_exp(np.asarray(q, dtype=float).reshape(len(X), -1))
 
 
 def pinball(actual: np.ndarray, forecast: np.ndarray, q: float) -> float:

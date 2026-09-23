@@ -73,3 +73,14 @@ def test_a_price_below_zero_survives_the_transform():
     y = rng.normal(-30.0, 5.0, size=2000)
     q = QuantileForest(**SMALL).fit(X, y).predict_quantiles(X.iloc[:5], (0.5,))
     assert (q < 0).all() and np.abs(q + 30.0).max() < 5.0
+
+
+def test_quantiles_come_back_in_the_order_they_were_asked_for():
+    """Levels given high-to-low keep their columns: nothing is re-sorted under them."""
+    frame = _features(n_days=120)
+    X, y = frame[["apx_lag_1d", "sp_sin", "sp_cos"]], frame["apx_price"]
+    forest = QuantileForest(**SMALL).fit(X, y)
+    ascending = forest.predict_quantiles(X.iloc[:50], (0.1, 0.9))
+    descending = forest.predict_quantiles(X.iloc[:50], (0.9, 0.1))
+    np.testing.assert_allclose(descending, ascending[:, ::-1])
+    assert (descending[:, 0] > descending[:, 1]).all()

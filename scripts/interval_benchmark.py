@@ -66,7 +66,9 @@ ALPHAS = (0.1, 0.2, 0.3)
 METHODS = ("scp", "qr", "cqr", "spci", "spci_b", "spci_w", "ens")
 WINDOW_DAYS = 365             # trailing calibration year, as compare_offer_valuation's cp runs
 SPCI_REFIT = {"spci": 30, "spci_b": 30, "spci_w": 7}
-SOURCES = ["src/analysis/intervals.py", "src/analysis/spci.py", "src/analysis/quantile_forecast.py"]
+# The code a band depends on: a change to any of these rebuilds the cached bands
+SOURCES = ["src/analysis/intervals.py", "src/analysis/spci.py", "src/analysis/quantile_forecast.py",
+           "scripts/interval_benchmark.py"]
 
 
 def _inputs() -> tuple:
@@ -81,13 +83,22 @@ def _inputs() -> tuple:
 
 
 def _fingerprint(method: str, alpha: float, *tables: pd.DataFrame) -> str:
+    """
+    The cache key for one band: its settings, the code, and the *contents* of the tables
+    it is built from. Contents rather than shape, because a rebuilt forecast or a
+    revised settlement price changes the band without changing a table's length.
+    """
     digest = hashlib.sha256(f"{method}:{alpha:g}".encode())
     for path in SOURCES:
         digest.update((ROOT / path).read_bytes())
     for table in tables:
-        dates = pd.to_datetime(table["settlementDate"])
-        digest.update(f"{len(table)}:{dates.min()}:{dates.max()}".encode())
+        digest.update(pd.util.hash_pandas_object(table, index=False).to_numpy().tobytes())
     return digest.hexdigest()[:12]
+
+
+def _band_file(method: str, alpha: float, early, quantiles, market_index) -> Path:
+    apx = market_index[market_index["dataProvider"] == "APXMIDP"][["settlementDate", "settlementPeriod", "price"]]
+    return BENCH / f"bands_{method}_{alpha:g}_{_fingerprint(method, alpha, early, quantiles, apx)}.parquet"
 
 
 def _to_frame(low: dict, high: dict) -> pd.DataFrame:
@@ -146,7 +157,8 @@ def build(method: str, alpha: float, early, quantiles, market_index, spci_tables
             early, market_index, [alpha], SPCI_REFIT[method])
         return spci_bands(tables, alpha, optimise_beta=method == "spci_b")
     if method == "ens":
-        members = [bands(m, alpha, (early, quantiles, market_index), spci_tables) for m in ("qr", "scp", "spci")]
+        members = [bands(m, alpha, (early, quantiles, market_index), spci_tables)
+                   for m in ("qr", "scp", "spci")]
         return combine_bands(*[(low, high, []) for low, high in members])[:2]
     raise ValueError(f"unknown band method {method!r}; use one of {METHODS}")
 
@@ -154,7 +166,7 @@ def build(method: str, alpha: float, early, quantiles, market_index, spci_tables
 def bands(method: str, alpha: float, inputs: tuple | None = None, spci_tables=None) -> tuple:
     """(low_by_date, high_by_date) for one method at one alpha, from the cache when it can."""
     early, quantiles, market_index = inputs or _inputs()
-    cached = BENCH / f"bands_{method}_{alpha:g}_{_fingerprint(method, alpha, early, quantiles)}.parquet"
+    cached = _band_file(method, alpha, early, quantiles, market_index)
     if cached.exists():
         return _from_frame(pd.read_parquet(cached))
     low, high = build(method, alpha, early, quantiles, market_index, spci_tables)
@@ -177,14 +189,18 @@ def main() -> None:
     inputs = _inputs()
     early, quantiles, market_index = inputs
     uncached = {m for a in alphas for m in methods if m in SPCI_REFIT or m == "ens"
-                if not (BENCH / f"bands_{m}_{a:g}_{_fingerprint(m, a, early, quantiles)}.parquet").exists()}
-    refits = {SPCI_REFIT[m] for m in uncached if m in SPCI_REFIT} | ({30} if "ens" in uncached else set())
+                if not _band_file(m, a, early, quantiles, market_index).exists()}
+    # The ensemble's SPCI member is the monthly one
+    refits = ({SPCI_REFIT[m] for m in uncached if m in SPCI_REFIT}
+              | ({SPCI_REFIT["spci"]} if "ens" in uncached else set()))
     spci_tables = {refit: _spci_tables(early, market_index, alphas, refit) for refit in sorted(refits)}
 
     results = {}
     for alpha in alphas:
         built = {m: bands(m, alpha, inputs, spci_tables) for m in methods}
         common = sorted(set.intersection(*(set(low) for low, _ in built.values())))
+        if not common:
+            raise SystemExit(f"alpha {alpha:g}: no day is banded by every method; nothing to compare")
         print(f"alpha {alpha:g}: {len(common)} days banded by every method, "
               f"{common[0].date()} to {common[-1].date()}", flush=True)
         results[f"{alpha:g}"] = {"days": len(common), "first": common[0].date().isoformat(),

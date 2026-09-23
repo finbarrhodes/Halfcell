@@ -59,9 +59,11 @@ DEFAULT_RUNS = "pf:formula,pf:lp,naive:formula,naive:lp,ml:formula,ml:lp"
 ENGINE_SOURCES = [
     "src/analysis/revenue_stack.py", "src/analysis/fr_allocation.py", "src/analysis/neso_rules.py",
     "src/analysis/price_forecast.py", "src/optimisation/mpc.py", "src/optimisation/day_ahead.py",
-    # the weights and bands runs plan against are part of the engine too
+    # the weights and bands runs plan against are part of the engine too, and so is
+    # the code that builds the bands the qr/cqr/spci/ens runs read
     "src/analysis/shrink.py", "src/analysis/intervals.py", "src/analysis/spci.py",
-    "src/analysis/quantile_forecast.py",
+    "src/analysis/quantile_forecast.py", "scripts/interval_benchmark.py",
+    "scripts/build_quantile_walk_forward.py",
 ]
 # Bands built by scripts/interval_benchmark.py rather than by the engine's own split
 # conformal: "qr" the quantile forest's quantiles, "cqr" those conformalised, "spci"

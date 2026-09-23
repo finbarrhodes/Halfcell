@@ -71,6 +71,16 @@ h2 {
 
 h3 { font-size: 1.2rem; margin-top: 2rem; }
 
+/* Framework gives every heading tabindex="-1" (markdown-it-anchor's default), so a
+   link to a section moves focus there as well as scrolling, and reading continues
+   from the heading for keyboard and screen-reader users. But a heading is not a
+   control, and Chromium drew its focus ring round it as a box whenever a page
+   opened at a #section or a section link was followed from the keyboard. The focus
+   still moves; only the ring goes. */
+:is(h1, h2, h3, h4, h5, h6)[tabindex="-1"]:focus {
+  outline: none;
+}
+
 /* Framework's global.css zeroes `margin-top` on a <p> or <table> that directly
    follows an h2/h3/h4, leaving only the heading's own 0.25rem — a 4px gap. Every
    other adjacency here already sits at ~16px: h1 + p, h2 + ul, heading + .grid,
