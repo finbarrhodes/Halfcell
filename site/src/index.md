@@ -44,7 +44,8 @@ const fmtGbp = (v) =>
   </div>
   <div class="card nav">
     <h2><a href="./methodology">Methodology & Data →</a></h2>
-    <p>Modelling assumptions, data sources, and known limitations of the backtester.</p>
+    <p>How the model works, what its forecast is worth, case studies of what was tried and
+    set aside, and the data behind it.</p>
   </div>
 </div>
 
