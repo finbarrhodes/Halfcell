@@ -29,8 +29,8 @@ of 110.6 at α = 0.2 against 121.7 for split conformal, and ahead at 0.1 and 0.3
 well. CQR brings their coverage to target (0.597 for 0.60) for about a point of
 Winkler. SPCI only edges split conformal (119.2), and wins just one year, 2022,
 when the forecast's errors ran the same way for months. Refitting it weekly
-instead of monthly moves that to 118.5 (reports/interval_benchmark_spci_refit.md),
-so the paper's daily refit would not close the gap.
+instead of monthly (spci_w) moves that only to 118.5, so the paper's daily refit
+would not close the gap.
 
 None of it earns money. Every band loses to the shipped constant shrink on the
 selection folds, by £2.2k-5.1k/MW/yr (reports/offer_valuation_quantile.md), and the
@@ -207,9 +207,11 @@ def main() -> None:
                                  "last": common[-1].date().isoformat(), "methods": {}}
         for method, (low, high) in built.items():
             frame = band_frame(early, market_index, {d: low[d] for d in common}, {d: high[d] for d in common})
+            # Overall and by year, as the report shows them. score_bands can also split
+            # by EFA block or settlement period; nothing here reads that, so it is not kept.
             results[f"{alpha:g}"]["methods"][method] = {
                 by or "all": score_bands(frame, alpha, by=by).to_dict(orient="records")
-                for by in (None, "year", "block")}
+                for by in (None, "year")}
             overall = results[f"{alpha:g}"]["methods"][method]["all"][0]
             print(f"  {method:<7} coverage {overall['coverage']:.3f} (target {1 - 2 * alpha:.2f})  "
                   f"width {overall['mean_width']:6.1f}  pinball {overall['pinball']:6.2f}  "
