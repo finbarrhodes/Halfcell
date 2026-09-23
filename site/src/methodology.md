@@ -350,8 +350,13 @@ morning, and the hourly day-ahead auctions for D have already cleared (results b
 model uses neither, so its offer-stage information is conservative.
 
 The **foresight ratio** measures how much of the gap between those two bounds a forecast
-closes: `(ML − Naive) / (Perfect Foresight − Naive)`, on net revenue. Published GB and
-European price-forecasting literature treats 70–85% as strong performance.
+closes: `(ML − Naive) / (Perfect Foresight − Naive)`, on net revenue. The industry's usual
+measure is a different one — Percent of Perfect, revenue as a share of perfect foresight with
+no floor subtracted — on which this model scores 80.5% across the full stack and 50.1% on
+arbitrage alone. The harder ratio is reported here because on a stacked battery Percent of
+Perfect says very little: reusing the last complete day's prices already scores 77.8%, since
+most of the revenue is frequency response availability that no forecast moves. Subtracting the
+floor asks the narrower question of how much of the *capturable* gap a forecast closes.
 
 Three things have moved this number, and all are worth knowing about.
 
@@ -372,10 +377,11 @@ worth about £4k/MW/yr to naive and £1k to the model. The model's lead over nai
 £4.1k to £3.2k while the ceiling pulled away, and the ratio fell to about 12%. A better engine
 made the forecast matter less; it did not make the forecast worse.
 
-Published figures of 70–85% come from studies forecasting day-ahead auction prices over
-shorter, calmer windows, usually scored on pure arbitrage rather than a co-optimisation
-against frequency response contracts. The honest headline here is that the forecast is worth
-about £3k/MW/yr over the floor, in every year of the backtest, against a ceiling £26k above it.
+On the arbitrage-only footing, which is the closest thing to what a price-forecasting study
+scores, Percent of Perfect is 50.1% against the naive floor's 37.9% — a real gap, and a
+smaller one than the capture rates such studies usually report. The honest headline is that
+the forecast is worth about £3k/MW/yr over the floor, in every year of the backtest, against a
+ceiling £26k above it.
 
 **How much of that is noise?** Enough of it is not. Resampling the paired daily revenue
 differences in four-week blocks — blocks, because a dispatch decision carries state into the
@@ -628,9 +634,13 @@ accuracy column and earns £19k/MW/yr *less than reusing yesterday's prices*.
 The cause is calibration in the one dimension dispatch consumes. LEAR over-predicts the daily
 price spread by £272/MWh across the backtest and by £29.5 even in the calm recent market, while
 the trees under-predict it — Random Forest by £31.5. For a price-taker battery that asymmetry
-is protective. A spread that fails to materialise costs money twice: once in the trade itself,
-and again at the offer stage, where an inflated shadow arbitrage value makes the model decline
-frequency response contracts worth having. Over 2025 onward, LEAR held 23 MW of Low products
+is protective. A spread that fails to materialise does its damage at the offer stage, where an
+inflated shadow arbitrage value makes the model decline frequency response contracts worth
+having; dispatch is barely touched, because it trades on the *ordering* of periods and settles
+at whatever the price turns out to be (see
+[why only the offer](#scepticism-in-the-offer-the-optimisers-curse)). What over-prediction
+costs there is the extra cycling it talks the optimiser into, when a spread it expected to
+clear wear and round-trip losses does not. Over 2025 onward, LEAR held 23 MW of Low products
 against Random Forest's 30, sat out 30% of EFA blocks against 12%, and gave up £0.71M of
 availability revenue to gain £0.07M of trading revenue while cycling 48% more energy.
 
@@ -671,9 +681,9 @@ split reads:
 
 | £k / MW / yr, current engine | Frequency response | Trading | Wear | Net |
 |---|---|---|---|---|
-| Perfect foresight | 50.7 | 68.4 | −3.2 | 115.9 |
-| Naive | 57.5 | 35.2 | −2.5 | 90.1 |
-| ML model | 59.6 | 35.9 | −2.2 | 93.3 |
+| Perfect foresight | 51.6 | 69.5 | −3.3 | 117.8 |
+| Naive | 58.4 | 35.7 | −2.5 | 91.6 |
+| ML model | 60.6 | 36.5 | −2.3 | 94.8 |
 
 The model now edges naive at trading (+£0.7k) but still earns most of its lead through
 response (+£2.1k), and the whole of perfect foresight's advantage is still trading.

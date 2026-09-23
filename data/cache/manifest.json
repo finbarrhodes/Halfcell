@@ -36,9 +36,9 @@
       "total_gross": 29779124.0,
       "total_cycling_cost": 801530.0,
       "total_net": 28977594.0,
-      "years_covered": 5.0,
-      "annualised_net": 5795519.0,
-      "annualised_per_mw": 115910.0,
+      "years_covered": 4.92,
+      "annualised_net": 5889853.0,
+      "annualised_per_mw": 117797.0,
       "breakdown": {
         "DCH": 1742076.0,
         "DCL": 7823768.0,
@@ -63,16 +63,17 @@
       "offer_valuation": "lp",
       "price_shrink": 1.0,
       "offers_at_bid_time": false,
-      "forecast_vintages": true
+      "forecast_vintages": true,
+      "days_covered": 1797
     },
     "scenarios": {
       "arb_only": {
         "total_gross": 16640070.0,
         "total_cycling_cost": 1007677.0,
         "total_net": 15632393.0,
-        "years_covered": 5.0,
-        "annualised_net": 3126479.0,
-        "annualised_per_mw": 62530.0,
+        "years_covered": 4.92,
+        "annualised_net": 3177369.0,
+        "annualised_per_mw": 63547.0,
         "breakdown": {
           "Arbitrage": 16640070.0,
           "DCH": 0.0,
@@ -97,15 +98,16 @@
         "offer_valuation": "lp",
         "price_shrink": 1.0,
         "offers_at_bid_time": false,
-        "forecast_vintages": true
+        "forecast_vintages": true,
+        "days_covered": 1797
       },
       "fr_only": {
         "total_gross": 20903208.0,
         "total_cycling_cost": 353611.0,
         "total_net": 20549597.0,
-        "years_covered": 5.0,
-        "annualised_net": 4109919.0,
-        "annualised_per_mw": 82198.0,
+        "years_covered": 4.92,
+        "annualised_net": 4176817.0,
+        "annualised_per_mw": 83536.0,
         "breakdown": {
           "DCH": 2292754.0,
           "DCL": 9555203.0,
@@ -130,7 +132,8 @@
         "offer_valuation": "formula",
         "price_shrink": 1.0,
         "offers_at_bid_time": false,
-        "forecast_vintages": true
+        "forecast_vintages": true,
+        "days_covered": 1797
       }
     }
   },
@@ -171,9 +174,9 @@
       "total_gross": 23157570.0,
       "total_cycling_cost": 625959.0,
       "total_net": 22531610.0,
-      "years_covered": 5.0,
-      "annualised_net": 4506322.0,
-      "annualised_per_mw": 90126.0,
+      "years_covered": 4.92,
+      "annualised_net": 4579672.0,
+      "annualised_per_mw": 91593.0,
       "breakdown": {
         "DCH": 2004266.0,
         "DCL": 8748921.0,
@@ -198,16 +201,17 @@
       "offer_valuation": "lp",
       "price_shrink": 0.5,
       "offers_at_bid_time": true,
-      "forecast_vintages": true
+      "forecast_vintages": true,
+      "days_covered": 1797
     },
     "scenarios": {
       "arb_only": {
         "total_gross": 6963001.0,
         "total_cycling_cost": 1035442.0,
         "total_net": 5927559.0,
-        "years_covered": 5.0,
-        "annualised_net": 1185512.0,
-        "annualised_per_mw": 23710.0,
+        "years_covered": 4.92,
+        "annualised_net": 1204809.0,
+        "annualised_per_mw": 24096.0,
         "breakdown": {
           "Arbitrage": 6963001.0,
           "DCH": 0.0,
@@ -232,15 +236,16 @@
         "offer_valuation": "lp",
         "price_shrink": 0.5,
         "offers_at_bid_time": true,
-        "forecast_vintages": true
+        "forecast_vintages": true,
+        "days_covered": 1797
       },
       "fr_only": {
         "total_gross": 20903208.0,
         "total_cycling_cost": 353611.0,
         "total_net": 20549597.0,
-        "years_covered": 5.0,
-        "annualised_net": 4109919.0,
-        "annualised_per_mw": 82198.0,
+        "years_covered": 4.92,
+        "annualised_net": 4176817.0,
+        "annualised_per_mw": 83536.0,
         "breakdown": {
           "DCH": 2292754.0,
           "DCL": 9555203.0,
@@ -265,7 +270,8 @@
         "offer_valuation": "formula",
         "price_shrink": 1.0,
         "offers_at_bid_time": false,
-        "forecast_vintages": true
+        "forecast_vintages": true,
+        "days_covered": 1797
       }
     }
   },
@@ -310,9 +316,9 @@
       "total_gross": 23875619.0,
       "total_cycling_cost": 561384.0,
       "total_net": 23314235.0,
-      "years_covered": 5.0,
-      "annualised_net": 4662847.0,
-      "annualised_per_mw": 93257.0,
+      "years_covered": 4.92,
+      "annualised_net": 4738745.0,
+      "annualised_per_mw": 94775.0,
       "breakdown": {
         "DCH": 2084427.0,
         "DCL": 9064745.0,
@@ -337,16 +343,17 @@
       "offer_valuation": "lp",
       "price_shrink": 0.5,
       "offers_at_bid_time": true,
-      "forecast_vintages": true
+      "forecast_vintages": true,
+      "days_covered": 1797
     },
     "scenarios": {
       "arb_only": {
         "total_gross": 8663678.0,
         "total_cycling_cost": 836675.0,
         "total_net": 7827003.0,
-        "years_covered": 5.0,
-        "annualised_net": 1565401.0,
-        "annualised_per_mw": 31308.0,
+        "years_covered": 4.92,
+        "annualised_net": 1590881.0,
+        "annualised_per_mw": 31818.0,
         "breakdown": {
           "Arbitrage": 8663678.0,
           "DCH": 0.0,
@@ -371,15 +378,16 @@
         "offer_valuation": "lp",
         "price_shrink": 0.5,
         "offers_at_bid_time": true,
-        "forecast_vintages": true
+        "forecast_vintages": true,
+        "days_covered": 1797
       },
       "fr_only": {
         "total_gross": 20903208.0,
         "total_cycling_cost": 353611.0,
         "total_net": 20549597.0,
-        "years_covered": 5.0,
-        "annualised_net": 4109919.0,
-        "annualised_per_mw": 82198.0,
+        "years_covered": 4.92,
+        "annualised_net": 4176817.0,
+        "annualised_per_mw": 83536.0,
         "breakdown": {
           "DCH": 2292754.0,
           "DCL": 9555203.0,
@@ -404,7 +412,8 @@
         "offer_valuation": "formula",
         "price_shrink": 1.0,
         "offers_at_bid_time": false,
-        "forecast_vintages": true
+        "forecast_vintages": true,
+        "days_covered": 1797
       }
     },
     "model_metrics": {

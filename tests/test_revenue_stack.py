@@ -488,3 +488,21 @@ def test_lp_valued_offers_keep_free_the_side_trading_needs_at_each_hour():
     assert formula.loc[morning, "q_DCH"].tolist() == pytest.approx(formula.loc[evening, "q_DCH"].tolist())
     assert lp.loc[morning, "q_DCH"].sum() < lp.loc[evening, "q_DCH"].sum()
     assert lp.loc[evening, "q_DCL"].sum() < lp.loc[morning, "q_DCL"].sum()
+
+
+def test_annualisation_divides_by_days_backtested_not_months_touched():
+    """
+    A window that starts or ends mid-month contributes a part-month of revenue.
+    Counting the months touched would divide that revenue by more time than it
+    earned in — the five-day window below spans one month, so a month-count
+    divisor would annualise it as a twelfth of a year instead of 5/365.25,
+    understating £/MW/yr by a factor of about 6.
+    """
+    auctions, market = _auctions({d: {"DCL": 10.0} for d in DAYS}), _market_index(DAYS)
+    summary = run_backtest(auctions, market, BATTERY)["summary"]
+
+    assert summary["days_covered"] == len(DAYS)
+    assert summary["years_covered"] == pytest.approx(len(DAYS) / 365.25, abs=0.005)
+    assert summary["annualised_net"] == pytest.approx(
+        summary["total_net"] / (len(DAYS) / 365.25), rel=1e-3)
+    assert summary["annualised_per_mw"] == pytest.approx(summary["annualised_net"] / P, rel=1e-3)

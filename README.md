@@ -19,14 +19,22 @@ Annualised net revenue per MW:
 
 | Strategy | Full stack | Arbitrage only | What it represents |
 |---|---|---|---|
-| Perfect Foresight | £115.9k | £62.5k | Theoretical ceiling; requires knowing day-D prices |
-| **ML (Random Forest)** | **£93.3k** | **£31.3k** | Realistic case: every forecast out-of-sample, from data that existed at each decision |
-| Naive (last complete day) | £90.1k | £23.7k | The floor; any real forecast must beat it |
-| FR only | £82.2k | — | A site that ignores arbitrage entirely |
+| Perfect Foresight | £117.8k | £63.5k | Theoretical ceiling; requires knowing day-D prices |
+| **ML (Random Forest)** | **£94.8k** | **£31.8k** | Realistic case: every forecast out-of-sample, from data that existed at each decision |
+| Naive (last complete day) | £91.6k | £24.1k | The floor; any real forecast must beat it |
+| FR only | £83.5k | — | A site that ignores arbitrage entirely |
 
 - **Foresight ratio 12%** — the share of the naive-to-perfect gap the forecast closes,
   `(ML − Naive) / (PF − Naive)`. It sits at 10% through the 2021–22 gas crisis and 14% from
-  2023 onward, and the forecast beats naive in every year of the backtest.
+  2023 onward, and the forecast beats naive in every year of the backtest. The industry's
+  usual measure, Percent of Perfect, subtracts no floor and reads 80.5% here — but the naive
+  floor alone reads 77.8% on it, which is why the harder ratio is the one reported.
+- **The money is significant; the accuracy is not.** Resampling the paired daily revenue
+  differences in four-week blocks puts the forecast's lead at £3.18k/MW/yr, 95% interval
+  £2.05k to £4.37k, and £1.79k [£0.88k, £2.76k] on the folds from 2025 alone. Its accuracy
+  edge over persistence is not distinguishable from noise: Diebold-Mariano returns p = 0.26 on
+  squared error and p = 0.19 on the error in the day's spread. What the forecast is worth, it
+  earns through capacity allocation rather than through precision.
 - **Offers are priced by planning the day.** Each day's response offers are chosen together
   with a half-hourly trading plan, so a MW held back costs what it takes out of that plan.
   That replaced a block-by-block estimate and added £7–12k/MW/yr to every strategy — more
@@ -37,8 +45,8 @@ Annualised net revenue per MW:
   period, which put this same ratio at 66% — the gap between those two numbers is what
   in-sample forecasting is worth, and it is not small. Forecasts are also used only once the
   data behind them exists: offers made at 14:00 on the day before see data to two days before.
-- **Frequency response dominates the stack.** FR only earns £82.2k of the ML strategy's
-  £93.3k, so arbitrage is the margin rather than the business — and what the forecast adds
+- **Frequency response dominates the stack.** FR only earns £83.5k of the ML strategy's
+  £94.8k, so arbitrage is the margin rather than the business — and what the forecast adds
   still arrives mostly through better capacity allocation, not better trading.
 - **The battery stays compliant.** It starts 0.4–0.6% of settlement periods outside the
   state-of-energy range its contracts require, and almost every one is a single half-hour at
@@ -143,7 +151,7 @@ half-hourly delivery table is committed.
 
 ```bash
 pip install -r requirements.txt -r requirements-dev.txt
-pytest -m "not integration"     # 201 tests, no network — what CI runs
+pytest -m "not integration"     # 303 tests, no network — what CI runs
 pytest -m integration           # live NESO + Elexon contract checks
 pytest --cov=src tests/         # with coverage
 ```

@@ -341,7 +341,16 @@ function summarise(rows, mw) {
   const cyc = d3.sum(rows, (d) => d.cycling_cost_gbp + d.delivery_cycling_cost_gbp);
   const gross = d3.sum(Object.values(svc)) + arb;
   const net = gross - cyc;
-  const years = rows.length / 12;
+  // Days each month actually contributes, clipped to the backtest window. The first
+  // and last months are partial (the window runs 2021-09-16 to 2026-08-17), so
+  // counting whole months divides part-month revenue by a full month of time.
+  const DAY = 86400000;
+  const days = d3.sum(rows, (d) => {
+    const lo = Math.max(d.month_dt, bounds[0]);
+    const hi = Math.min(d3.utcMonth.offset(d.month_dt, 1) - DAY, bounds[1]);
+    return Math.max(0, (hi - lo) / DAY + 1);
+  });
+  const years = days / 365.25;
   // Negative streams are kept: FR services can clear below zero, and filtering
   // them out would hide that from the breakdown table and the revenue stack.
   const breakdown = Object.fromEntries(
@@ -581,8 +590,13 @@ close it gets to the ceiling.</p>
 halfway towards its daily mean, a setting chosen on the years before 2025. That one parameter
 is worth about £4k/MW/yr to it, which makes it a stronger and fairer benchmark.</p>
 <p>The <b>foresight ratio</b> quantifies this as a fraction of the capturable improvement:
-<code>(ML − Naive) / (PF − Naive)</code>. Published GB and European price-forecasting
-literature treats 70–85% as strong performance.</p>
+<code>(ML − Naive) / (PF − Naive)</code>. The industry's usual measure, Percent of Perfect,
+subtracts no floor and reads 80.5% here — but the naive floor alone reads 77.8% on it, because
+most of the revenue is frequency response availability that no forecast moves. The harder
+ratio is the one reported for that reason.</p>
+<p>Resampled in four-week blocks, the model's lead is £3.18k/MW/yr with a 95% interval of
+£2.05k to £4.37k. Its <i>accuracy</i> edge over persistence is not distinguishable from noise
+(Diebold-Mariano p = 0.26 on squared error); what it is worth, it earns through allocation.</p>
 <p>It is a share of the <i>capturable</i> gap, so it moves when that gap moves: charging the
 model for the energy its contracts deliver lifted the floor towards the ceiling. The bigger
 shift came from retraining. While a single fixed split left most of the backtest forecast by a

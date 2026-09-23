@@ -432,6 +432,7 @@ def _build_result(
     avg_arb_mw: float,
     soc_traj: list,
     extras: dict | None = None,
+    days_covered: int | None = None,
 ) -> dict:
     """
     Merge ancillary and arbitrage monthly streams, apply availability factor,
@@ -465,7 +466,11 @@ def _build_result(
     monthly["cycling_cost"]  = monthly[cost_cols].sum(axis=1) if cost_cols else 0.0
     monthly["net_revenue"]   = monthly["gross_revenue"] - monthly["cycling_cost"]
 
-    years     = len(monthly) / 12
+    # Days actually backtested, not months touched. A window that starts on the 16th
+    # and ends on the 17th contributes two part-months of revenue; counting them as
+    # two whole months divides that revenue by more time than it earned in, which put
+    # every annualised figure about 1.6% low over the published 2021-2026 window.
+    years     = (days_covered / 365.25) if days_covered else len(monthly) / 12
     net_total = monthly["net_revenue"].sum()
 
     breakdown = {}
@@ -478,6 +483,7 @@ def _build_result(
         "total_cycling_cost": round(monthly["cycling_cost"].sum(), 0),
         "total_net":          round(net_total, 0),
         "years_covered":      round(years, 2),
+        "days_covered":       int(days_covered) if days_covered else None,
         "annualised_net":     round(net_total / years, 0) if years > 0 else 0,
         "annualised_per_mw":  round(net_total / years / battery.power_mw, 0) if years > 0 and battery.power_mw > 0 else 0,
         "breakdown":          breakdown,
@@ -1296,7 +1302,8 @@ def run_strategy(
         "plan_smoothing":      plan_smoothing,
         "dispatch_smoothing":  dispatch_smoothing,
     }
-    result = _build_result(anc_wide, imb_wide, battery, avg_fr_mw, avg_arb_mw, soc_traj, extras)
+    result = _build_result(anc_wide, imb_wide, battery, avg_fr_mw, avg_arb_mw, soc_traj, extras,
+                           days_covered=len(dates))
     result["schedule"] = schedule
     result["daily"] = daily_revenue
     return result

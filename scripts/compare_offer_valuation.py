@@ -178,6 +178,11 @@ def split_revenue(monthly: pd.DataFrame, power_mw: float, select_before: str) ->
                        ("selection", months < pd.Timestamp(select_before)),
                        ("confirmation", months >= pd.Timestamp(select_before))):
         m = monthly[mask.to_numpy()]
+        # Months, not days: the first and last are partial, so this runs about 1.6%
+        # low against revenue_stack's day-based divisor. Every run in a report shares
+        # the window, so the bias scales all of them alike and cancels exactly in the
+        # comparisons and foresight ratios below. Left as is to keep the committed
+        # reports comparable without re-running every backtest behind them.
         years = len(m) / 12
         if years == 0:
             out[half] = None
