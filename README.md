@@ -143,7 +143,7 @@ half-hourly delivery table is committed.
 
 ```bash
 pip install -r requirements.txt -r requirements-dev.txt
-pytest -m "not integration"     # 201 tests, no network — what CI runs
+pytest -m "not integration"     # 342 tests, no network — what CI runs
 pytest -m integration           # live NESO + Elexon contract checks
 pytest --cov=src tests/         # with coverage
 ```
@@ -199,6 +199,9 @@ src/
     response_delivery.py  Frequency -> energy delivered per MW contracted
     price_forecast.py     Feature matrix, model training, forecast backtests
     forecasting_models.py Random Forest, LEAR ensemble, DNN
+    quantile_forecast.py  Quantile regression forest, walk-forward
+    intervals.py          Guard bands (split conformal, quantile, CQR) and their scores
+    spci.py               SPCI guard bands
     features.py           Feature engineering
   optimisation/mpc.py     The rolling dispatch LP
   data_collection/        NESO, Elexon, REPD and frequency collectors

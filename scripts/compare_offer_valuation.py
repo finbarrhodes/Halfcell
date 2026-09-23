@@ -59,7 +59,17 @@ DEFAULT_RUNS = "pf:formula,pf:lp,naive:formula,naive:lp,ml:formula,ml:lp"
 ENGINE_SOURCES = [
     "src/analysis/revenue_stack.py", "src/analysis/fr_allocation.py", "src/analysis/neso_rules.py",
     "src/analysis/price_forecast.py", "src/optimisation/mpc.py", "src/optimisation/day_ahead.py",
+    # the weights and bands runs plan against are part of the engine too
+    "src/analysis/shrink.py", "src/analysis/intervals.py", "src/analysis/spci.py",
+    "src/analysis/quantile_forecast.py",
 ]
+# Bands built by scripts/interval_benchmark.py rather than by the engine's own split
+# conformal: "qr" the quantile forest's quantiles, "cqr" those conformalised, "spci"
+# SPCI on the residuals ("spci_b" with the β search, "spci_w" refitted weekly), "ens"
+# the average of qr, split conformal and spci.
+BAND_METHODS = ("qr", "cqr", "spci", "spci_b", "spci_w", "ens")
+# The configuration the site publishes, which every variant here is trying to beat
+SHIPPED = {"pf": "pf_lp_vint", "naive": "naive_lp_shrink0.5_bid_vint", "ml": "ml_lp_shrink0.5_bid_vint"}
 
 
 def parse_run(spec: str) -> tuple:
@@ -70,13 +80,15 @@ def parse_run(spec: str) -> tuple:
     "sm5" smooths dispatch's own plan over five half-hours ("osm5" the offer plan's),
     "tilt" a weight that leans on how loud the day looks, and "cp" conformal guard
     bands, per settlement period unless "blk" (EFA block) or "dayg" (one set) is
-    given. The first number is the constant shrink, the risk factor with "dyn", or
-    the intercept with "tilt"; the second is the tilt, or alpha with "cp". Perfect
-    foresight ignores everything but "vint".
+    given. Any of BAND_METHODS in place of "cp" uses that method's bands instead
+    (ML only: they are built on the ML forecast). The first number is the constant
+    shrink, the risk factor with "dyn", or the intercept with "tilt"; the second is
+    the tilt, or alpha with a band. Perfect foresight ignores everything but "vint".
     """
     parts = spec.strip().split(":")
     strategy, valuation, rest = parts[0], parts[1], parts[2:]
-    flags = {part for part in rest if part in ("bid", "vint", "dyn", "tilt", "cp", "blk", "dayg")}
+    flags = {part for part in rest
+             if part in ("bid", "vint", "dyn", "tilt", "cp", "blk", "dayg") + BAND_METHODS}
     # "sm5" smooths dispatch's plan over five half-hours, "osm5" the offer plan's
     smoothing = {part[:-len(part.lstrip("abcdefghijklmnopqrstuvwxyz"))] or part: part
                  for part in rest if part.startswith(("sm", "osm"))}
@@ -89,8 +101,13 @@ def parse_run(spec: str) -> tuple:
     second = float(numbers[1]) if len(numbers) > 1 else 0.0
     mode = "tilt" if "tilt" in flags else "slope" if "dyn" in flags else None
     guard = None
+    methods = [m for m in BAND_METHODS if m in flags]
+    if len(methods) > 1 or (methods and "cp" in flags) or (methods and strategy == "naive"):
+        raise ValueError(f"bad run spec {spec!r}: one band at a time, and {methods} bands are ML-only")
     if "cp" in flags and strategy != "pf":
         guard = (second or 0.2, "block" if "blk" in flags else "day" if "dayg" in flags else "period")
+    elif methods and strategy != "pf":
+        guard = (second or 0.2, methods[0])
     return (strategy, valuation, shrink, "bid" in flags and strategy != "pf", "vint" in flags,
             mode if strategy != "pf" else None, second, guard, dispatch_smooth, offer_smooth)
 
@@ -108,7 +125,8 @@ def run_name(strategy: str, valuation: str, shrink: float, bid_time: bool = Fals
     weight = (f"_a{shrink:g}b{second:+g}" if dynamic == "tilt" else
               f"_dyn{shrink:g}" if dynamic else
               f"_shrink{shrink:g}" if valuation == "lp" and shrink != 1.0 else "")
-    band = f"_cp{guard[0]:g}{guard[1][:3]}" if guard else ""
+    band = ("" if not guard else f"_{guard[1]}{guard[0]:g}" if guard[1] in BAND_METHODS
+            else f"_cp{guard[0]:g}{guard[1][:3]}")
     smooth = (f"_sm{dispatch_smooth}" if dispatch_smooth else "") + (f"_osm{offer_smooth}" if offer_smooth else "")
     return (f"{strategy}_{valuation}" + weight + band + smooth
             + ("_bid" if bid_time else "") + ("_vint" if vintages else ""))
@@ -145,6 +163,9 @@ def backtest(strategy: str, valuation: str, shrink: float, bid_time: bool, vinta
         result = run_backtest(auctions, market_index, REFERENCE_BATTERY, forecast_vintages=vintages, **common)
     else:
         ml = strategy == "ml"
+        prebuilt = guard is not None and guard[1] in BAND_METHODS
+        if prebuilt:
+            from scripts.interval_benchmark import bands
         predictions = load_or_build(model_type="rf", verbose=False)[0] if ml else None
         early_predictions = (load_or_build(model_type="rf", verbose=False, information_lag_days=2)[0]
                              if ml and (bid_time or vintages) else None)
@@ -155,9 +176,10 @@ def backtest(strategy: str, valuation: str, shrink: float, bid_time: bool, vinta
                                        early_predictions=early_predictions,
                                        dynamic_shrink=dynamic or False, shrink_risk_factor=shrink,
                                        shrink_tilt=second,
-                                       guard_alpha=guard[0] if guard else None,
-                                       guard_group=guard[1] if guard else "period",
+                                       guard_alpha=guard[0] if guard and not prebuilt else None,
+                                       guard_group=guard[1] if guard and not prebuilt else "period",
                                        guard_window_days=GUARD_WINDOW_DAYS,
+                                       guard_bands=bands(guard[1], guard[0]) if prebuilt else None,
                                        plan_smoothing=offer_smooth,
                                        dispatch_smoothing=dispatch_smooth, **common)
 
@@ -229,11 +251,30 @@ def write_report(rows: dict, select_before: str, fingerprint: str, report: str =
         lines.append(f"| {name} | " + " | ".join(cells(row, "selection") + cells(row, "confirmation"))
                      + f" | {row['summary'].get('soe_breach_periods', '—')} |")
     valuations = sorted({name.split("_", 1)[1] for name in rows if not name.startswith("pf_")})
+    fmt = lambda x: "—" if x is None else f"{x * 100:.1f}%"
     lines += ["", "| Valuation | Foresight ratio (sel) | Foresight ratio (conf) |", "|---|---|---|"]
     for v in valuations:
         sel, conf = foresight(rows, v, "selection"), foresight(rows, v, "confirmation")
-        fmt = lambda x: "—" if x is None else f"{x * 100:.1f}%"
         lines.append(f"| {v} | {fmt(sel)} | {fmt(conf)} |")
+    if SHIPPED["pf"] in rows and SHIPPED["naive"] in rows:
+        # Bands built on the ML forecast have no naive twin, so they are measured against
+        # the published naive and perfect-foresight runs instead
+        lines += ["", "Against the published signals: net £k/MW/yr less the shipped ML run, and the "
+                      "foresight ratio with the shipped naive run as the floor.", "",
+                  "| Run | Δ net vs shipped (sel) | Δ net vs shipped (conf) | Foresight (sel) | Foresight (conf) |",
+                  "|---|---|---|---|---|"]
+        for name, row in rows.items():
+            if not name.startswith("ml_"):
+                continue
+            cells = []
+            for half in ("selection", "confirmation"):
+                shipped = rows.get(SHIPPED["ml"], {}).get("revenue", {}).get(half)
+                cells.append("—" if shipped is None else f"{row['revenue'][half]['net'] - shipped['net']:+.2f}")
+            for half in ("selection", "confirmation"):
+                pf, naive = (rows[SHIPPED[k]]["revenue"][half]["net"] for k in ("pf", "naive"))
+                ratio = (row["revenue"][half]["net"] - naive) / (pf - naive) if pf != naive else None
+                cells.append(fmt(ratio))
+            lines.append(f"| {name} | " + " | ".join(cells) + " |")
     (REPORTS / f"{report}.md").write_text("\n".join(lines) + "\n")
 
 
