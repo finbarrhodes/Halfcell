@@ -77,7 +77,9 @@ as a forecast before it is judged on revenue.
 Reading the literature
 ----------------------
 O'Connor et al. is the benchmark these methods come from, and its interval tables
-need one caution. Its EnbPI and SPCI intervals are built with the reference
+need one caution. Both readings below are reproduced from the paper's own linked
+repository by scripts/verify_interval_literature.py, which also prints what is
+sensitive to the scoring convention. Its EnbPI and SPCI intervals are built with the reference
 implementation's `alpha` of 0.1 and 0.3, which there is the *total* miscoverage -
 [Q(β), Q(1−α+β)], a 90% and a 70% interval - and are then filed and compared as
 the 10/90 and 30/70 quantile pairs, alongside quantile regression's genuine 80% and

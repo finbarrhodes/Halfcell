@@ -520,10 +520,18 @@ spread is real, so the better the band, the more of the best trading it declines
 split to predict the error's mean, so they follow a forecast that keeps missing one way, which
 made it the best band in 2022 and in no other year, and not one that is merely noisier.
 
-Two cautions on the paper itself. Its EnbPI and SPCI "10/90" bounds are 90% intervals — the
-reference code's `alpha` is the total miscoverage — compared against quantile regression's genuine
-80%. And on the random-forest forecasts it publishes, the forest's own quantiles beat both conformal
-methods: 80% coverage 0.86 against 0.75 and 0.71, and a Winkler score of 47 against 55 and 56.
+Two cautions on the paper itself, both reproduced from its own linked repository by
+`scripts/verify_interval_literature.py`. Its EnbPI and SPCI "0.1–0.9" bounds are nominally *90%*
+intervals: the reference implementation it calls builds them from the residual percentiles
+[β, 1−α+β], so its `alpha` is the total miscoverage, while the paper defines α per tail (α = 0.1
+→ 80%). They are then compared against quantile regression's genuine 80%. And on the
+random-forest day-ahead forecasts it publishes, the forest's own quantiles score better than
+either conformal method — coverage 0.86 against 0.75 and 0.71 for a labelled 0.80, and an
+interval score of 47 against 55 and 56, the score being width plus 2/α per unit of price outside
+the band. The paper's own table ranks them the other way (33.7 against 32.1 and 31.7); those
+values do not reproduce from the published forecasts under the usual conventions, and that
+ranking appears only if the miscoverage penalty is left unscaled by 1/α, which charges a band
+little for missing the price. That is a reading of their table, not a claim about their code.
 
 **Revisit if** the plan becomes scenario-based, using the quantiles as a distribution to optimise
 over rather than as a discount, or if a band is built around the decision itself — how likely a

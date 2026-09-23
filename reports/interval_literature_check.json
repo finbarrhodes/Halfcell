@@ -1,0 +1,94 @@
+{
+  "nominal_level": {
+    "paper_calls_alpha": [
+      "0.1",
+      "0.3"
+    ],
+    "reference_interval_bounds": [
+      "beta_hat_bin",
+      "(1 - alpha + beta_hat_bin"
+    ],
+    "alpha_is_total_miscoverage": true,
+    "implied_coverage": {
+      "0.1": "90%",
+      "0.3": "70%"
+    },
+    "labelled_coverage": {
+      "0.1": "80%",
+      "0.3": "40%"
+    }
+  },
+  "scores": {
+    "QR": {
+      "0.1-0.9": {
+        "n": 8760,
+        "coverage": 0.86,
+        "mean_width": 33.1,
+        "interval_score_labelled": 47.3,
+        "interval_score_implied": 61.4,
+        "interval_score_unscaled_penalty": 36.0,
+        "pinball_lower": 2.05,
+        "pinball_upper": 2.68
+      },
+      "0.3-0.7": {
+        "n": 8760,
+        "coverage": 0.47,
+        "mean_width": 12.2,
+        "interval_score_labelled": 28.1,
+        "interval_score_implied": 44.1,
+        "interval_score_unscaled_penalty": 21.8,
+        "pinball_lower": 4.02,
+        "pinball_upper": 4.42
+      }
+    },
+    "EnbPI": {
+      "0.1-0.9": {
+        "n": 8760,
+        "coverage": 0.748,
+        "mean_width": 21.9,
+        "interval_score_labelled": 55.4,
+        "interval_score_implied": 89.0,
+        "interval_score_unscaled_penalty": 28.6,
+        "pinball_lower": 2.26,
+        "pinball_upper": 3.28
+      },
+      "0.3-0.7": {
+        "n": 8760,
+        "coverage": 0.463,
+        "mean_width": 10.0,
+        "interval_score_labelled": 28.6,
+        "interval_score_implied": 47.2,
+        "interval_score_unscaled_penalty": 21.1,
+        "pinball_lower": 4.09,
+        "pinball_upper": 4.48
+      }
+    },
+    "SPCI": {
+      "0.1-0.9": {
+        "n": 8760,
+        "coverage": 0.714,
+        "mean_width": 20.5,
+        "interval_score_labelled": 55.7,
+        "interval_score_implied": 90.9,
+        "interval_score_unscaled_penalty": 27.5,
+        "pinball_lower": 2.26,
+        "pinball_upper": 3.31
+      },
+      "0.3-0.7": {
+        "n": 8760,
+        "coverage": 0.451,
+        "mean_width": 9.9,
+        "interval_score_labelled": 29.1,
+        "interval_score_implied": 48.2,
+        "interval_score_unscaled_penalty": 21.4,
+        "pinball_lower": 4.09,
+        "pinball_upper": 4.63
+      }
+    }
+  },
+  "paper_table_3_rf_dam": {
+    "QR": 33.7,
+    "EnbPI": 32.14,
+    "SPCI": 31.65
+  }
+}
