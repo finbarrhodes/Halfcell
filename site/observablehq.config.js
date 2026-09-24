@@ -5,6 +5,12 @@ import {readFileSync} from "node:fs";
 
 const title = "Halfcell";
 
+// The footer's date is the end of the data, not the build clock: a rebuild
+// without a data refresh must not move it.
+const dataEnd = new Date(JSON.parse(readFileSync(
+  new URL("../data/cache/latest_kpis.json", import.meta.url), "utf-8")).data_end)
+  .toLocaleDateString("en-GB", {day: "numeric", month: "long", year: "numeric", timeZone: "UTC"});
+
 // Client script inlined into every page's <head>. It cannot be a <script src>:
 // Framework only emits files under src/ that a page imports, and static/ is
 // copied by the post-build step, which `observable preview` never runs — so a
@@ -95,7 +101,7 @@ export default {
   toc: false,
   pager: false,
   footer: () =>
-    `Data through ${new Date().getFullYear()} · ` +
+    `Data through ${dataEnd} · ` +
     `<a href="https://github.com/finbarrhodes/Halfcell">GitHub</a> · ` +
     `<a href="https://www.linkedin.com/in/finbar-rhodes-637650210/">LinkedIn</a>`,
 };

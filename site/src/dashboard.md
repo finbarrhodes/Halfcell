@@ -388,16 +388,6 @@ display(Inputs.table(
 ));
 ```
 
-## High vs Low spread
-
-Each service runs two separate auctions: **High** (rising frequency → BESS charges) and
-**Low** (falling frequency → BESS discharges). Clearing prices differ because available
-discharge and charge headroom across the fleet is rarely symmetric.
-
-**Spread = H clearing price − L clearing price.** Positive means charge capacity was scarcer;
-negative means discharge capacity was scarcer. All three markets average negative, so the
-discharge leg is consistently the scarcer of the two.
-
 ## Wholesale & settlement prices
 
 Two prices matter for a battery trading energy. The **market index** (APXMIDP) is the

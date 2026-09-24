@@ -345,7 +345,7 @@ form.oi input[type="checkbox"], form.oi input[type="radio"] { accent-color: var(
   font-weight: 700;
   letter-spacing: 0.09em;
   text-transform: uppercase;
-  color: var(--hc-teal);
+  color: var(--hc-teal-deep);
   display: block;
   margin-bottom: 0.35rem;
 }
@@ -419,7 +419,7 @@ form.oi input[type="checkbox"], form.oi input[type="radio"] { accent-color: var(
 /* Choice controls (components/controls.js)                            */
 /* ------------------------------------------------------------------ */
 
-/* A pill-shaped segmented control that sits on a chart */
+/* Horizontal: a pill-shaped segmented control that sits on a chart */
 .choice-group {
   display: inline-flex;
   flex-wrap: wrap;
@@ -444,8 +444,61 @@ form.oi input[type="checkbox"], form.oi input[type="radio"] { accent-color: var(
 .choice.is-active { background: var(--hc-teal); color: #fff; }
 .choice:focus-visible { outline: 2px solid var(--hc-orange); outline-offset: 2px; }
 
+.choice-detail {
+  display: block;
+  margin-top: 0.15rem;
+  font-weight: 400;
+  font-size: 0.72rem;
+  color: var(--hc-ink-faint);
+}
+
+/* Vertical: a list of options beside a chart, styled like the walkthrough steps */
+.choice-group.is-vertical {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+}
+.choice-group.is-vertical .choice {
+  text-align: left;
+  padding: 0.55rem 0.8rem;
+  font-size: 0.82rem;
+  color: var(--hc-ink);
+  background: var(--hc-paper-deep);
+  border: 1px solid var(--hc-rule);
+  border-left: 3px solid var(--hc-rule);
+  border-radius: 0 3px 3px 0;
+}
+.choice-group.is-vertical .choice:hover { border-left-color: var(--hc-ink-faint); }
+.choice-group.is-vertical .choice.is-active {
+  color: var(--hc-teal-deep);
+  background: rgba(13, 118, 128, 0.1);
+  border-left-color: var(--hc-teal);
+}
+.choice-group.is-vertical .is-active .choice-detail { color: var(--hc-teal-deep); opacity: 0.85; }
+
 @media (prefers-reduced-motion: reduce) {
   .choice { transition: none; }
+}
+
+/* A chart with a picker beside it; the picker drops below on narrow screens */
+.soc-view {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 14rem;
+  gap: 1rem;
+  align-items: start;
+  margin: 1rem 0;
+}
+.soc-view > .card { margin: 0; }
+/* The picker itself: named views stacked, with the free date box at the foot,
+   indented by the options' 3px marker so their text edges line up */
+.day-views { display: flex; flex-direction: column; gap: 0.6rem; }
+.day-views .control-dates { margin-left: 3px; }
+@media (max-width: 760px) {
+  .soc-view { grid-template-columns: 1fr; }
 }
 
 /* A panel of labelled controls (controlPanel), so a page's inputs read as one
@@ -615,3 +668,6 @@ form.oi input[type="checkbox"], form.oi input[type="radio"] { accent-color: var(
 
 /* Card headings sit at the top of the card, not 2rem down like page headings */
 .card h3 { margin-top: 0; font-size: 1.05rem; }
+
+/* Framework's footer uses --theme-foreground-faint, too light to read on paper */
+#observablehq-footer { color: var(--hc-ink-soft); }
