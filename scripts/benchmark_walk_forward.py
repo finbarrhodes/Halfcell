@@ -130,8 +130,8 @@ def write_report(rows: list, select_before: str) -> None:
     (REPORTS / "walk_forward_benchmark.json").write_text(json.dumps(rows, indent=2) + "\n")
 
     def cell(row, half, key):
-        block = row["metrics"].get(half)
-        return f"{block[key]}" if block else "—"
+        block = row["metrics"].get(half) or {}
+        return f"{block.get(key, '—')}"
 
     lines = [
         "# Model benchmark on walk-forward folds",
@@ -140,14 +140,20 @@ def write_report(rows: list, select_before: str) -> None:
         f"that follow. Folds before {select_before} are the selection set; the rest are held back "
         "as confirmation.",
         "",
-        "| Model | RMSE (sel) | RMSE (conf) | Spearman (sel) | Spearman (conf) | Spike RMSE (conf) | Fit time |",
-        "|---|---|---|---|---|---|---|",
+        "Spread bias is reported beside the accuracy metrics because it is the only one that "
+        "charges a forecast for spread it invents: LEAR won every other column here and earned "
+        "£19k/MW/yr less than reusing yesterday's prices.",
+        "",
+        "| Model | RMSE (sel) | RMSE (conf) | Spearman (sel) | Spearman (conf) | Spike RMSE (conf) "
+        "| Spread bias (conf) | Spread MAE (conf) | Fit time |",
+        "|---|---|---|---|---|---|---|---|---|",
     ]
     for row in rows:
         lines.append(
             f"| {row['model']} | {cell(row, 'selection', 'rmse')} | {cell(row, 'confirmation', 'rmse')} "
             f"| {cell(row, 'selection', 'spearman')} | {cell(row, 'confirmation', 'spearman')} "
-            f"| {cell(row, 'confirmation', 'spike_rmse')} | {row['fit_minutes']:.1f} min |"
+            f"| {cell(row, 'confirmation', 'spike_rmse')} | {cell(row, 'confirmation', 'spread_bias')} "
+            f"| {cell(row, 'confirmation', 'spread_mae')} | {row['fit_minutes']:.1f} min |"
         )
     if any("revenue" in row for row in rows):
         lines += ["", "| Model | £k/MW/yr | Foresight ratio | Unavailable periods |", "|---|---|---|---|"]

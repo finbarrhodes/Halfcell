@@ -11,9 +11,12 @@ Implements three dispatch strategies for the BESS revenue backtester:
   2. Naive baseline — uses actual day D-1 prices as the forecast for day D.
      No ML required; sets the "zero skill" floor.
 
-  3. ML model — trains a Random Forest, XGBoost, LightGBM, or LEAR regressor on
-     features available at end of day D-1 (lagged prices, generation mix, cyclical
-     temporal encodings) with a strict temporal train/test split.
+  3. ML model — trains a Random Forest, XGBoost, LightGBM, HistGradientBoosting,
+     LEAR or DNN regressor on features available at end of day D-1 (lagged prices,
+     generation mix, cyclical temporal encodings) with a strict temporal train/test
+     split. A model spec can also name what the estimator is fitted to and under
+     which loss — "rf-residual" fits the deviation from the naive forecast rather
+     than the price; see forecasting_models.parse_model_spec.
 
 All three strategies run the same engine, revenue_stack.run_strategy. The forecast
 values each EFA block's arbitrage when the FR allocation decides what to offer, and
@@ -34,9 +37,11 @@ import pandas as pd
 
 from src.analysis.forecasting_models import (
     _LogTransformModel,
+    _ResidualModel,
     _LEARModel,
     _DNNModel,
     _build_model,
+    parse_model_spec,
 )
 from src.analysis.features import (
     FEATURE_COLS,
@@ -120,13 +125,17 @@ def train_forecast_model(
     Parameters
     ----------
     feature_df  : DataFrame from build_feature_matrix()
-    model_type  : "rf", "xgb", "lgb", "lear", or "dnn"
+    model_type  : a model spec — "rf", "xgb", "lgb", "hgb", "lear" or "dnn", with
+                  optional modifiers naming what the estimator is fitted to and
+                  under which loss ("rf-residual", "hgb-pinball_0.4",
+                  "lgb-residual-asym_3"). See forecasting_models.parse_model_spec
     test_start  : ISO date string — all rows on or after this date form the test set
 
     Returns
     -------
     (model, feature_cols, train_metrics, test_metrics) where:
-      model         : fitted _LogTransformModel wrapping the base estimator
+      model         : fitted _LogTransformModel or _ResidualModel wrapping the
+                      base estimator; either predicts in price space
       feature_cols  : list of column names used as features
       train_metrics : dict {rmse, mae, spearman, n_samples[, spike_rmse]}
       test_metrics  : dict {rmse, mae, spearman, n_samples[, spike_rmse]}
@@ -134,6 +143,7 @@ def train_forecast_model(
     from sklearn.metrics import mean_squared_error, mean_absolute_error
     from scipy.stats import spearmanr
 
+    spec = parse_model_spec(model_type)
     feature_cols = resolve_feature_cols(feature_df)
 
     train = feature_df[feature_df["settlementDate"] < pd.Timestamp(test_start)]
@@ -150,7 +160,7 @@ def train_forecast_model(
     # LEAR uses settlementPeriod as an internal routing key (popped in _LEARModel).
     # DNN uses it as a plain numeric input feature.
     _lear_extra: pd.DataFrame | None = None
-    if model_type in ("lear", "dnn"):
+    if spec.base in ("lear", "dnn"):
         _lear_extra  = _build_lear_extra_features(feature_df)
         _extra_cols  = [c for c in _lear_extra.columns
                         if c not in ("settlementDate", "settlementPeriod")]
@@ -176,13 +186,15 @@ def train_forecast_model(
         ).fillna(0)
         X_test["settlementPeriod"] = test["settlementPeriod"].values
 
-    # Wrap with signed-log transform: fit/predict both operate in price space
-    model = _LogTransformModel(_build_model(model_type))
+    # Either wrapper predicts in price space: the signed-log transform inverts
+    # itself, the residual one adds the naive forecast back.
+    base = _build_model(spec)
+    model = _ResidualModel(base) if spec.target == "residual" else _LogTransformModel(base)
     model.fit(X_train, y_train)
 
     # LEAR / DNN: cache extra features on the model so predict_day_prices can
     # retrieve the wide lag columns without rebuilding them on every call
-    if model_type in ("lear", "dnn") and _lear_extra is not None:
+    if spec.base in ("lear", "dnn") and _lear_extra is not None:
         model._model._lear_extra_df = _lear_extra
 
     def _metrics(X, y, dates):
@@ -235,6 +247,11 @@ def get_feature_importances(model, feature_cols: list) -> pd.Series:
     wide lag and DoW columns) rather than the base feature_cols list.
     """
     fi = model.feature_importances_
+    if fi is None:
+        raise ValueError(
+            "this base estimator reports no feature importances "
+            "(HistGradientBoostingRegressor is one); use permutation importance instead"
+        )
     names = (
         model._model._feat_names
         if isinstance(model._model, _LEARModel) and model._model._feat_names is not None

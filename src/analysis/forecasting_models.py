@@ -9,19 +9,155 @@ Models
 ------
 _LogTransformModel  : Target-transform wrapper (signed-log1p) applied to any
                       base estimator; handles negative prices gracefully.
+_ResidualModel      : Target-transform wrapper fitting the deviation from the
+                      naive forecast rather than the price itself.
 _LEARModel          : LEAR (Lasso Estimated AutoRegressive) — 48 per-period
                       LassoLarsIC regressors following Lago et al. (2021).
 _DNNModel           : Fully-connected DNN — 4 hidden layers (512→256→128→64),
                       ReLU, Dropout(0.15), early stopping; single global model
                       across all 48 settlement periods.
 _build_model()      : Factory — returns the appropriate base estimator for a
-                      model_type string ("rf", "xgb", "lgb", "lear", "dnn").
+                      ModelSpec (or a spec string).
+
+Specs
+-----
+parse_model_spec()  : "rf", "rf-residual", "hgb-pinball_0.4",
+                      "lgb-residual-asym_3" — base estimator, what it is fitted
+                      to, and under which loss. See parse_model_spec.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 import pandas as pd
+
+
+# ---------------------------------------------------------------------------
+# Model specs — base estimator, target parameterisation, training loss
+# ---------------------------------------------------------------------------
+
+# The naive forecast, as a feature column. build_feature_matrix lags every price
+# feature by information_lag_days, so this column holds the last complete day's
+# price for the same settlement period — exactly what naive_day_prices() returns
+# at the matching lag. The residual target is measured against it for that reason:
+# the two stay aligned when the offer stage moves the cutoff back to D-2, where
+# naive is D-2's prices and this column is too.
+NAIVE_COL = "apx_lag_1d"
+
+# Which backends can be fitted under something other than squared error. Pinball is
+# a built-in objective in all three; the asymmetric loss is a custom gradient, which
+# only the two boosting libraries with a callable-objective interface accept.
+_PINBALL_BASES = ("xgb", "lgb", "hgb")
+_ASYMMETRIC_BASES = ("xgb", "lgb")
+
+
+@dataclass(frozen=True)
+class ModelSpec:
+    """What to fit, to what, and under which loss."""
+
+    base: str                 # "rf", "xgb", "lgb", "hgb", "lear", "dnn"
+    target: str = "price"     # "price" or "residual"
+    loss: str = "squared"     # "squared", "pinball" or "asymmetric"
+    alpha: float = 0.5        # pinball quantile
+    penalty: float = 2.0      # asymmetric: cost of overshoot relative to undershoot
+
+
+def parse_model_spec(spec: str) -> ModelSpec:
+    """
+    Parse a model spec string.
+
+        "rf"                    Random Forest on the price, as shipped
+        "rf-residual"           ... on the price's deviation from the naive forecast
+        "hgb-pinball"           sklearn boosting at the median rather than the mean
+        "lgb-pinball_0.4"       LightGBM at the 0.4 quantile
+        "xgb-residual-asym_3"   ... on the residual, overshoot charged 3x undershoot
+
+    Modifiers are '-' separated and carry an optional '_' value. A spec string is
+    also a cache key and a filename in the walk-forward harness, which is why the
+    value separator is '_' rather than ':'.
+    """
+    base, *modifiers = spec.split("-")
+    fields: dict = {}
+    for modifier in modifiers:
+        name, _, value = modifier.partition("_")
+        if name == "residual":
+            fields["target"] = "residual"
+        elif name == "pinball":
+            fields["loss"] = "pinball"
+            if value:
+                fields["alpha"] = float(value)
+        elif name == "asym":
+            fields["loss"] = "asymmetric"
+            if value:
+                fields["penalty"] = float(value)
+        else:
+            raise ValueError(
+                f"Unknown modifier '{modifier}' in model spec '{spec}'. Expected "
+                "'residual', 'pinball[_alpha]' or 'asym[_penalty]'."
+            )
+
+    parsed = ModelSpec(base=base, **fields)
+    if parsed.loss == "pinball":
+        if parsed.base not in _PINBALL_BASES:
+            raise ValueError(
+                f"'{parsed.base}' has no quantile objective; pinball needs one of "
+                f"{', '.join(_PINBALL_BASES)}."
+            )
+        if not 0.0 < parsed.alpha < 1.0:
+            raise ValueError(f"pinball alpha must lie in (0, 1), got {parsed.alpha}")
+    if parsed.loss == "asymmetric":
+        if parsed.base not in _ASYMMETRIC_BASES:
+            raise ValueError(
+                f"'{parsed.base}' takes no custom objective; the asymmetric loss needs "
+                f"one of {', '.join(_ASYMMETRIC_BASES)}."
+            )
+        if parsed.target != "residual":
+            raise ValueError(
+                "The asymmetric loss is only defined on the residual target: it charges a "
+                "forecast for moving further from the naive baseline than the day did, "
+                f"which needs that baseline as the origin. Use '{parsed.base}-residual-asym'."
+            )
+        if parsed.penalty <= 0:
+            raise ValueError(f"asymmetric penalty must be positive, got {parsed.penalty}")
+    return parsed
+
+
+# ---------------------------------------------------------------------------
+# Asymmetric loss — charges a forecast for spread it invents
+# ---------------------------------------------------------------------------
+
+def _asymmetric_grad_hess(y_true, y_pred, penalty: float) -> tuple:
+    """
+    Gradient and Hessian of a squared error that charges overshoot `penalty` times
+    undershoot, on the residual target.
+
+        L = ½ w (pred − actual)²,   w = penalty where |pred| > |actual|, else 1
+
+    On the residual target both arguments are deviations from the naive forecast, so
+    |pred| > |actual| means the forecast moved further from yesterday's shape than
+    the day actually did — it invented spread. That is the error the 2026-09-17
+    benchmark showed RMSE and Spearman do not charge for, and the one that costs
+    money twice: a bad trade, and an inflated shadow arbitrage value that declines
+    frequency response contracts worth having. Undershooting only forgoes upside, so
+    it keeps unit weight.
+
+    The rule catches a move in either direction, which is what spread inflation is:
+    predicting −20 where the day moved +1 is charged, predicting −2 where it moved
+    +10 is not.
+    """
+    actual = np.asarray(y_true, dtype=float)
+    predicted = np.asarray(y_pred, dtype=float)
+    weight = np.where(np.abs(predicted) > np.abs(actual), float(penalty), 1.0)
+    return weight * (predicted - actual), weight
+
+
+def _asymmetric_objective(penalty: float):
+    """The custom objective callable XGBRegressor and LGBMRegressor both accept."""
+    def objective(y_true, y_pred):
+        return _asymmetric_grad_hess(y_true, y_pred, penalty)
+    return objective
 
 
 # ---------------------------------------------------------------------------
@@ -45,12 +181,62 @@ class _LogTransformModel:
     def fit(self, X, y):
         y_log = np.sign(y) * np.log1p(np.abs(y))
         self._model.fit(X, y_log)
-        self.feature_importances_ = self._model.feature_importances_
+        # None for a base estimator that reports no importances, such as
+        # HistGradientBoostingRegressor
+        self.feature_importances_ = getattr(self._model, "feature_importances_", None)
         return self
 
     def predict(self, X):
         pred_log = self._model.predict(X)
         return np.sign(pred_log) * np.expm1(np.abs(pred_log))
+
+
+# ---------------------------------------------------------------------------
+# Residual model wrapper — fits the deviation from the naive forecast
+# ---------------------------------------------------------------------------
+
+class _ResidualModel:
+    """
+    Fits the base estimator on the price's deviation from the naive forecast, and
+    adds that forecast back at predict time.
+
+    The naive forecast is already a feature (NAIVE_COL), so it is read out of X
+    rather than passed beside it, and predict(X) keeps the single-argument interface
+    every caller uses.
+
+    What changes is where the estimator spends its capacity. Fitted on the price, a
+    tree spends most of its splits rediscovering the daily shape that yesterday
+    already carries, and the walk-forward benchmark could not separate the result
+    from persistence at all (Diebold-Mariano p = 0.26 on squared error). Fitted on
+    the deviation, that shape is free and the splits go to the part persistence gets
+    wrong. It also puts the origin at the naive forecast, which is what makes the
+    asymmetric loss well posed.
+
+    No signed-log transform here, unlike _LogTransformModel: deviations are already
+    signed and centred near zero, and that transform exists to compress a
+    heavy-tailed positive price level.
+    """
+
+    def __init__(self, base_model, naive_col: str = NAIVE_COL):
+        self._model = base_model
+        self._naive_col = naive_col
+        self.feature_importances_: np.ndarray | None = None
+
+    def _naive(self, X) -> np.ndarray:
+        if self._naive_col not in X:
+            raise KeyError(
+                f"the residual target needs the naive forecast column "
+                f"'{self._naive_col}' in X, which build_feature_matrix supplies"
+            )
+        return np.asarray(X[self._naive_col], dtype=float)
+
+    def fit(self, X, y):
+        self._model.fit(X, np.asarray(y, dtype=float) - self._naive(X))
+        self.feature_importances_ = getattr(self._model, "feature_importances_", None)
+        return self
+
+    def predict(self, X):
+        return self._model.predict(X) + self._naive(X)
 
 
 # ---------------------------------------------------------------------------
@@ -266,9 +452,12 @@ class _DNNModel:
 # Model factory
 # ---------------------------------------------------------------------------
 
-def _build_model(model_type: str):
-    """Instantiate and return the base estimator for the given model type."""
-    if model_type == "rf":
+def _build_model(spec):
+    """Instantiate and return the base estimator for a ModelSpec or a spec string."""
+    if isinstance(spec, str):
+        spec = parse_model_spec(spec)
+
+    if spec.base == "rf":
         from sklearn.ensemble import RandomForestRegressor
         return RandomForestRegressor(
             n_estimators=300,
@@ -277,8 +466,16 @@ def _build_model(model_type: str):
             n_jobs=-1,
             random_state=42,
         )
-    elif model_type == "xgb":
+    elif spec.base == "xgb":
         from xgboost import XGBRegressor
+        objective: dict = {}
+        if spec.loss == "pinball":
+            objective = {"objective": "reg:quantileerror", "quantile_alpha": spec.alpha}
+        elif spec.loss == "asymmetric":
+            # base_score is where boosting starts before the first tree. Its default
+            # suits a price level, not a residual, and a custom objective gets no
+            # automatic estimate — so start at no deviation from naive.
+            objective = {"objective": _asymmetric_objective(spec.penalty), "base_score": 0.0}
         return XGBRegressor(
             n_estimators=300,
             learning_rate=0.05,
@@ -290,9 +487,15 @@ def _build_model(model_type: str):
             n_jobs=-1,
             random_state=42,
             verbosity=0,
+            **objective,
         )
-    elif model_type == "lgb":
+    elif spec.base == "lgb":
         from lightgbm import LGBMRegressor
+        objective = {}
+        if spec.loss == "pinball":
+            objective = {"objective": "quantile", "alpha": spec.alpha}
+        elif spec.loss == "asymmetric":
+            objective = {"objective": _asymmetric_objective(spec.penalty)}
         return LGBMRegressor(
             n_estimators=500,
             learning_rate=0.03,
@@ -304,10 +507,28 @@ def _build_model(model_type: str):
             n_jobs=-1,
             random_state=42,
             verbose=-1,
+            **objective,
         )
-    elif model_type == "lear":
+    elif spec.base == "hgb":
+        # The sklearn-native boosting backend. It earns its place by having a
+        # built-in quantile objective, so the pinball experiment runs on a bare
+        # checkout without xgboost or lightgbm installed.
+        from sklearn.ensemble import HistGradientBoostingRegressor
+        quantile = {"loss": "quantile", "quantile": spec.alpha} if spec.loss == "pinball" else {}
+        return HistGradientBoostingRegressor(
+            max_iter=500,
+            learning_rate=0.03,
+            max_leaf_nodes=63,
+            min_samples_leaf=20,
+            l2_regularization=0.05,
+            random_state=42,
+            **quantile,
+        )
+    elif spec.base == "lear":
         return _LEARModel()
-    elif model_type == "dnn":
+    elif spec.base == "dnn":
         return _DNNModel()
     else:
-        raise ValueError(f"Unknown model_type '{model_type}'. Use 'rf', 'xgb', 'lgb', 'lear', or 'dnn'.")
+        raise ValueError(
+            f"Unknown model base '{spec.base}'. Use 'rf', 'xgb', 'lgb', 'hgb', 'lear', or 'dnn'."
+        )
