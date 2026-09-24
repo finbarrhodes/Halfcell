@@ -4,9 +4,9 @@
 // "input" when the reader changes it, so it works with view() and
 // Generators.input() exactly like the built-in Inputs.
 
-export function choiceGroup(options, {value, format = String, label} = {}) {
+export function choiceGroup(options, {value, format = String, describe, label, vertical = false} = {}) {
   const root = document.createElement("div");
-  root.className = "choice-group";
+  root.className = `choice-group${vertical ? " is-vertical" : ""}`;
   root.setAttribute("role", "radiogroup");
   if (label) root.setAttribute("aria-label", label);
 
@@ -18,7 +18,19 @@ export function choiceGroup(options, {value, format = String, label} = {}) {
     button.className = "choice";
     button.setAttribute("role", "radio");
 
-    button.textContent = format(option);
+    const title = document.createElement("span");
+    title.className = "choice-label";
+    title.textContent = format(option);
+    button.append(title);
+
+    // A second line for what the option means — the day a view lands on, say.
+    const detail = describe?.(option);
+    if (detail) {
+      const sub = document.createElement("span");
+      sub.className = "choice-detail";
+      sub.textContent = detail;
+      button.append(sub);
+    }
 
     button.addEventListener("click", () => select(option, true));
     button.addEventListener("keydown", (event) => {
@@ -150,6 +162,60 @@ export function dateRange({value: [from, to] = [], min, max} = {}) {
 
   root.append(fromField, separator, toField);
   return Object.assign(root, {from: fromField, to: toField});
+}
+
+// A vertical list of named views with a date box at its foot: the views a page
+// offers by name, plus any day the reader cares to type. The last view stands
+// for the date box, so the highlighted option always matches what is drawn.
+//
+// Views are {key, label, note, date?}; the value is the chosen view, with the
+// box's date substituted into the trailing one. Both children's "input" events
+// bubble out of the wrapper, so the value is current by the time they arrive.
+export function dayViews(views, {min, max, value, label} = {}) {
+  const root = document.createElement("div");
+  root.className = "day-views";
+
+  const free = views[views.length - 1];
+  const group = choiceGroup(views, {value, vertical: true, label,
+                                    format: (v) => v.label, describe: (v) => v.note});
+  const field = daySelect({value: (value ?? views[0]).date ?? free.date, min, max, label: "Any day"});
+
+  let current = value ?? views[0];
+
+  group.addEventListener("input", () => {
+    const picked = group.value;
+    if (picked === free) {
+      // Back to the free choice: the box already holds the day it stands for.
+      current = {...free, date: field.value};
+    } else {
+      // A named day carries the box with it, so the box always shows the day on
+      // screen and is the right starting point for the next edit.
+      current = picked;
+      if (current.date) field.value = current.date;
+    }
+  });
+
+  field.addEventListener("input", () => {
+    current = {...free, date: field.value};
+    group.value = free;   // set, not clicked: no second event
+  });
+
+  Object.defineProperty(root, "value", {get: () => current});
+  root.append(group, field);
+  return root;
+}
+
+export function daySelect({value, min, max, label = "Day"} = {}) {
+  const root = document.createElement("div");
+  root.className = "control-dates";
+  root.append(dateField({value, min, max, label}));
+  // The field holds the value; the wrapper forwards it so callers see the
+  // same shape as every other control here.
+  Object.defineProperty(root, "value", {
+    get: () => root.firstChild.value,
+    set: (next) => { root.firstChild.value = next; },
+  });
+  return root;
 }
 
 function dateField({value, min, max, label}) {
