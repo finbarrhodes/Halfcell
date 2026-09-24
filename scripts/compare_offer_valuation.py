@@ -71,7 +71,15 @@ ENGINE_SOURCES = [
 # the average of qr, split conformal and spci.
 BAND_METHODS = ("qr", "cqr", "spci", "spci_b", "spci_w", "ens")
 # The configuration the site publishes, which every variant here is trying to beat
-SHIPPED = {"pf": "pf_lp_vint", "naive": "naive_lp_shrink0.5_bid_vint", "ml": "ml_lp_shrink0.5_bid_vint"}
+# Recovery credit is part of it from 2026-09-24, so a variant compared against these
+# needs "recany" in its spec to run on the same dispatch engine
+SHIPPED = {"pf": "pf_lp_recany_vint", "naive": "naive_lp_shrink0.5_recany_bid_vint",
+           "ml": "ml_lp_shrink0.5_recany_bid_vint"}
+
+
+def dispatch_tag(name: str) -> str | None:
+    """The recovery-credit or margin tag in a run name: runs compare only within one."""
+    return next((tag for tag in ("recany", "rec", "margin") if tag in name.split("_")), None)
 
 
 def parse_run(spec: str) -> tuple:
@@ -242,7 +250,7 @@ def foresight(rows: dict, valuation_key: str, half: str) -> float | None:
     # Recovery credit and the block-start margin are dispatch changes it shares, so its
     # ceiling carries the same tag.
     parts = valuation_key.split("_")
-    credit = next((tag for tag in ("recany", "rec", "margin") if tag in parts), None)
+    credit = dispatch_tag(valuation_key)
     pf_key = (parts[0] + (f"_{credit}" if credit else "")
               + ("_vint" if valuation_key.endswith("_vint") else ""))
     try:
@@ -288,9 +296,9 @@ def write_report(rows: dict, select_before: str, fingerprint: str, report: str =
                   "| Run | Δ net vs shipped (sel) | Δ net vs shipped (conf) | Foresight (sel) | Foresight (conf) |",
                   "|---|---|---|---|---|"]
         for name, row in rows.items():
-            # Recovery credit changes dispatch for every signal, so a credited run has
-            # its own naive and ceiling above; against the uncredited ones it would mix engines
-            if not name.startswith("ml_") or {"rec", "recany", "margin"} & set(name.split("_")):
+            # Recovery credit changes dispatch for every signal: only runs on the shipped
+            # dispatch engine are measured against the shipped naive and ceiling
+            if not name.startswith("ml_") or dispatch_tag(name) != dispatch_tag(SHIPPED["ml"]):
                 continue
             cells = []
             for half in ("selection", "confirmation"):

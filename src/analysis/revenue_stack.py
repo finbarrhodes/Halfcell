@@ -141,9 +141,11 @@ RECOVERY_CREDIT_MODES = (None, "reserve", "any")
 # half-hours then leaves no slack, and the block starts outside its requirement. With
 # credit, or block_start_margin alone, the plan meets each later block's start this
 # many half-hours of delivery inside it, at the recent 90th-percentile rate for what
-# is held. Chosen on 2024 Q1,
-# perfect foresight, as the most revenue with no more breaches than the uncredited
-# engine: one half-hour +9.1% and 4 breaches against 17, two +7.3% and none.
+# is held. One half-hour, the lightest margin tried, chosen on 2024 Q1 as the most
+# revenue with no more breaches than the uncredited engine (perfect foresight with the
+# offer shrink at 0.5, not the shipped setting). On the full window with the shipped
+# settings it removes 70-80% of breach periods for every signal, credited or not, so
+# a wider one is not needed (reports/offer_valuation_margin.md).
 RECOVERY_BOUNDARY_MARGIN_PERIODS = 1
 RECOVERY_BOUNDARY_QUANTILE = 0.9
 
