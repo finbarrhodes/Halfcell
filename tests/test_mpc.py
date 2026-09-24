@@ -154,3 +154,55 @@ def test_a_trade_cost_keeps_a_price_blind_plan_to_the_energy_its_requirement_nee
                     return_plan=True, trade_cost_per_mwh=1.0)
     assert out["p_chg"].sum() * DT * ETA == pytest.approx(10.0, rel=1e-3)
     assert out["p_dis"].sum() == pytest.approx(0.0, abs=1e-5)
+
+
+# --- Credited recovery through the reserve --------------------------------------
+
+def _reserve_only(prices, *, soc0=50.0, reserve=20.0, allowance=(0.0, 0.0), hi=E, lo=0.0):
+    """No trading power at all: anything that moves goes through the Reserved Capacity."""
+    prices = np.asarray(prices, dtype=float)
+    n = len(prices)
+    return solve_mpc(soc0, prices, np.zeros(n), lo, hi, E, ETA, WEAR, horizon=n,
+                     charge_mw_schedule=np.zeros(n), return_plan=True,
+                     reserve_dis_mw=np.full(n, reserve), reserve_chg_mw=np.full(n, reserve),
+                     recovery_allowance=allowance)
+
+
+def test_credited_recovery_with_nothing_delivered_moves_nothing():
+    """The reserve must not become trading capacity: a wide spread and no allowance moves no energy."""
+    out = _reserve_only([10.0] * 4 + [300.0] * 4)
+    moved = out["r_dis"].sum() + out["r_chg"].sum() + out["c_dis"].sum() + out["c_chg"].sum()
+    assert moved == pytest.approx(0.0, abs=1e-5)
+
+
+def test_credited_recovery_moves_no_more_than_its_allowance():
+    """Selling pays, and the reserve has room for 40 MWh; the allowance says 5."""
+    out = _reserve_only([200.0] * 8, allowance=(5.0, 0.0))
+    assert out["c_dis"].sum() * DT == pytest.approx(5.0, rel=1e-3)
+    assert out["r_dis"].sum() == pytest.approx(0.0, abs=1e-5)   # nothing else earns, so nothing else moves
+
+
+def test_credited_recovery_waits_for_the_dear_periods():
+    """6 MWh to sell and no requirement pressing: it goes in the dear half, not the cheap one."""
+    out = _reserve_only([50.0] * 4 + [200.0] * 4, allowance=(6.0, 0.0))
+    assert out["c_dis"][:4].sum() == pytest.approx(0.0, abs=1e-5)
+    assert out["c_dis"][4:].sum() * DT == pytest.approx(6.0, rel=1e-3)
+
+
+def test_credited_recovery_buys_back_at_the_cheapest_prices():
+    """5 MWh of store to restore: bought when the price is negative, and no more than that."""
+    out = _reserve_only([-20.0] * 4 + [100.0] * 4, allowance=(0.0, 5.0))
+    assert ETA * out["c_chg"][:4].sum() * DT == pytest.approx(5.0, rel=1e-3)
+    assert out["c_chg"][4:].sum() == pytest.approx(0.0, abs=1e-5)
+
+
+def test_reserve_flows_can_be_reported_without_crediting_them():
+    """return_reserve adds the period-0 reserve MWh to the result and changes nothing else."""
+    lo = np.array([0.0, 60.0])
+    plain = solve_mpc(50.0, np.array([80.0]), np.zeros(1), lo, E, E, ETA, WEAR, horizon=1,
+                      charge_mw_schedule=np.zeros(1), reserve_chg_mw=np.array([40.0]))
+    e_dis, e_chg, res_dis, res_chg = solve_mpc(50.0, np.array([80.0]), np.zeros(1), lo, E, E, ETA, WEAR,
+                                               horizon=1, charge_mw_schedule=np.zeros(1),
+                                               reserve_chg_mw=np.array([40.0]), return_reserve=True)
+    assert (e_dis, e_chg) == pytest.approx(plain)
+    assert res_chg == pytest.approx(e_chg) and res_dis == pytest.approx(0.0, abs=1e-6)

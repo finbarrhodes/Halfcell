@@ -133,6 +133,19 @@ OFFER_VALUATIONS = ("formula", "lp")
 # price-taker cannot. Chosen 2026-09-15; re-clearing real order books would replace it.
 AUCTION_SHARE_CAP = 0.20
 
+# How recovery through the Reserved Capacity is credited in dispatch; see run_dispatch.
+# None leaves it uncredited, as published.
+RECOVERY_CREDIT_MODES = (None, "reserve", "any")
+# Recovery that earns at the price waits for a good one, and so runs the store close
+# to the headroom a new block restores; delivery above its recent average in the last
+# half-hours then leaves no slack, and the block starts outside its requirement. With
+# credit, the plan meets each later block's start this many half-hours of delivery
+# inside it, at the recent 90th-percentile rate for what is held. Chosen on 2024 Q1,
+# perfect foresight, as the most revenue with no more breaches than the uncredited
+# engine: one half-hour +9.1% and 4 breaches against 17, two +7.3% and none.
+RECOVERY_BOUNDARY_MARGIN_PERIODS = 1
+RECOVERY_BOUNDARY_QUANTILE = 0.9
+
 # Offers price delivery on what an operator knows at the bid deadline: delivery over
 # the previous four weeks and prices over the previous week, each ending on the last
 # complete day before 14:00 on D-1.
@@ -873,6 +886,43 @@ def ancillary_revenue_by_block(
 # Stage 2 — dispatch around the commitments
 # ---------------------------------------------------------------------------
 
+
+def _reserve_diagnostics(energy_rows: list, efficiency_rt: float) -> dict:
+    """
+    How much of dispatch ran through the Reserved Capacity, and at what prices.
+
+    Before EAC there is no reserve. After it, where Low holdings and the reserve for
+    High ones take the whole discharge rating, the reserve is the only way out for
+    energy High products absorb, and an uncredited reserve sells it whatever the
+    price. These make that visible in every run: the reserve's share of discharge,
+    the energy it moved against the energy High delivery put into the store, and the
+    average price each route sold and bought at. Ratios and prices, so the
+    availability factor applied to the money leaves them unchanged.
+    """
+    if not energy_rows or "reserve_dis_mwh" not in energy_rows[0]:
+        return {}
+    rows = pd.DataFrame(energy_rows)
+    price = rows["price_gbp_per_mwh"].to_numpy()
+    res_out, res_in = rows["reserve_dis_mwh"].to_numpy(), rows["reserve_chg_mwh"].to_numpy()
+    trade_out = np.clip(rows["mwh_cycled"].to_numpy() - res_out, 0.0, None)
+    trade_in = np.clip(rows["mwh_charged"].to_numpy() - res_in, 0.0, None)
+
+    def mean_price(mwh: np.ndarray):
+        total = mwh.sum()
+        return round(float(np.where(mwh > 0, price * mwh, 0.0).sum() / total), 2) if total > 1e-9 else None
+
+    out_all = res_out.sum() + trade_out.sum()
+    absorbed = efficiency_rt * rows["delivery_in_mwh"].sum()
+    return {
+        "reserve_discharge_share": round(float(res_out.sum() / out_all), 4) if out_all > 1e-9 else None,
+        "reserve_to_absorbed":     round(float(res_out.sum() / absorbed), 4) if absorbed > 1e-9 else None,
+        "reserve_sell_price":      mean_price(res_out),
+        "reserve_buy_price":       mean_price(res_in),
+        "trading_sell_price":      mean_price(trade_out),
+        "trading_buy_price":       mean_price(trade_in),
+    }
+
+
 def run_dispatch(
     apx_by_date: dict,
     battery: BatterySpec,
@@ -888,6 +938,7 @@ def run_dispatch(
     forecast_vintages: bool = False,
     early_forecast_prices_by_date: dict | None = None,
     dispatch_smoothing: int = 0,
+    credit_recovery: str | None = None,
 ) -> tuple[list, list, dict]:
     """
     Rolling MPC dispatch over every settlement period, around FR commitments.
@@ -924,6 +975,16 @@ def run_dispatch(
     ignores prices and trades only to keep state of energy where its contracts
     need it, at a small cost per MWh so it moves no more energy than it must.
 
+    credit_recovery lets recovery through the Reserved Capacity earn at the price,
+    so it can wait for a good one (mpc.solve_mpc's recovery_allowance). What it
+    may move is kept in an account per side: energy delivery has put in play in
+    a period the reserve could serve, less what has since been recovered. Which
+    MWh left the store is unknowable, so the account comes in two readings that
+    bracket the answer. "reserve" spends it only on energy moved through the
+    reserve, so trading that sells absorbed energy leaves the allowance standing;
+    "any" treats delivered energy as leaving first by whatever route, so every
+    trade spends it. None, the default, leaves the reserve uncredited.
+
     Trades execute at actual prices. Per-period revenue can be negative when a
     forecast misleads, or when recovering delivered energy costs money; both are
     realistic outcomes.
@@ -952,6 +1013,8 @@ def run_dispatch(
 
     if (scheduler is None) == (schedule is None):
         raise ValueError("pass exactly one of scheduler or schedule")
+    if credit_recovery not in RECOVERY_CREDIT_MODES:
+        raise ValueError(f"credit_recovery must be one of {RECOVERY_CREDIT_MODES}, got {credit_recovery!r}")
 
     P, E = battery.power_mw, battery.energy_mwh
     eta, wear = battery.efficiency_rt, battery.cycling_cost_per_mwh
@@ -993,6 +1056,11 @@ def run_dispatch(
     cumulative = np.vstack([np.zeros(len(DELIVERY_COLUMNS)), np.cumsum(per_mw, axis=0)])
     lookback = np.minimum(np.arange(n), DELIVERY_PLANNING_WINDOW)
     recent_per_mw = (cumulative[np.arange(n)] - cumulative[np.arange(n) - lookback]) / np.maximum(lookback, 1)[:, None]
+    # ... and its recent high quantile, for the margin credited recovery keeps at block starts
+    recent_burst_per_mw = (
+        pd.DataFrame(per_mw).rolling(DELIVERY_PLANNING_WINDOW, min_periods=1)
+        .quantile(RECOVERY_BOUNDARY_QUANTILE).shift(1).fillna(0.0).to_numpy()
+        if credit_recovery is not None else None)
 
     # Running Minimum State of Energy Requirement per direction, and its adjustments
     need_lo, need_hi = np.zeros(n), np.zeros(n)
@@ -1085,6 +1153,10 @@ def run_dispatch(
     tol_mwh = 1e-3
     soc = initial_soc_frac * E
     energy_rows, soc_traj, breaches = [], [], {}
+    # Delivered energy not yet recovered, in MWh of store: absorbed by High products
+    # (to take out) and given away by Low ones (to put back). See credit_recovery.
+    credit = credit_recovery is not None and price_seeking
+    allow_out = allow_in = 0.0
 
     for i, (d, sp) in enumerate(periods):
         for day in known_at.get(i, ()):
@@ -1114,7 +1186,7 @@ def run_dispatch(
         if held[i] and (soc < need_lo[i] - tol_mwh or soc > E - need_hi[i] + tol_mwh):
             breaches[blocks[i]] = breaches.get(blocks[i], 0) + 1
 
-        e_dis = e_chg = 0.0
+        e_dis = e_chg = res_dis = res_chg = 0.0
         if not np.isnan(actual[i]):
             h_end = min(i + horizon, n, plan_limit[i]) if forecast_vintages else min(i + horizon, n)
             idx = np.arange(i, h_end)
@@ -1129,9 +1201,16 @@ def run_dispatch(
             later = block_start[points] != block_start[i]
             lo = np.where(later, lo + np.concatenate([[0.0], np.cumsum(expected_out)]), lo)
             hi = np.where(later, hi - eta * np.concatenate([[0.0], np.cumsum(expected_in)]), hi)
+            if credit and RECOVERY_BOUNDARY_MARGIN_PERIODS > 0:
+                starts = later & (block_start[points] == points)
+                k = RECOVERY_BOUNDARY_MARGIN_PERIODS
+                burst_out = k * (q_low_by_period[points] @ recent_burst_per_mw[i, _LOW_COLUMNS])
+                burst_in = k * eta * (q_high_by_period[points] @ recent_burst_per_mw[i, _HIGH_COLUMNS])
+                lo = np.where(starts, lo + burst_out, lo)
+                hi = np.where(starts, hi - burst_in, hi)
             # Reserved Capacity is held for energy recovery (SOE guidance), so every
             # period of the plan may use it to keep a requirement reachable
-            e_dis, e_chg = solve_mpc(
+            e_dis, e_chg, res_dis, res_chg = solve_mpc(
                 soc_current=soc,
                 price_forecast=(np.nan_to_num(plan_prices(i, idx), nan=0.0) if price_seeking
                                 else np.zeros(len(idx))),
@@ -1146,6 +1225,8 @@ def run_dispatch(
                 trade_cost_per_mwh=0.0 if price_seeking else RECOVERY_TRADE_COST_GBP_PER_MWH,
                 reserve_dis_mw=reserve_out[idx],
                 reserve_chg_mw=reserve_in[idx],
+                recovery_allowance=(allow_out, allow_in) if credit else None,
+                return_reserve=True,
             )
 
         out, into = delivered_out[i], delivered_in[i]
@@ -1157,8 +1238,19 @@ def run_dispatch(
                 "mwh_cycled":                e_dis,
                 "delivery_mwh":              out,
                 "delivery_cycling_cost_gbp": wear * out,
+                "delivery_in_mwh":           into,
+                "mwh_charged":               e_chg,
+                "price_gbp_per_mwh":         actual[i],
+                "reserve_dis_mwh":           res_dis,
+                "reserve_chg_mwh":           res_chg,
+                "reserve_revenue_gbp":       actual[i] * (res_dis - res_chg) if (res_dis > 0 or res_chg > 0) else 0.0,
             })
         soc = float(np.clip(soc - e_dis + eta * e_chg - out + eta * into, 0.0, E))
+        if credit:
+            # Only delivery the reserve could serve earns an allowance: none before EAC
+            spent_out, spent_in = (res_dis, res_chg) if credit_recovery == "reserve" else (e_dis, e_chg)
+            allow_out = min(E, max(0.0, allow_out + (eta * into if reserve_out[i] > 0 else 0.0) - spent_out))
+            allow_in = min(E, max(0.0, allow_in + (out if reserve_in[i] > 0 else 0.0) - eta * spent_in))
 
         nxt = min(i + 1, n - 1)
         if nxt != i:
@@ -1196,6 +1288,7 @@ def run_strategy(
     guard_high_by_date: dict | None = None,
     plan_smoothing: int = 0,
     dispatch_smoothing: int = 0,
+    credit_recovery: str | None = None,
 ) -> dict:
     """
     The shared engine behind every strategy: schedule, dispatch, settle.
@@ -1252,6 +1345,7 @@ def run_strategy(
             forecast_vintages=forecast_vintages,
             early_forecast_prices_by_date=early_forecast_prices_by_date,
             dispatch_smoothing=dispatch_smoothing,
+            credit_recovery=credit_recovery,
         )
     else:
         energy_rows, soc_traj, breaches = [], [], {}
@@ -1301,6 +1395,8 @@ def run_strategy(
         "guard_bands":         bool(guard_low_by_date) and include_arbitrage,
         "plan_smoothing":      plan_smoothing,
         "dispatch_smoothing":  dispatch_smoothing,
+        "credit_recovery":     credit_recovery,
+        **_reserve_diagnostics(energy_rows, battery.efficiency_rt),
     }
     result = _build_result(anc_wide, imb_wide, battery, avg_fr_mw, avg_arb_mw, soc_traj, extras,
                            days_covered=len(dates))
@@ -1325,6 +1421,7 @@ def run_backtest(
     offer_valuation: str = "formula",
     price_shrink: float = 1.0,
     forecast_vintages: bool = False,
+    credit_recovery: str | None = None,
 ) -> dict:
     """
     Perfect-foresight revenue backtest: actual day-D prices are the signal.
@@ -1347,6 +1444,8 @@ def run_backtest(
     offer_valuation, price_shrink : how offers price trading; see run_strategy
     forecast_vintages : end each dispatch plan after tomorrow, as the forecast
                     strategies must; see run_strategy
+    credit_recovery : let recovery through the Reserved Capacity earn at the price,
+                    within what delivery has put in play; see run_dispatch
 
     Returns
     -------
@@ -1364,6 +1463,7 @@ def run_backtest(
         include_arbitrage=include_arbitrage, pre_eac_rule=pre_eac_rule, delivery=delivery,
         offer_valuation=offer_valuation, price_shrink=price_shrink,
         forecast_vintages=forecast_vintages,
+        credit_recovery=credit_recovery,
     )
 
 

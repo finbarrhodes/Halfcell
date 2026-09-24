@@ -17,6 +17,8 @@ from scripts.compare_offer_valuation import parse_run, run_name
     ("ml:lp:0.5:spci:0.2:bid:vint", "ml_lp_shrink0.5_spci0.2_bid_vint"),
     ("ml:lp:1:spci_b:0.1:bid:vint", "ml_lp_spci_b0.1_bid_vint"),
     ("pf:lp:1:qr:0.2:vint", "pf_lp_vint"),                           # perfect foresight has no band
+    ("pf:lp:1:rec:vint", "pf_lp_rec_vint"),                          # but recovery credit is dispatch
+    ("ml:lp:0.5:recany:bid:vint", "ml_lp_shrink0.5_recany_bid_vint"),
 ])
 def test_specs_name_the_run_they_describe(spec, name):
     assert run_name(*parse_run(spec)) == name
