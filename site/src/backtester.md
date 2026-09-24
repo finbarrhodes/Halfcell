@@ -9,8 +9,8 @@ The walkthrough below follows a single winter day — 8 January 2026 — from th
 curve through to the dispatch the model settles on. Scroll, or select any step directly.
 
 ```js
-import {SERVICE_COLOURS, SERVICE_LABELS, STRATEGY_LABELS, gbp} from "./components/theme.js";
-import {choiceGroup, controlPanel, dateRange, slider} from "./components/controls.js";
+import {SERVICE_COLOURS, SERVICE_LABELS, STRATEGY_COLOURS, STRATEGY_LABELS, gbp} from "./components/theme.js";
+import {choiceGroup, controlPanel, dateRange, dayViews, slider} from "./components/controls.js";
 
 const manifest = await FileAttachment("data/manifest.json").json();
 const revenueAll = (await FileAttachment("data/revenue-monthly.parquet").parquet())
@@ -432,7 +432,12 @@ Each bar shows gross revenue by stream for that month (positive) and cycling wea
 (negative, dark red). Net revenue is the algebraic sum of all segments — months with
 heavier arbitrage dispatch carry larger cycling deductions.
 
-### Average weekly SoC profile
+### State of charge: single days, and the average week
+
+```js
+const socDaysTable = await FileAttachment("data/soc-days.parquet").parquet();
+const dayPricesTable = await FileAttachment("data/day-prices.parquet").parquet();
+```
 
 ```js
 // Recombine the pre-aggregated sufficient statistics over the selected months.
@@ -456,35 +461,183 @@ const socWeek = (() => {
 })();
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-
-display(resize((width) => scenarioPick !== "full"
-  ? html`<i>The state-of-charge profile is shown for the FR + arbitrage run, where dispatch is simulated.</i>`
-  : Plot.plot({
-  width, height: 340, marginLeft: 55, marginRight: 55,
-  x: {label: "Day of week", ticks: d3.range(7).map((d) => d * 48),
-      tickFormat: (d) => DAYS[d / 48], domain: [0, 336]},
-  y: {label: "State of charge", domain: [0, 1], tickFormat: ".0%", grid: true},
-  marks: [
-    // Average range the FR contracts required at each point in the week
-    Plot.areaY(socWeek, {x: "period", y1: "reqLo", y2: "reqHi", fill: "#0D7680", fillOpacity: 0.08}),
-    Plot.line(socWeek, {x: "period", y: "reqLo", stroke: "#0D7680", strokeDasharray: "4 3", strokeWidth: 1}),
-    Plot.line(socWeek, {x: "period", y: "reqHi", stroke: "#0D7680", strokeDasharray: "4 3", strokeWidth: 1}),
-    Plot.ruleX(d3.range(1, 7).map((d) => d * 48), {stroke: "grey", strokeOpacity: 0.3, strokeDasharray: "2 3"}),
-    Plot.areaY(socWeek, {x: "period", y1: "lo", y2: "hi", fill: "#C9400A", fillOpacity: 0.12}),
-    Plot.line(socWeek, {x: "period", y: "mean", stroke: "#C9400A", strokeWidth: 2}),
-    Plot.tip(socWeek, Plot.pointerX({
-      x: "period", y: "mean",
-      title: (d) => `${DAYS[Math.floor(d.period / 48)]} SP ${(d.period % 48) + 1}\nmean ${(d.mean * 100).toFixed(1)}%\n±1 sd ${(d.lo * 100).toFixed(1)}–${(d.hi * 100).toFixed(1)}%\nrequired ${(d.reqLo * 100).toFixed(0)}–${(d.reqHi * 100).toFixed(0)}% (avg)`,
-    })),
-  ],
-})));
 ```
 
+```js
+// The day tables, read once as typed columns. soc-days.parquet is sorted by
+// strategy, day and period with exactly 48 rows per day, so the start of each
+// day's block is all the index a lookup needs.
+const SOC_STEPS = 250;                                   // as encoded by the loader
+const STRATEGY_CODES = ["pf_mpc", "naive_mpc", "ml_mpc"];
+const socCol = socDaysTable.getChild("soc").toArray();
+const loCol = socDaysTable.getChild("lo").toArray();
+const hiCol = socDaysTable.getChild("hi").toArray();
+
+const dayStart = (() => {
+  const strategies = socDaysTable.getChild("strategy").toArray();
+  const days = socDaysTable.getChild("day").toArray();
+  const index = new Map();
+  for (let i = 0; i < days.length; i += 48) index.set(`${STRATEGY_CODES[strategies[i]]}|${days[i]}`, i);
+  return index;
+})();
+
+const priceByDay = (() => {
+  const days = dayPricesTable.getChild("day").toArray();
+  const sps = dayPricesTable.getChild("sp").toArray();
+  const prices = dayPricesTable.getChild("price").toArray();
+  const out = new Map();
+  for (let i = 0; i < days.length; i++) {
+    let row = out.get(days[i]);
+    if (!row) out.set(days[i], (row = new Array(48).fill(null)));
+    row[sps[i] - 1] = prices[i];
+  }
+  return out;
+})();
+
+const dayNumber = (date) => Math.round(date.getTime() / 864e5);
+const fmtDay = d3.utcFormat("%a %-d %b %Y");
+// Settlement period 1 starts at 23:00 the evening before the service day.
+const clockAt = (sp) => {
+  const minutes = ((sp - 1) * 30 + 23 * 60) % 1440;
+  return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+};
+```
+
+```js
+// Days worth opening on. Each is picked for what it shows rather than for being
+// typical, and the free date box below reaches the rest of the backtest.
+const socViews = [
+  {key: "solar", label: "A solar trough", date: new Date("2026-05-17"),
+   note: "Sun 17 May 2026 · £55 at 14:00, £141 at 18:00"},
+  {key: "spike", label: "An evening spike", date: new Date("2025-09-08"),
+   note: "Mon 8 Sep 2025 · £250 at 18:00"},
+  {key: "negative", label: "Paid to charge", date: new Date("2026-04-07"),
+   note: "Tue 7 Apr 2026 · −£57 at midday"},
+  {key: "week", label: "Average week", note: "Mean and spread across every week"},
+  {key: "any", label: "Any other day", date: new Date("2026-05-17"), note: "Set the date below"},
+];
+const socViewPicker = dayViews(socViews, {min: bounds[0], max: bounds[1],
+                                          value: socViews[0], label: "State of charge view"});
+const socView = Generators.input(socViewPicker);
+```
+
+```js
+function dayRows(key, date) {
+  const start = dayStart.get(`${key}|${dayNumber(date)}`);
+  if (start === undefined) return null;
+  const prices = priceByDay.get(dayNumber(date)) ?? [];
+  return d3.range(48).map((k) => ({
+    sp: k + 1,
+    strategy: STRATEGY_LABELS[key],
+    soc: socCol[start + k] / SOC_STEPS,
+    lo: loCol[start + k] / SOC_STEPS,
+    hi: hiCol[start + k] / SOC_STEPS,
+    price: prices[k],
+  }));
+}
+
+const strategyDomain = STRATEGY_CODES.map((k) => STRATEGY_LABELS[k]);
+const strategyRange = STRATEGY_CODES.map((k) => STRATEGY_COLOURS[k]);
+
+function weekChart(width) {
+  return Plot.plot({
+    width, height: 340, marginLeft: 55, marginRight: 55,
+    x: {label: "Day of week", ticks: d3.range(7).map((d) => d * 48),
+        tickFormat: (d) => DAYS[d / 48], domain: [0, 336]},
+    y: {label: "State of charge", domain: [0, 1], tickFormat: ".0%", grid: true},
+    marks: [
+      // Average range the FR contracts required at each point in the week
+      Plot.areaY(socWeek, {x: "period", y1: "reqLo", y2: "reqHi", fill: "#0D7680", fillOpacity: 0.08}),
+      Plot.line(socWeek, {x: "period", y: "reqLo", stroke: "#0D7680", strokeDasharray: "4 3", strokeWidth: 1}),
+      Plot.line(socWeek, {x: "period", y: "reqHi", stroke: "#0D7680", strokeDasharray: "4 3", strokeWidth: 1}),
+      Plot.ruleX(d3.range(1, 7).map((d) => d * 48), {stroke: "grey", strokeOpacity: 0.3, strokeDasharray: "2 3"}),
+      Plot.areaY(socWeek, {x: "period", y1: "lo", y2: "hi", fill: "#C9400A", fillOpacity: 0.12}),
+      Plot.line(socWeek, {x: "period", y: "mean", stroke: "#C9400A", strokeWidth: 2}),
+      Plot.tip(socWeek, Plot.pointerX({
+        x: "period", y: "mean",
+        title: (d) => `${DAYS[Math.floor(d.period / 48)]} SP ${(d.period % 48) + 1}\nmean ${(d.mean * 100).toFixed(1)}%\n±1 sd ${(d.lo * 100).toFixed(1)}–${(d.hi * 100).toFixed(1)}%\nrequired ${(d.reqLo * 100).toFixed(0)}–${(d.reqHi * 100).toFixed(0)}% (avg)`,
+      })),
+    ],
+  });
+}
+
+function dayChart(date, width) {
+  const chosen = dayRows(strategyPick, date);
+  if (!chosen) return html`<i>No dispatch for ${fmtDay(date)} — the backtest runs
+    ${fmtDay(bounds[0])} to ${fmtDay(bounds[1])}.</i>`;
+  const others = STRATEGY_CODES.filter((k) => k !== strategyPick)
+    .flatMap((k) => dayRows(k, date) ?? []);
+
+  // Price shares the state-of-charge axis, squeezed into it and read off on the
+  // right. Its own scale is nice()d so the right-hand ticks land on round money.
+  const shown = chosen.filter((d) => d.price != null);
+  const priceScale = shown.length
+    ? d3.scaleLinear(d3.extent(shown, (d) => d.price), [0.04, 0.96]).nice()
+    : null;
+
+  return Plot.plot({
+    width, height: 340, marginLeft: 55, marginRight: 55,
+    x: {label: "Settlement period", domain: [1, 48], ticks: [1, 12, 24, 36, 48]},
+    y: {label: "State of charge", domain: [0, 1], tickFormat: ".0%", grid: true},
+    color: {domain: strategyDomain, range: strategyRange, legend: true},
+    marks: [
+      Plot.ruleX([8.5, 16.5, 24.5, 32.5, 40.5], {stroke: "#9C948E", strokeOpacity: 0.5, strokeDasharray: "3 3"}),
+      // What that day's contracts required: response energy in store, headroom above
+      Plot.areaY(chosen, {x: "sp", y1: "lo", y2: "hi", curve: "step-after", fill: "#0D7680", fillOpacity: 0.1}),
+      Plot.line(chosen, {x: "sp", y: "lo", curve: "step-after", stroke: "#0D7680",
+                         strokeDasharray: "4 3", strokeWidth: 1, strokeOpacity: 0.6}),
+      Plot.line(chosen, {x: "sp", y: "hi", curve: "step-after", stroke: "#0D7680",
+                         strokeDasharray: "4 3", strokeWidth: 1, strokeOpacity: 0.6}),
+      // Context, not a fourth trace: light enough to read behind the dispatch
+      priceScale ? Plot.line(shown, {x: "sp", y: (d) => priceScale(d.price), stroke: "#9C948E",
+                                     strokeWidth: 1, strokeOpacity: 0.9}) : null,
+      // An explicit axis mark for the price suppresses Plot's implicit one, so the
+      // state-of-charge axis has to be asked for by name as well.
+      Plot.axisY({anchor: "left", label: "State of charge", tickFormat: ".0%"}),
+      priceScale ? Plot.axisY(priceScale.ticks(5).map(priceScale), {anchor: "right", label: "£/MWh (wholesale)",
+                                     tickFormat: (v) => d3.format(",.0f")(priceScale.invert(v))}) : null,
+      Plot.line(others, {x: "sp", y: "soc", stroke: "strategy", strokeWidth: 1, strokeOpacity: 0.45}),
+      Plot.line(chosen, {x: "sp", y: "soc", stroke: "strategy", strokeWidth: 2.6}),
+      Plot.tip(chosen, Plot.pointerX({
+        x: "sp", y: "soc",
+        title: (d) => [`SP ${d.sp} · ${clockAt(d.sp)}`,
+                       d.price == null ? "no price" : `wholesale £${d.price}/MWh`,
+                       `${STRATEGY_LABELS[strategyPick]} ${(d.soc * 100).toFixed(0)}%`,
+                       `required ${(d.lo * 100).toFixed(0)}–${(d.hi * 100).toFixed(0)}%`].join("\n"),
+      })),
+    ],
+  });
+}
+```
+
+<div class="soc-view">
+  <div class="card">${scenarioPick !== "full"
+    ? html`<i>The state-of-charge profile is shown for the FR + arbitrage run, where dispatch is simulated.</i>`
+    : resize((width) => socView.date ? dayChart(socView.date, width) : weekChart(width))}</div>
+  <div>${scenarioPick === "full" ? socViewPicker : ""}</div>
+</div>
+
+```js
+const socOutsideRange = socView.date &&
+  (d3.utcMonth.floor(socView.date) < fromMonth || d3.utcMonth.floor(socView.date) > toMonth);
+
+display(scenarioPick !== "full" ? html`` : socView.date ? html`<p>
+<b>${d3.utcFormat("%A %-d %B %Y")(socView.date)}</b>. The heavy line is the state of charge the
+${STRATEGY_LABELS[strategyPick]} run held through the day; the other two strategies are drawn
+faintly behind it, so where they part is where the price signal changed the dispatch. The teal
+band is the range that day's frequency response contracts required — at least the Low products'
+response energy in store, at least the High products' as headroom — and it steps at the EFA
+block boundaries, where the allocation changes and the running requirement resets. The grey line
+is the wholesale price, read on the right. Periods are numbered from the start of NESO's service
+day, so period 1 is 23:00 the evening before.${socOutsideRange
+  ? html` This day sits outside the date range set above, which the other figures follow.` : ""}</p>`
+: html`<p>
 Mean state of charge at each half-hour of an average week across the selected months. The
 orange band is ±1 standard deviation across weeks. The teal band is the average range the
 battery's FR contracts required at that point in the week: at least the Low products'
 response energy in store, and at least the High products' as headroom. Individual days
-require narrower, shifting ranges that averaging smooths out.
+require narrower, shifting ranges that averaging smooths out.</p>`);
+```
 
 The traces include the energy the battery delivers when its contracts are called on, worked
 out from GB frequency second by second, and the trades it makes to recover that energy.
