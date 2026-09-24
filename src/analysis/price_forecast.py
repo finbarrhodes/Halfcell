@@ -490,6 +490,7 @@ def run_forecast_backtest(
     guard_alpha: float | None = None,
     guard_group: str = "period",
     guard_window_days: int | None = None,
+    guard_bands: tuple | None = None,
     plan_smoothing: int = 0,
     dispatch_smoothing: int = 0,
 ) -> dict:
@@ -547,6 +548,9 @@ def run_forecast_backtest(
                        capacity (src/analysis/intervals.py). None plans on the forecast
     guard_group     : which calibration sets the bands come from: "period", "block" or "day"
     guard_window_days: calibrate on a trailing window rather than all history
+    guard_bands     : bands built elsewhere, as (low_by_date, high_by_date) - quantile,
+                       CQR or SPCI bands (src/analysis/intervals.py, spci.py) - used in
+                       place of the split conformal ones guard_alpha would build
     plan_smoothing  : half-hours to smooth the offer plan's forecast over
     dispatch_smoothing: the same for dispatch's own rolling plan, where the trade is
                        actually committed (revenue_stack.run_dispatch)
@@ -616,7 +620,9 @@ def run_forecast_backtest(
         shrink_by_date = {d: w for d, w in shrink_by_date.items() if _in_range(d, start_date, end_date)}
 
     guard_low = guard_high = None
-    if include_arbitrage and guard_alpha:
+    if include_arbitrage and guard_bands is not None:
+        guard_low, guard_high = guard_bands[0], guard_bands[1]
+    elif include_arbitrage and guard_alpha:
         from src.analysis.intervals import walk_forward_bands
 
         banded = (early_predictions if offer_information == "bid_time" else predictions)

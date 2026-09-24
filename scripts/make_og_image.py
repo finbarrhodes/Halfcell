@@ -12,7 +12,6 @@ Run from the project root:
     python scripts/make_og_image.py
 """
 
-import json
 from pathlib import Path
 
 import matplotlib
@@ -26,7 +25,7 @@ CACHE = ROOT / "data" / "cache"
 OUT = ROOT / "site" / "static" / "og-image.png"
 
 # Matches src/style.css
-PAPER, PAPER_DEEP = "#FFF1E5", "#F2E5D7"
+PAPER = "#FFF1E5"
 INK, INK_SOFT = "#33302E", "#66605C"
 TEAL, GREEN, ORANGE = "#0D7680", "#4E8A3C", "#C9400A"
 RULE = "#E0D3C4"
@@ -40,10 +39,6 @@ def _cumulative(key):
 
 
 def main() -> None:
-    manifest = json.loads((CACHE / "manifest.json").read_text())
-    ml = manifest["ml_mpc"]
-    params, summary = ml["params"], ml["summary"]
-
     # 1200x630 is the size every major unfurler crops to
     fig = plt.figure(figsize=(12, 6.3), dpi=100)
     fig.patch.set_facecolor(PAPER)
@@ -55,7 +50,9 @@ def main() -> None:
     fig.add_artist(plt.Line2D([0.055, 0.945], [0.735, 0.735],
                               color=RULE, linewidth=1.2, transform=fig.transFigure))
 
-    ax = fig.add_axes([0.075, 0.20, 0.53, 0.48])
+    # Full-width chart — this card is deliberately just the headline plot,
+    # not a stats dashboard: fewer numbers to go stale between deploys.
+    ax = fig.add_axes([0.055, 0.20, 0.89, 0.48])
     ax.set_facecolor(PAPER)
     for key, label, colour in SERIES:
         x, y = _cumulative(key)
@@ -72,21 +69,6 @@ def main() -> None:
         ax.spines[side].set_color(RULE)
     ax.grid(axis="y", color=RULE, linewidth=0.8)
     ax.set_axisbelow(True)
-
-    # Stat panel: the figures a reader would want off a preview card
-    stats = [
-        (f"£{summary['annualised_per_mw'] / 1e3:,.0f}k", "per MW per year, modelled"),
-        (f"{summary['years_covered']:.1f} yrs", f"backtested to {params['end_date']}"),
-        (f"{ml['model_metrics']['walk_forward']['n_samples']:,}", "out-of-sample observations"),
-    ]
-    panel_x, top = 0.665, 0.60
-    fig.patches.append(plt.Rectangle(
-        (panel_x - 0.025, 0.185), 0.305, 0.47, transform=fig.transFigure,
-        facecolor=PAPER_DEEP, edgecolor=RULE, linewidth=1))
-    for i, (value, caption) in enumerate(stats):
-        y = top - i * 0.145
-        fig.text(panel_x, y, value, fontsize=30, color=TEAL, family="serif")
-        fig.text(panel_x, y - 0.052, caption, fontsize=12, color=INK_SOFT)
 
     fig.text(0.055, 0.085, "halfcell.uk", fontsize=15, color=ORANGE, weight="bold")
     fig.text(0.945, 0.085, "NESO · Elexon · DESNZ open data",
