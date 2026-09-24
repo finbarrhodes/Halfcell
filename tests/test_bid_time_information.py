@@ -93,7 +93,9 @@ def _record_plans(monkeypatch):
 
     def fake_solve(**kwargs):
         plans.append(np.asarray(kwargs["price_forecast"], dtype=float))
-        return 0.0, 0.0
+        # As solve_mpc does: the reserve's MWh too when the caller keeps an account of them
+        reporting = kwargs.get("return_reserve") or kwargs.get("recovery_allowance") is not None
+        return (0.0, 0.0, 0.0, 0.0) if reporting else (0.0, 0.0)
 
     monkeypatch.setattr(mpc, "solve_mpc", fake_solve)
     return plans

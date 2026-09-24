@@ -488,3 +488,103 @@ def test_lp_valued_offers_keep_free_the_side_trading_needs_at_each_hour():
     assert formula.loc[morning, "q_DCH"].tolist() == pytest.approx(formula.loc[evening, "q_DCH"].tolist())
     assert lp.loc[morning, "q_DCH"].sum() < lp.loc[evening, "q_DCH"].sum()
     assert lp.loc[evening, "q_DCL"].sum() < lp.loc[morning, "q_DCL"].sum()
+
+
+def test_annualisation_divides_by_days_backtested_not_months_touched():
+    """
+    A window that starts or ends mid-month contributes a part-month of revenue.
+    Counting the months touched would divide that revenue by more time than it
+    earned in — the five-day window below spans one month, so a month-count
+    divisor would annualise it as a twelfth of a year instead of 5/365.25,
+    understating £/MW/yr by a factor of about 6.
+    """
+    auctions, market = _auctions({d: {"DCL": 10.0} for d in DAYS}), _market_index(DAYS)
+    summary = run_backtest(auctions, market, BATTERY)["summary"]
+
+    assert summary["days_covered"] == len(DAYS)
+    assert summary["years_covered"] == pytest.approx(len(DAYS) / 365.25, abs=0.005)
+    assert summary["annualised_net"] == pytest.approx(
+        summary["total_net"] / (len(DAYS) / 365.25), rel=1e-3)
+    assert summary["annualised_per_mw"] == pytest.approx(summary["annualised_net"] / P, rel=1e-3)
+
+
+# --- Credited recovery through the reserve ---------------------------------------------------
+
+def _dear_evening(day, cheap=40.0, dear=160.0):
+    """Cheap until SP32, dear after: somewhere worth waiting for."""
+    return {day: pd.Series([cheap] * 32 + [dear] * 16, index=range(1, 49))}
+
+
+def _absorbing(day, credit_recovery, *, dr_high=0.05, trade_mw=0.0):
+    """20 MW of DR High with its reserve, absorbing energy all day; no requirement presses."""
+    prices = _dear_evening(day)
+    rows, _, breaches = run_dispatch(prices, BATTERY, [day], prices,
+                                     schedule=_holding(day, trade_mw=trade_mw, DRH=20.0),
+                                     delivery=_delivery([day], dr_high=dr_high),
+                                     initial_soc_frac=0.5, credit_recovery=credit_recovery)
+    return pd.DataFrame(rows), breaches
+
+
+def test_uncredited_recovery_leaves_absorbed_energy_unsold():
+    rows, _ = _absorbing(pd.Timestamp("2026-03-02"), None)
+    assert rows["reserve_dis_mwh"].sum() == pytest.approx(0.0, abs=1e-3)   # interior-point residue only
+
+
+def test_credited_recovery_sells_absorbed_energy_when_it_is_dear_and_no_more_than_was_absorbed():
+    rows, _ = _absorbing(pd.Timestamp("2026-03-02"), "reserve")
+    cheap = rows["price_gbp_per_mwh"] < 100
+    assert rows.loc[cheap, "reserve_dis_mwh"].sum() == pytest.approx(0.0, abs=1e-4)
+    assert rows.loc[~cheap, "reserve_dis_mwh"].sum() > 1.0
+    absorbed = BATTERY.efficiency_rt * rows["delivery_in_mwh"].sum()
+    assert rows["reserve_dis_mwh"].sum() <= absorbed + 1e-6
+
+
+def test_with_nothing_delivered_crediting_recovery_changes_nothing():
+    """No delivery, no allowance: the reserve cannot become trading capacity."""
+    day = pd.Timestamp("2026-03-02")
+    plain, _ = _absorbing(day, None, dr_high=0.0)
+    credited, _ = _absorbing(day, "reserve", dr_high=0.0)
+    assert credited["reserve_dis_mwh"].sum() == pytest.approx(0.0, abs=1e-5)
+    assert credited["imbalance_revenue_gbp"].sum() == pytest.approx(plain["imbalance_revenue_gbp"].sum(), abs=1.0)
+
+
+def test_strict_accounting_lets_trading_spend_the_allowance():
+    """With trading power, 'any' counts trades as recovery first, so the reserve moves less."""
+    day = pd.Timestamp("2026-03-02")
+    loose, _ = _absorbing(day, "reserve", trade_mw=2.0)
+    strict, _ = _absorbing(day, "any", trade_mw=2.0)
+    assert strict["reserve_dis_mwh"].sum() < loose["reserve_dis_mwh"].sum() - 1e-3
+
+
+def test_an_unknown_recovery_credit_mode_is_refused():
+    day = pd.Timestamp("2026-03-02")
+    with pytest.raises(ValueError, match="credit_recovery"):
+        _absorbing(day, "sometimes")
+
+
+def test_the_block_start_margin_lowers_only_the_limit_at_each_later_block_start(monkeypatch):
+    """One half-hour of absorption at the recent 90th-percentile rate, at held blocks' starts only."""
+    import numpy as np
+    import src.optimisation.mpc as mpc
+    day = pd.Timestamp("2026-03-02")
+    flat = {day: pd.Series(80.0, index=range(1, 49))}
+    schedule = _holding(day, DRH=20.0)
+    schedule["soc_max_mwh"] = 70.0
+    real = mpc.solve_mpc
+
+    def planned_limits(margin):
+        seen = []
+
+        def spy(**kwargs):
+            seen.append(np.asarray(kwargs["soc_max"], dtype=float).copy())
+            return real(**kwargs)
+        monkeypatch.setattr(mpc, "solve_mpc", spy)
+        run_dispatch(flat, BATTERY, [day], flat, schedule=schedule,
+                     delivery=_delivery([day], dr_high=0.05), block_start_margin=margin)
+        return seen[10]                  # the plan made at SP11, with ten periods of delivery seen
+
+    lowered = planned_limits(False) - planned_limits(True)
+    starts = [4, 12, 20, 28]             # SP15, 23, 31 and 39, counted from SP11
+    np.testing.assert_allclose(lowered[starts], BATTERY.efficiency_rt * 20.0 * 0.05, rtol=1e-9)
+    # SP47 opens the next day's first block, which holds nothing, so it keeps no margin
+    np.testing.assert_allclose(np.delete(lowered, starts), 0.0, atol=1e-12)

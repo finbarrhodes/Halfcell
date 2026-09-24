@@ -16,7 +16,7 @@ either direction. That capability is what the frequency response markets buy and
 batteries' roles in the grids of the future will continue to grow. 
 
 ```js
-import {MARKET_COLOURS, EFA_BLOCKS, SERVICE_COLOURS, FUEL_COLOURS, rangeFor, rollingMean} from "./components/theme.js";
+import {EFA_BLOCKS, SERVICE_COLOURS, FUEL_COLOURS, rangeFor, rollingMean} from "./components/theme.js";
 import {choiceGroup} from "./components/controls.js";
 import {watchSteps} from "./components/scrolly.js";
 
@@ -33,6 +33,30 @@ const SERVICE_ORDER = ["DCH", "DCL", "DMH", "DML", "DRH", "DRL"];
 // The two auction rule changes that split the history (see Frequency Response)
 const EAC_GO_LIVE = new Date("2023-11-02");
 const RESERVE_RULE = new Date("2024-11-15");
+
+const PAIRS = [["DC", "DCH", "DCL"], ["DR", "DRH", "DRL"], ["DM", "DMH", "DML"]];
+
+// Join H against L on (date, EFA block); an inner join, so a block missing either
+// leg contributes no spread rather than a half-defined one
+const spreads = (() => {
+  const out = [];
+  const key = (d) => `${+d.date}|${d.efa}`;
+  for (const [market, hSvc, lSvc] of PAIRS) {
+    const H = new Map(auctions.filter((d) => d.service === hSvc).map((d) => [key(d), d]));
+    for (const l of auctions.filter((d) => d.service === lSvc)) {
+      const h = H.get(key(l));
+      if (h) out.push({market, date: l.date, efa: l.efa, spread: h.clearing_price - l.clearing_price});
+    }
+  }
+  return out;
+})();
+
+// Shares of blocks quoted in the text, recomputed on every refresh
+const shareOf = (rows, test) => Math.round(d3.mean(rows, (d) => (test(d) ? 1 : 0)) * 100);
+const lowAbove = Object.fromEntries(PAIRS.map(([m]) =>
+  [m, shareOf(spreads.filter((d) => d.market === m), (d) => d.spread < 0)]));
+const eacNegative = Object.fromEntries(SERVICE_ORDER.map((s) =>
+  [s, shareOf(auctions.filter((d) => d.service === s && d.date >= EAC_GO_LIVE), (d) => d.clearing_price < 0)]));
 ```
 
 ## The shift that created the market
@@ -343,41 +367,6 @@ function clearingChart({era, focus, zero}, width) {
 }
 ```
 
-### Price distribution
-
-<div class="grid grid-cols-2">
-  <div class="card">
-    <h3>By product</h3>
-    ${resize((width) => Plot.plot({
-      width, height: 360, marginLeft: 50,
-      x: {label: null, domain: SERVICE_ORDER},
-      y: {label: "£/MW/h", grid: true},
-      color: {domain: SERVICE_ORDER, range: SERVICE_ORDER.map((s) => SERVICE_COLOURS[s])},
-      marks: [
-        Plot.ruleY([0], {strokeOpacity: 0.3}),
-        Plot.boxY(auctions, {x: "service", y: "clearing_price", fill: "service"}),
-      ],
-    }))}
-    <p class="card-caption">DC Low has the widest spread of outcomes: it cleared highest in the
-    early market, and near the bottom since 2023.</p>
-  </div>
-  <div class="card">
-    <h3>By EFA block</h3>
-    ${resize((width) => Plot.plot({
-      width, height: 360, marginLeft: 50, marginBottom: 45,
-      x: {label: "EFA block", tickFormat: (d) => `EFA ${d}`},
-      y: {label: "£/MW/h", grid: true},
-      color: {domain: SERVICE_ORDER, range: SERVICE_ORDER.map((s) => SERVICE_COLOURS[s]), legend: true},
-      marks: [
-        Plot.ruleY([0], {strokeOpacity: 0.3}),
-        Plot.boxY(auctions, {x: "efa", y: "clearing_price", fill: "service"}),
-      ],
-    }))}
-    <p class="card-caption">The Low products clear highest in EFA 5 (15:00–19:00), across the
-    evening peak. Overnight EFA 1 is the cheapest block overall.</p>
-  </div>
-</div>
-
 ### Summary statistics
 
 ```js
@@ -408,181 +397,6 @@ discharge and charge headroom across the fleet is rarely symmetric.
 **Spread = H clearing price − L clearing price.** Positive means charge capacity was scarcer;
 negative means discharge capacity was scarcer. All three markets average negative, so the
 discharge leg is consistently the scarcer of the two.
-
-```js
-const PAIRS = [["DC", "DCH", "DCL"], ["DR", "DRH", "DRL"], ["DM", "DMH", "DML"]];
-
-// Join H against L on (date, EFA block); an inner join, so a block missing either
-// leg contributes no spread rather than a half-defined one
-const spreads = (() => {
-  const out = [];
-  const key = (d) => `${+d.date}|${d.efa}`;
-  for (const [market, hSvc, lSvc] of PAIRS) {
-    const H = new Map(auctions.filter((d) => d.service === hSvc).map((d) => [key(d), d]));
-    for (const l of auctions.filter((d) => d.service === lSvc)) {
-      const h = H.get(key(l));
-      if (h) out.push({market, date: l.date, efa: l.efa, spread: h.clearing_price - l.clearing_price});
-    }
-  }
-  return out;
-})();
-
-const drMean = d3.mean(spreads.filter((d) => d.market === "DR"), (d) => d.spread);
-
-// Shares of blocks quoted in the text, recomputed on every refresh
-const shareOf = (rows, test) => Math.round(d3.mean(rows, (d) => (test(d) ? 1 : 0)) * 100);
-const lowAbove = Object.fromEntries(PAIRS.map(([m]) =>
-  [m, shareOf(spreads.filter((d) => d.market === m), (d) => d.spread < 0)]));
-const highAbove = Object.fromEntries(PAIRS.map(([m]) =>
-  [m, shareOf(spreads.filter((d) => d.market === m), (d) => d.spread > 0)]));
-const eacNegative = Object.fromEntries(SERVICE_ORDER.map((s) =>
-  [s, shareOf(auctions.filter((d) => d.service === s && d.date >= EAC_GO_LIVE), (d) => d.clearing_price < 0)]));
-```
-
-### Daily average H − L spread over time
-
-```js
-const dailySpread = Array.from(
-  d3.rollup(spreads, (v) => d3.mean(v, (d) => d.spread), (d) => d.market, (d) => +d.date),
-  ([market, m]) => Array.from(m, ([date, spread]) => ({market, date: new Date(date), spread}))
-).flat();
-
-display(resize((width) => Plot.plot({
-  width, height: 400, marginLeft: 55, marginBottom: 36,
-  x: {label: null},
-  y: {label: "£/MW/h", grid: true},
-  color: {legend: true, domain: Object.keys(MARKET_COLOURS), range: Object.values(MARKET_COLOURS)},
-  marks: [
-    Plot.ruleY([0], {strokeDasharray: "4 3", strokeOpacity: 0.6}),
-    Plot.line(dailySpread, {x: "date", y: "spread", stroke: "market", strokeWidth: 1.2}),
-  ],
-})));
-```
-
-```js
-if (drMean < 0) display(html`<div class="note figure-note">
-<p><b>Why is the DR spread consistently negative (avg ${drMean.toFixed(2)} £/MW/h)?</b></p>
-<p>Because DR High clears below zero in most blocks while DR Low does not. That started the
-month the Enduring Auction Capability (EAC) went live: no DR High block cleared negative in
-October 2023, and 87% did in November. The legacy auctions never cleared below zero. EAC
-allows negative prices, and lets a provider offer several products in one order at a single
-price, accepted when the order as a whole is in the money, so a DR High leg can clear
-negative inside a package that still pays. It can pay on its own too: energy a battery
-absorbs while delivering DR High is neither paid for nor charged, so it can be sold on.</p>
-<p>High and Low remain separate products with separate prices, and nothing requires a
-provider to hold both. The battery links them physically instead: each MW of DR Low needs an
-hour of energy in store, each MW of DR High an hour of headroom, and since November 2024 each
-also reserves 40% of its MW on the opposite side for energy recovery.</p>
-</div>`);
-```
-
-<div class="grid grid-cols-2">
-  <div class="card">
-    <h3>Spread distribution by market</h3>
-    ${resize((width) => Plot.plot({
-      width, height: 360, marginLeft: 50,
-      y: {label: "£/MW/h", grid: true},
-      color: {domain: Object.keys(MARKET_COLOURS), range: Object.values(MARKET_COLOURS)},
-      marks: [
-        Plot.ruleY([0], {strokeDasharray: "4 3", strokeOpacity: 0.6}),
-        Plot.boxY(spreads, {x: "market", y: "spread", fill: "market"}),
-      ],
-    }))}
-    <p class="card-caption">DC's spreads sit closest to zero and most tightly around it, so its
-    two legs are priced most symmetrically. DR sits firmly negative, with High above Low in only
-    ${highAbove.DR}% of blocks; DM falls in between.</p>
-  </div>
-  <div class="card">
-    <h3>Average spread by EFA block</h3>
-    ${resize((width) => Plot.plot({
-      width, height: 360, marginLeft: 50,
-      x: {label: "EFA block", tickFormat: (d) => `EFA ${d}`},
-      y: {label: "Avg £/MW/h", grid: true},
-      color: {domain: Object.keys(MARKET_COLOURS), range: Object.values(MARKET_COLOURS), legend: true},
-      marks: [
-        Plot.ruleY([0], {strokeDasharray: "4 3", strokeOpacity: 0.6}),
-        Plot.barY(spreads, Plot.groupX({y: "mean"}, {x: "efa", y: "spread", fill: "market"})),
-      ],
-    }))}
-    <p class="card-caption">Spreads are most pronounced in EFA 5 (15:00–19:00), then EFA 6, as
-    demand peaks and charge and discharge headroom are least balanced.</p>
-  </div>
-</div>
-
-### H − L spread by month and EFA block
-
-```js
-const heatDomain = [
-  d3.min(spreads, (d) => d3.utcMonth.floor(d.date)),
-  d3.utcMonth.offset(d3.max(spreads, (d) => d3.utcMonth.floor(d.date)), 1),
-];
-
-const heatStrips = PAIRS.map(([market]) => {
-  const cells = Array.from(
-    d3.rollup(spreads.filter((d) => d.market === market), (v) => d3.mean(v, (d) => d.spread),
-      (d) => +d3.utcMonth.floor(d.date), (d) => d.efa),
-    ([month, m]) => Array.from(m, ([efa, spread]) => ({month: new Date(month), efa, spread}))
-  ).flat();
-  // Colours saturate at the 95th percentile of |spread|, so a handful of extreme
-  // months don't wash out every other cell
-  const lim = Math.ceil(d3.quantile(cells, 0.95, (d) => Math.abs(d.spread)));
-  return {market, cells, lim};
-});
-
-const heatColour = (lim) => ({type: "diverging", scheme: "RdBu", domain: [-lim, lim], reverse: true, clamp: true});
-
-function heatStrip({market, cells, lim}, width) {
-  return Plot.plot({
-    width, height: 140, marginLeft: 50, marginRight: 10, marginTop: 4, marginBottom: 34,
-    x: {type: "utc", domain: heatDomain, label: null},
-    y: {domain: [0.5, 6.5], reverse: true, ticks: [1, 2, 3, 4, 5, 6], tickFormat: (d) => `EFA ${d}`,
-        label: null, tickSize: 0},
-    color: heatColour(lim),
-    marks: [
-      Plot.rect(cells, {
-        x1: "month", x2: (d) => d3.utcMonth.offset(d.month, 1),
-        y1: (d) => d.efa - 0.5, y2: (d) => d.efa + 0.5,
-        fill: "spread", inset: 0.5,
-      }),
-      Plot.ruleX([EAC_GO_LIVE], {stroke: "#33302E", strokeDasharray: "3 3", strokeOpacity: 0.7}),
-      Plot.tip(cells, Plot.pointer({
-        x: (d) => new Date(+d.month + 14 * 864e5), y: "efa",
-        title: (d) => `${market} · EFA ${d.efa} (${EFA_BLOCKS[d.efa]})\n${d3.utcFormat("%B %Y")(d.month)}\n£${d.spread.toFixed(2)}/MW/h`,
-      })),
-    ],
-  });
-}
-
-display(resize((width) => html`<div class="heat-strips">${heatStrips.map((strip) => html`<div class="heat-strip">
-  <div class="chart-head"><h4>${strip.market}</h4>${Plot.legend({color: {...heatColour(strip.lim), label: "£/MW/h"}, width: 280})}</div>
-  ${heatStrip(strip, width)}
-</div>`)}</div>`));
-```
-
-Each cell is the average H − L spread for a calendar month and EFA block. Red means charge
-capacity was scarcer (H > L); blue means discharge capacity was scarcer (L > H). Each strip's
-colours saturate at its 95th percentile (DC ±£${heatStrips[0].lim}, DR ±£${heatStrips[1].lim},
-DM ±£${heatStrips[2].lim}), so a handful of extreme months don't wash out the rest; hover a cell
-for its exact value. The dashed line marks EAC go-live.
-
-```js
-display(Inputs.table(
-  Array.from(d3.group(spreads, (d) => d.market), ([market, v]) => ({
-    Market: market,
-    "Mean £/MW/h": d3.mean(v, (d) => d.spread),
-    "Median": d3.median(v, (d) => d.spread),
-    "Std dev": d3.deviation(v, (d) => d.spread),
-    "Min": d3.min(v, (d) => d.spread),
-    "Max": d3.max(v, (d) => d.spread),
-    "% blocks H > L": (d3.sum(v, (d) => (d.spread > 0 ? 1 : 0)) / v.length) * 100,
-  })),
-  {format: {
-    "Mean £/MW/h": (d) => d.toFixed(2), "Median": (d) => d.toFixed(2),
-    "Std dev": (d) => d.toFixed(2), "Min": (d) => d.toFixed(2),
-    "Max": (d) => d.toFixed(2), "% blocks H > L": (d) => `${d.toFixed(1)}%`,
-  }, rows: 4}
-));
-```
 
 ## Wholesale & settlement prices
 

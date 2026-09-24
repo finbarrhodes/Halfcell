@@ -1,0 +1,192 @@
+{
+  "engine": "aa57ca6b2248",
+  "select_before": "2025-01-01",
+  "runs": {
+    "pf_lp_margin_vint": {
+      "summary": {
+        "total_gross": 29673236.0,
+        "total_cycling_cost": 795487.0,
+        "total_net": 28877749.0,
+        "years_covered": 4.92,
+        "days_covered": 1797,
+        "annualised_net": 5869559.0,
+        "annualised_per_mw": 117391.0,
+        "top_service": "Arbitrage",
+        "fr_mw": 38.00484350343006,
+        "arb_mw": 10.511285493627181,
+        "total_mwh_cycled": 240351.3,
+        "total_delivery_mwh": 24811.1,
+        "pre_eac_rule": "d1",
+        "include_arbitrage": true,
+        "fr_blocks_committed": 10008,
+        "soe_breach_periods": 63,
+        "soe_breach_blocks": 56,
+        "auction_share_cap": 0.2,
+        "delivery_modelled": true,
+        "offer_valuation": "lp",
+        "price_shrink": 1.0,
+        "offers_at_bid_time": false,
+        "forecast_vintages": true,
+        "dynamic_shrink": false,
+        "guard_bands": false,
+        "plan_smoothing": 0,
+        "dispatch_smoothing": 0,
+        "credit_recovery": null,
+        "block_start_margin": true,
+        "reserve_discharge_share": 0.0315,
+        "reserve_to_absorbed": 0.0867,
+        "reserve_sell_price": 68.08,
+        "reserve_buy_price": 76.67,
+        "trading_sell_price": 145.95,
+        "trading_buy_price": 89.63
+      },
+      "revenue": {
+        "all": {
+          "net": 115.51,
+          "fr": 50.85,
+          "trading": 67.85,
+          "costs": 3.18,
+          "months": 60
+        },
+        "selection": {
+          "net": 132.77,
+          "fr": 57.16,
+          "trading": 78.93,
+          "costs": 3.32,
+          "months": 40
+        },
+        "confirmation": {
+          "net": 80.99,
+          "fr": 38.21,
+          "trading": 45.67,
+          "costs": 2.9,
+          "months": 20
+        }
+      }
+    },
+    "naive_lp_shrink0.5_margin_bid_vint": {
+      "summary": {
+        "total_gross": 23076006.0,
+        "total_cycling_cost": 621386.0,
+        "total_net": 22454619.0,
+        "years_covered": 4.92,
+        "days_covered": 1797,
+        "annualised_net": 4564023.0,
+        "annualised_per_mw": 91280.0,
+        "top_service": "DCL",
+        "fr_mw": 41.69197294860787,
+        "arb_mw": 6.365939693352141,
+        "total_mwh_cycled": 176335.9,
+        "total_delivery_mwh": 30792.9,
+        "pre_eac_rule": "d1",
+        "include_arbitrage": true,
+        "fr_blocks_committed": 10544,
+        "soe_breach_periods": 146,
+        "soe_breach_blocks": 106,
+        "auction_share_cap": 0.2,
+        "delivery_modelled": true,
+        "offer_valuation": "lp",
+        "price_shrink": 0.5,
+        "offers_at_bid_time": true,
+        "forecast_vintages": true,
+        "dynamic_shrink": false,
+        "guard_bands": false,
+        "plan_smoothing": 0,
+        "dispatch_smoothing": 0,
+        "credit_recovery": null,
+        "block_start_margin": true,
+        "reserve_discharge_share": 0.1121,
+        "reserve_to_absorbed": 0.1972,
+        "reserve_sell_price": 67.39,
+        "reserve_buy_price": 82.1,
+        "trading_sell_price": 136.28,
+        "trading_buy_price": 124.05
+      },
+      "revenue": {
+        "all": {
+          "net": 89.82,
+          "fr": 57.61,
+          "trading": 34.69,
+          "costs": 2.49,
+          "months": 60
+        },
+        "selection": {
+          "net": 101.95,
+          "fr": 64.8,
+          "trading": 39.67,
+          "costs": 2.51,
+          "months": 40
+        },
+        "confirmation": {
+          "net": 65.55,
+          "fr": 43.24,
+          "trading": 24.74,
+          "costs": 2.43,
+          "months": 20
+        }
+      }
+    },
+    "ml_lp_shrink0.5_margin_bid_vint": {
+      "summary": {
+        "total_gross": 23750037.0,
+        "total_cycling_cost": 556956.0,
+        "total_net": 23193081.0,
+        "years_covered": 4.92,
+        "days_covered": 1797,
+        "annualised_net": 4714119.0,
+        "annualised_per_mw": 94282.0,
+        "top_service": "DCL",
+        "fr_mw": 42.36894347759519,
+        "arb_mw": 5.620875005510538,
+        "total_mwh_cycled": 153643.9,
+        "total_delivery_mwh": 32008.1,
+        "pre_eac_rule": "d1",
+        "include_arbitrage": true,
+        "fr_blocks_committed": 10635,
+        "soe_breach_periods": 205,
+        "soe_breach_blocks": 123,
+        "auction_share_cap": 0.2,
+        "delivery_modelled": true,
+        "offer_valuation": "lp",
+        "price_shrink": 0.5,
+        "offers_at_bid_time": true,
+        "forecast_vintages": true,
+        "dynamic_shrink": false,
+        "guard_bands": false,
+        "plan_smoothing": 0,
+        "dispatch_smoothing": 0,
+        "credit_recovery": null,
+        "block_start_margin": true,
+        "reserve_discharge_share": 0.1212,
+        "reserve_to_absorbed": 0.1846,
+        "reserve_sell_price": 65.45,
+        "reserve_buy_price": 81.31,
+        "trading_sell_price": 129.62,
+        "trading_buy_price": 111.03
+      },
+      "revenue": {
+        "all": {
+          "net": 92.77,
+          "fr": 59.66,
+          "trading": 35.34,
+          "costs": 2.23,
+          "months": 60
+        },
+        "selection": {
+          "net": 105.61,
+          "fr": 67.29,
+          "trading": 40.44,
+          "costs": 2.12,
+          "months": 40
+        },
+        "confirmation": {
+          "net": 67.1,
+          "fr": 44.41,
+          "trading": 25.14,
+          "costs": 2.44,
+          "months": 20
+        }
+      }
+    }
+  }
+}

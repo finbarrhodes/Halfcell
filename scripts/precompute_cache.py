@@ -22,7 +22,12 @@ Shared by all strategies, since FR-only uses no price forecast:
 
 Every run is capped at a fifth of each auction's cleared volume, calls contracts on
 as GB frequency actually moved (data/processed/response_delivery.parquet), and
-prices that delivery into offers.
+prices that delivery into offers. Recovery of delivered energy through the Reserved
+Capacity earns at the price, within what delivery has put in play, and every plan
+meets each new block's start a margin inside its requirement (CREDIT_RECOVERY).
+
+The manifest records a fingerprint of the code that made the cache, which
+check_cache_consistency.py compares with the code in the tree.
 
 The ML strategy's forecasts come from data/processed/forecast_walk_forward.parquet,
 where the model is refit at quarterly origins and predicts only the days after each
@@ -61,6 +66,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import pandas as pd
 
 from scripts.build_forecast_walk_forward import fold_metrics, load_or_build, pooled_metrics
+from scripts.check_cache_consistency import engine_fingerprint
 from src.analysis.price_forecast import (
     DEFAULT_TEST_START,
     WALK_FORWARD_CADENCE_MONTHS,
@@ -102,6 +108,15 @@ FORECAST_VINTAGES = True      # dispatch plans tomorrow on the early forecast, a
 # 0.5 for both, narrowly for ML, whose 0.5 and 0.75 are within £0.3k on either half.
 # Perfect foresight has nothing to hedge against, so it plans on actual prices as they are.
 PRICE_SHRINK = {"pf": 1.0, "naive": 0.5, "ml": 0.5}
+# Recovery through the Reserved Capacity earns at the price, within what delivery has
+# put in play, on the strict reading: every trade spends that allowance first, so the
+# reserve never earns on energy that trading could have brought in. Credit brings a
+# margin at each new block's start with it. Chosen 2026-09-24 over the loose reading
+# and over the margin alone (reports/offer_valuation_recovery.md, offer_valuation_margin.md).
+CREDIT_RECOVERY = "any"
+# FR-only has no prices to credit recovery against, but keeps the margin: it is there
+# for compliance, not for trading
+FR_ONLY_BLOCK_MARGIN = True
 ML_MODEL_TYPE   = "rf"  # Random Forest selected at precompute time (see methodology expander)
 N_IMPORTANCES   = 20    # Top-N feature importances stored in the manifest for display
 
@@ -167,6 +182,7 @@ def main() -> None:
     print(f"Date range: {start_date} → {end_date}")
 
     git_sha     = _git_sha()
+    engine      = engine_fingerprint()
     data_mtimes = _data_mtimes()
     manifest    = {}
 
@@ -185,6 +201,8 @@ def main() -> None:
         offer_valuation      = OFFER_VALUATION,
         offer_information    = OFFER_INFORMATION,
         forecast_vintages    = FORECAST_VINTAGES,
+        credit_recovery      = CREDIT_RECOVERY,
+        block_start_margin   = True,
         start_date           = str(start_date),
         end_date             = str(end_date),
     )
@@ -193,6 +211,7 @@ def main() -> None:
         return dict(
             computed_at = datetime.now(timezone.utc).isoformat(),
             git_sha     = git_sha,
+            engine      = engine,
             data_mtimes = data_mtimes,
             params      = params,
             summary     = result["summary"],
@@ -206,7 +225,7 @@ def main() -> None:
     _print_section(1, 4, "FR availability only (scenario shared by all strategies)")
     fr_only = run_backtest(auctions, mkt_index, BATTERY, SERVICES, start_date, end_date,
                            include_arbitrage=False, pre_eac_rule=PRE_EAC_RULE, delivery=delivery,
-                           forecast_vintages=FORECAST_VINTAGES)
+                           forecast_vintages=FORECAST_VINTAGES, block_start_margin=FR_ONLY_BLOCK_MARGIN)
     fr_only["monthly"].to_parquet(CACHE / "fr_only.parquet", index=False)
     _summary_line("FR only", fr_only["summary"])
     fr_scenarios = {"fr_only": fr_only["summary"]}
@@ -231,7 +250,7 @@ def main() -> None:
         auctions, mkt_index, BATTERY, svc, start_date, end_date,
         initial_soc_frac=INITIAL_SOC, horizon=HORIZON, pre_eac_rule=PRE_EAC_RULE, delivery=delivery,
         offer_valuation=OFFER_VALUATION, price_shrink=PRICE_SHRINK["pf"],
-        forecast_vintages=FORECAST_VINTAGES,
+        forecast_vintages=FORECAST_VINTAGES, credit_recovery=CREDIT_RECOVERY,
     ))
     manifest["pf_mpc"] = entry(pf, pf_scenarios, params={**base_params, "price_shrink": PRICE_SHRINK["pf"]})
 
@@ -245,6 +264,7 @@ def main() -> None:
         initial_soc_frac=INITIAL_SOC, horizon=HORIZON, pre_eac_rule=PRE_EAC_RULE, delivery=delivery,
         offer_valuation=OFFER_VALUATION, price_shrink=PRICE_SHRINK["naive"],
         offer_information=OFFER_INFORMATION, forecast_vintages=FORECAST_VINTAGES,
+        credit_recovery=CREDIT_RECOVERY,
     ))
     manifest["naive_mpc"] = entry(naive, naive_scenarios,
                                   params={**base_params, "price_shrink": PRICE_SHRINK["naive"]})
@@ -272,7 +292,7 @@ def main() -> None:
         initial_soc_frac=INITIAL_SOC, horizon=HORIZON, pre_eac_rule=PRE_EAC_RULE, delivery=delivery,
         offer_valuation=OFFER_VALUATION, price_shrink=PRICE_SHRINK["ml"],
         offer_information=OFFER_INFORMATION, forecast_vintages=FORECAST_VINTAGES,
-        early_predictions=early_predictions,
+        early_predictions=early_predictions, credit_recovery=CREDIT_RECOVERY,
     ))
 
     # Feature importances describe the data, not any one forecast, so they come from a

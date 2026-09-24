@@ -162,7 +162,11 @@ price-taker the offers are exactly what clears. A settlement period that starts 
 requirement counts as unavailable
 ([Service Terms](https://www.neso.energy/document/384606/download) 6.12) and loses an eighth of
 the block's availability payment; the [Forecasting & Dispatch](./backtester) page reports how many
-periods each strategy missed. Trades execute at actual prices, so a forecast error can lose money
+periods each strategy missed. Misses cluster at block boundaries, where a new block restores the
+full requirement, so every plan meets each later block's start a margin inside it: one half-hour
+of delivery at its recent 90th-percentile rate for what is held. DR delivery is bursty, and a
+store run up to the limit has no slack for a half-hour above the average. Trades execute at
+actual prices, so a forecast error can lose money
 on the day; that is intended.
 
 ### Response delivery
@@ -200,9 +204,12 @@ example, which the tests reproduce: a 50 MWh contract that delivers 2 MWh in its
 needs 48 MWh until the sixth period, then 50 again. The Reserved Capacity exists to recover that
 energy ([SOE Monitoring Guidance](https://www.neso.energy/document/347241/download)), so dispatch
 may use it in any period to keep a requirement reachable, including ahead of a block that
-restores the full requirement. The plan counts what energy moved through the reserve costs, never
-what it earns, so the reserve is not used to trade. A requirement at or below zero counts as
-allowed unavailability.
+restores the full requirement. Recovery through the reserve earns at the price, so it can wait for a
+good one, but only on energy delivery has put in play: an account per side adds what High products
+absorb and Low products give away, and every trade, through the reserve or not, spends it first.
+The reserve recovers delivered energy when the price is right and never becomes trading capacity
+(see [timing recovery](#timing-recovery-through-the-reserve)). A requirement at or below zero counts
+as allowed unavailability.
 
 **Planning without knowing frequency.** Within a block, delivery lowers state of charge and the
 requirement together, so the LP plans on no further delivery. Where a later block restores the
@@ -354,21 +361,24 @@ months forecast by a model fitted on those very days; it survives only as a diag
 ## What the forecast is worth
 
 The **foresight ratio** is the share of the gap between floor and ceiling a forecast closes,
-`(ML − Naive) / (Perfect Foresight − Naive)` on net revenue. Here it is about 12%: the model is
+`(ML − Naive) / (Perfect Foresight − Naive)` on net revenue. Here it is about 13%: the model is
 worth about £3k/MW/yr over the floor, in every year of the backtest, against a ceiling £26k above
-it. Published GB and European forecasting studies treat 70–85% as strong, but they forecast
-day-ahead auction prices over shorter, calmer windows, usually scored on pure arbitrage rather than
-a co-optimisation against frequency response contracts.
+it. The industry's usual measure is a different one: Percent of Perfect, revenue as a share of
+perfect foresight with no floor subtracted, on which the model scores 80.9%. On a stacked battery
+that says little, because reusing the last complete day's prices already scores 78.2%: most of the
+revenue is response availability that no forecast moves. Subtracting the floor asks the narrower
+question of how much of the *capturable* gap a forecast closes. On arbitrage alone, the footing
+closest to a price-forecasting study, Percent of Perfect is 50.1% against the floor's 37.9%.
 
 | £k / MW / yr | Frequency response | Trading | Wear | Net |
 |---|---|---|---|---|
-| Perfect foresight | 50.7 | 68.4 | −3.2 | 115.9 |
-| Naive | 57.5 | 35.2 | −2.5 | 90.1 |
-| ML model | 59.6 | 35.9 | −2.2 | 93.3 |
+| Perfect foresight | 51.7 | 70.2 | −3.3 | 118.5 |
+| Naive | 58.6 | 36.7 | −2.6 | 92.7 |
+| ML model | 60.6 | 37.6 | −2.4 | 95.9 |
 
 **The model and the ceiling earn through different channels.** The whole of perfect foresight's
 advantage is trading, while the model earns most of its lead through response (+£2.1k, against
-+£0.7k at trading): it values each block's arbitrage more accurately when the offers are made, and
++£0.9k at trading): it values each block's arbitrage more accurately when the offers are made, and
 holds better positions. Beating persistence at trading needs a forecast that identifies *which*
 half-hours will be extreme; lowering average error across all of them does not do that, and the
 offer stage consumes a block-level summary that a sharper half-hourly curve barely moves. That is
@@ -377,8 +387,8 @@ why a much more accurate model earned far less, and a much better forecast earne
 
 **How much of it is noise.** Not much. Resampling the paired daily revenue differences in
 four-week blocks, because a dispatch decision carries state into the next day
-([Künsch, 1989](https://doi.org/10.1214/aos/1176347265)), puts the model's lead at £3.18k/MW/yr
-(95% interval £2.05k to £4.37k), and £1.79k [£0.88k, £2.76k] from 2025 alone. Its *accuracy* edge
+([Künsch, 1989](https://doi.org/10.1214/aos/1176347265)), puts the model's lead at £3.26k/MW/yr
+(95% interval £2.13k to £4.45k), and £2.26k [£1.23k, £3.45k] from 2025 alone. Its *accuracy* edge
 over persistence, though, is not significant: a
 [Diebold-Mariano test](https://doi.org/10.1080/07350015.1995.10524599) on paired daily losses gives
 p = 0.26 on squared error and p = 0.19 on the error in the day's spread. Spike days dominate
@@ -398,6 +408,7 @@ ratio without the forecast changing at all.
 | 18 Sep | Offers priced from a day-ahead trading plan rather than one cycle per block (from 2025 a block's own spread averaged £15.5/MWh, the day's £68.9) | +£11.9k/MW/yr for perfect foresight, +£9.1k naive, +£7.3k the model |
 | 18 Sep | Offers and tomorrow's dispatch see only forecasts that existed at the time | Offers: −£2.4k naive, −£1.6k the model; dispatch: no measurable change |
 | 18 Sep | The plan's forecast shrunk halfway to its daily mean | +£4k naive, +£1k the model; the model's lead narrowed from £4.1k to £3.2k as the ceiling pulled away, and the ratio fell to about 12% |
+| 24 Sep | Recovery through the reserve earns at the price, within what delivery put in play, and every plan keeps a margin at each new block's start ([timing recovery](#timing-recovery-through-the-reserve)) | +£0.8k perfect foresight, +£1.1k naive, +£1.1k the model; breach periods down 55–78%, and the ratio rose to about 13% |
 
 A better engine made the forecast matter less; it did not make the forecast worse.
 
@@ -427,8 +438,11 @@ LEAR wins every accuracy column and earns £19k/MW/yr *less than reusing yesterd
 cause is calibration in the one dimension the decisions consume: LEAR over-predicts the daily
 spread by £272/MWh across the backtest, and by £29.5 even in the calm recent market, while the
 trees under-predict it (Random Forest by £31.5). For a price-taker that asymmetry is protective. A
-spread that fails to arrive costs twice, in the trade and at the offer stage, where an inflated
-arbitrage value declines response contracts worth having. From 2025 LEAR held 23 MW of Low
+spread that fails to arrive does its damage at the offer stage, where an inflated arbitrage value
+declines response contracts worth having. Dispatch is barely touched: it trades on the *ordering* of
+periods and settles at the realised price (see
+[why only the offer](#discounting-the-forecast-at-the-offer)), so there over-prediction costs only
+the extra cycling it talks the optimiser into. From 2025 LEAR held 23 MW of Low
 products against the forest's 30, sat out 30% of EFA blocks against 12%, and gave up £0.71M of
 availability revenue to gain £0.07M of trading while cycling 48% more energy. Clipping its
 forecasts to the price range seen before each origin recovered almost nothing: the problem is
@@ -538,6 +552,39 @@ over rather than as a discount, or if a band is built around the decision itself
 block's spread is to beat its clearing prices — rather than around the price. The quantile forest,
 CQR and SPCI are in `src/analysis/`, ready to reuse.
 
+### Timing recovery through the reserve
+
+<p class="muted">24 Sep 2026 · adopted: recovery credited on the strict reading, with a margin at block starts</p>
+
+After EAC, where Low holdings and the reserve for High ones take the whole discharge rating, the
+reserve is the only way out for energy DR High absorbs. The plan used to count what reserve flows
+cost and never what they earned, so it sold that energy whenever headroom ran short, whatever the
+price: over the backtest the reserve sold at £65-67/MWh while trading sold at £129-146, and it
+carried 3-11% of all discharge.
+
+Letting recovery earn at the price fixes the timing but invites the reserve to trade, so it earns
+only on energy delivery has put in play, kept in an account per side. Which MWh leaves the store
+cannot be known, so the account has two readings that bracket the answer: spent only by the
+reserve's own flows (loose), or by every trade first (strict). Recovery that waits for a price also
+runs the store up to the headroom a new block restores, and a burst of DR delivery then starts the
+block outside its requirement; tried alone on one quarter, the credit doubled breaches. So every plan
+now meets each later block's start a margin inside it. Measured apart over the backtest, in
+£k/MW/yr and breach periods:
+
+| | Before | Margin alone | Margin + credit, strict | Margin + credit, loose |
+|---|---|---|---|---|
+| Perfect foresight | 117.8 · 317 | 117.4 · 63 | 118.5 · 71 | 119.2 · 74 |
+| Naive | 91.6 · 503 | 91.3 · 146 | 92.7 · 163 | 93.0 · 168 |
+| ML model | 94.8 · 514 | 94.3 · 205 | 95.9 · 227 | 96.4 · 250 |
+
+The margin is a compliance device: 60-80% fewer breach periods for under £0.5k/MW/yr of trading.
+The revenue is the credit's. Neither moves what the forecast is worth outside its interval (the
+model's lead is £3.00k with the margin alone and £3.26k with both), because the untimed reserve
+cost every signal about alike. The strict reading ships, so the reserve never earns on energy
+trading could have brought in. **Revisit if** a real operator's recovery accounting is known, since
+the loose reading is worth another £0.3k-0.7k/MW/yr, or if a delivery forecast can replace the
+recent 90th percentile that sets the margin.
+
 ## Known limitations
 
 **Not modelled**
@@ -563,8 +610,10 @@ CQR and SPCI are in `src/analysis/`, ready to reuse.
 - *Delivery follows frequency instantly, product by product.* The Service Terms allow up to 10
   seconds to reach full delivery, which moves little energy over half an hour.
 - *Baselines change within the half-hour;* NESO's baseline submission timings are not modelled.
-- *Recovery through the reserve is planned at cost, not value,* so where little trading power is
-  left, the free energy DR High absorbs is sold when recovery needs it rather than at the best price.
+- *Recovery through the reserve is credited on the strict reading.* Which MWh leaves the store
+  cannot be known, so every trade counts as recovering delivered energy first, and where trading
+  also sells absorbed energy the reserve earns on less than it could. Spending the allowance only on
+  the reserve's own flows would add £0.3k-0.7k/MW/yr.
 - *NESO's discretion is not modelled.* It may waive penalties during extended deviations beyond
   0.1 Hz (Service Terms 6.11 vi), and may treat a non-compliant unit as unavailable until satisfied
   it has recovered (6.12). The model always counts a missed requirement, but only in the periods that

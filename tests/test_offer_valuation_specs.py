@@ -17,6 +17,10 @@ from scripts.compare_offer_valuation import parse_run, run_name
     ("ml:lp:0.5:spci:0.2:bid:vint", "ml_lp_shrink0.5_spci0.2_bid_vint"),
     ("ml:lp:1:spci_b:0.1:bid:vint", "ml_lp_spci_b0.1_bid_vint"),
     ("pf:lp:1:qr:0.2:vint", "pf_lp_vint"),                           # perfect foresight has no band
+    ("pf:lp:1:rec:vint", "pf_lp_rec_vint"),                          # but recovery credit is dispatch
+    ("ml:lp:0.5:recany:bid:vint", "ml_lp_shrink0.5_recany_bid_vint"),
+    ("ml:lp:0.5:margin:bid:vint", "ml_lp_shrink0.5_margin_bid_vint"),
+    ("pf:lp:1:margin:vint", "pf_lp_margin_vint"),
 ])
 def test_specs_name_the_run_they_describe(spec, name):
     assert run_name(*parse_run(spec)) == name
@@ -35,3 +39,31 @@ def test_a_band_method_carries_its_alpha():
 def test_ambiguous_band_specs_are_refused(spec):
     with pytest.raises(ValueError, match="one band at a time"):
         parse_run(spec)
+
+
+def test_credited_runs_are_measured_against_a_credited_ceiling():
+    """Recovery credit changes dispatch for every signal, perfect foresight included."""
+    from scripts.compare_offer_valuation import foresight
+
+    def run(net):
+        return {"revenue": {"all": {"net": net}}}
+    rows = {"pf_lp_vint": run(100.0), "pf_lp_rec_vint": run(120.0),
+            "naive_lp_shrink0.5_bid_vint": run(80.0), "ml_lp_shrink0.5_bid_vint": run(82.0),
+            "naive_lp_shrink0.5_rec_bid_vint": run(90.0), "ml_lp_shrink0.5_rec_bid_vint": run(93.0)}
+    assert foresight(rows, "lp_shrink0.5_bid_vint", "all") == pytest.approx(0.1)       # 2 / 20
+    assert foresight(rows, "lp_shrink0.5_rec_bid_vint", "all") == pytest.approx(0.1)   # 3 / 30, not 3 / 10
+
+
+def test_the_margin_is_not_asked_for_twice():
+    with pytest.raises(ValueError, match="already keeps the margin"):
+        parse_run("ml:lp:0.5:rec:margin:bid:vint")
+
+
+def test_margin_runs_are_measured_against_a_margin_ceiling():
+    from scripts.compare_offer_valuation import foresight
+
+    def run(net):
+        return {"revenue": {"all": {"net": net}}}
+    rows = {"pf_lp_vint": run(100.0), "pf_lp_margin_vint": run(110.0),
+            "naive_lp_shrink0.5_margin_bid_vint": run(80.0), "ml_lp_shrink0.5_margin_bid_vint": run(83.0)}
+    assert foresight(rows, "lp_shrink0.5_margin_bid_vint", "all") == pytest.approx(0.1)   # 3 / 30
