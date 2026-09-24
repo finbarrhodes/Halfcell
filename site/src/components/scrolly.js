@@ -57,19 +57,43 @@ export function watchSteps(root, onChange, {rail} = {}) {
     return () => {};
   }
 
+  // Band across the middle of the viewport. The inset lives in one place so the
+  // observer's margin and the measurement below cannot drift apart.
+  const BAND_INSET_PCT = 40;
+  const bandCoverage = (el) => {
+    const top = window.innerHeight * (BAND_INSET_PCT / 100);
+    const bottom = window.innerHeight * (1 - BAND_INSET_PCT / 100);
+    const rect = el.getBoundingClientRect();
+    return Math.min(rect.bottom, bottom) - Math.max(rect.top, top);
+  };
+
   const observer = new IntersectionObserver(
-    (entries) => {
-      // Pick the visible step nearest the band's centre, so fast scrolling
-      // lands somewhere sensible rather than on whichever fired last.
-      const visible = entries
-        .filter((e) => e.isIntersecting)
-        .map((e) => ({i: steps.indexOf(e.target), ratio: e.intersectionRatio}));
-      if (!visible.length) return;
-      visible.sort((a, b) => b.ratio - a.ratio || a.i - b.i);
-      setActive(visible[0].i);
+    () => {
+      // Measure every step against the band rather than ranking the entries in
+      // this batch. Two things go wrong otherwise, and a long step hits both:
+      // a batch only carries the steps whose visibility just changed, so the
+      // step now filling the band is often absent from it, and
+      // intersectionRatio is a fraction of the step's own height, so a step
+      // more than ~5 band-heights tall never crosses a threshold above 0. Such
+      // a step gets one callback as it enters, loses the comparison to the
+      // step it is replacing (which is still in the band, and shorter, so
+      // scores higher), and never gets another callback to win on — the reader
+      // scrolls past it dimmed until the step after it takes over. Coverage is
+      // measured against the band, so height does not distort it.
+      let best = -1;
+      let bestCoverage = 0;
+      steps.forEach((el, i) => {
+        const coverage = bandCoverage(el);
+        if (coverage > bestCoverage) {
+          best = i;
+          bestCoverage = coverage;
+        }
+      });
+      // Nothing in the band (between sections, or past the end): keep the
+      // step the reader last had.
+      if (best >= 0) setActive(best);
     },
-    // Band across the middle of the viewport
-    {rootMargin: "-40% 0px -40% 0px", threshold: [0, 0.25, 0.5, 0.75, 1]}
+    {rootMargin: `${-BAND_INSET_PCT}% 0px`, threshold: [0, 0.25, 0.5, 0.75, 1]}
   );
 
   steps.forEach((el) => observer.observe(el));
