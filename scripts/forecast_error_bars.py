@@ -49,7 +49,9 @@ SELECT_BEFORE = "2025-01-01"
 def daily_revenue(strategy: str, fresh: bool = False) -> pd.DataFrame:
     """Per-day revenue for one strategy, at the settings the site publishes."""
     from scripts.build_forecast_walk_forward import backtest_window, load_or_build
+    from scripts.check_cache_consistency import engine_fingerprint
     from scripts.precompute_cache import (
+        CREDIT_RECOVERY,
         FORECAST_VINTAGES,
         OFFER_INFORMATION,
         OFFER_VALUATION,
@@ -58,7 +60,8 @@ def daily_revenue(strategy: str, fresh: bool = False) -> pd.DataFrame:
     from src.analysis.price_forecast import run_forecast_backtest
     from src.analysis.revenue_stack import ALL_SERVICES, REFERENCE_BATTERY
 
-    cached = BENCH / f"daily_revenue_{strategy}.parquet"
+    # Keyed on the engine, as the published cache is: a run from older code is not reused
+    cached = BENCH / f"daily_revenue_{strategy}_{engine_fingerprint()}.parquet"
     if cached.exists() and not fresh:
         print(f"  reused {cached.name}", flush=True)
         return pd.read_parquet(cached)
@@ -78,6 +81,7 @@ def daily_revenue(strategy: str, fresh: bool = False) -> pd.DataFrame:
         predictions=predictions, early_predictions=early, delivery=delivery,
         offer_valuation=OFFER_VALUATION, price_shrink=PRICE_SHRINK[strategy],
         offer_information=OFFER_INFORMATION, forecast_vintages=FORECAST_VINTAGES,
+        credit_recovery=CREDIT_RECOVERY,
     )
     BENCH.mkdir(parents=True, exist_ok=True)
     result["daily"].to_parquet(cached, index=False)

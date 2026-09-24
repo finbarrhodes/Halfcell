@@ -144,7 +144,7 @@ RECOVERY_CREDIT_MODES = (None, "reserve", "any")
 # is held. One half-hour, the lightest margin tried, chosen on 2024 Q1 as the most
 # revenue with no more breaches than the uncredited engine (perfect foresight with the
 # offer shrink at 0.5, not the shipped setting). On the full window with the shipped
-# settings it removes 70-80% of breach periods for every signal, credited or not, so
+# settings it removes 60-80% of breach periods for every signal, credited or not, so
 # a wider one is not needed (reports/offer_valuation_margin.md).
 RECOVERY_BOUNDARY_MARGIN_PERIODS = 1
 RECOVERY_BOUNDARY_QUANTILE = 0.9

@@ -67,7 +67,10 @@ jobs:
     # solve). A hosted runner is typically slower than a dev machine at single-threaded
     # numeric work, and the backtest lengthens every refresh, because DEFAULT_TEST_START
     # is fixed and new data accrues to the test period. 60 was too tight on both counts.
-    timeout-minutes: 120
+    # Crediting recovery through the reserve took it to 82.7 min on 2026-09-24, its first
+    # half hour sharing the machine with another backtest. Keeping the old ~1.9x margin
+    # over the local time puts the limit at 150.
+    timeout-minutes: 150
 
     steps:
       - uses: actions/checkout@v7
@@ -159,7 +162,7 @@ jobs:
       - name: Check the REPD fleet series has not drifted
         run: python scripts/check_repd_freshness.py
 
-      # The long pole: seven dispatch runs, ~60 min and growing. See the note on
+      # The long pole: seven dispatch runs, ~80 min and growing. See the note on
       # timeout-minutes above.
       - name: Rebuild the backtest cache
         run: python scripts/precompute_cache.py

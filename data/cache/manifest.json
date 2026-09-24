@@ -1,17 +1,18 @@
 {
   "pf_mpc": {
-    "computed_at": "2026-09-18T16:41:17.805196+00:00",
-    "git_sha": "815775df03cd04adc8bae47ab253fbd954510a14",
+    "computed_at": "2026-09-24T11:51:09.606898+00:00",
+    "git_sha": "8e5487c2b03fa84afa22a7ead2ed7fb86e02a5fb",
+    "engine": "a98b5e946e3d",
     "data_mtimes": {
-      "auctions.parquet": 1788868231.5648346,
-      "bess_fleet_capacity.parquet": 1788868243.1590447,
-      "forecast_walk_forward.parquet": 1789648135.4400334,
-      "forecast_walk_forward_early.parquet": 1789734023.0461378,
-      "generation_daily.parquet": 1788868243.155298,
-      "market_index.parquet": 1788868232.7657495,
-      "response_delivery.parquet": 1789573661.5762203,
-      "system_prices.parquet": 1788868232.9180892,
-      "wind_forecast.parquet": 1789655222.5186355
+      "auctions.parquet": 1789637260.552456,
+      "bess_fleet_capacity.parquet": 1789637260.552456,
+      "forecast_walk_forward.parquet": 1790000501.0174294,
+      "forecast_walk_forward_early.parquet": 1790000501.0334294,
+      "generation_daily.parquet": 1789637260.5564559,
+      "market_index.parquet": 1789637260.580456,
+      "response_delivery.parquet": 1789637260.608456,
+      "system_prices.parquet": 1789637260.6124558,
+      "wind_forecast.parquet": 1790000501.0374293
     },
     "params": {
       "power_mw": 50.0,
@@ -28,43 +29,57 @@
       "offer_valuation": "lp",
       "offer_information": "bid_time",
       "forecast_vintages": true,
+      "credit_recovery": "any",
+      "block_start_margin": true,
       "start_date": "2021-09-16",
       "end_date": "2026-08-17",
       "price_shrink": 1.0
     },
     "summary": {
-      "total_gross": 29779124.0,
-      "total_cycling_cost": 801530.0,
-      "total_net": 28977594.0,
+      "total_gross": 29973630.0,
+      "total_cycling_cost": 810890.0,
+      "total_net": 29162740.0,
       "years_covered": 4.92,
-      "annualised_net": 5889853.0,
-      "annualised_per_mw": 117797.0,
+      "days_covered": 1797,
+      "annualised_net": 5927485.0,
+      "annualised_per_mw": 118550.0,
       "breakdown": {
-        "DCH": 1742076.0,
-        "DCL": 7823768.0,
-        "DMH": 287410.0,
-        "DML": 1112412.0,
-        "DRH": -540317.0,
-        "DRL": 2261677.0,
-        "Arbitrage": 17092097.0
+        "DCH": 1743455.0,
+        "DCL": 7832848.0,
+        "DMH": 288191.0,
+        "DML": 1114308.0,
+        "DRH": -542503.0,
+        "DRL": 2273932.0,
+        "Arbitrage": 17263399.0
       },
       "top_service": "Arbitrage",
-      "fr_mw": 38.00572673278513,
-      "arb_mw": 10.509642828770085,
-      "total_mwh_cycled": 242365.0,
-      "total_delivery_mwh": 24811.6,
+      "fr_mw": 38.00830739247621,
+      "arb_mw": 10.505900202395873,
+      "total_mwh_cycled": 245467.4,
+      "total_delivery_mwh": 24829.2,
       "pre_eac_rule": "d1",
       "include_arbitrage": true,
       "fr_blocks_committed": 10008,
-      "soe_breach_periods": 317,
-      "soe_breach_blocks": 314,
+      "soe_breach_periods": 71,
+      "soe_breach_blocks": 63,
       "auction_share_cap": 0.2,
       "delivery_modelled": true,
       "offer_valuation": "lp",
       "price_shrink": 1.0,
       "offers_at_bid_time": false,
       "forecast_vintages": true,
-      "days_covered": 1797
+      "dynamic_shrink": false,
+      "guard_bands": false,
+      "plan_smoothing": 0,
+      "dispatch_smoothing": 0,
+      "credit_recovery": "any",
+      "block_start_margin": true,
+      "reserve_discharge_share": 0.0852,
+      "reserve_to_absorbed": 0.2399,
+      "reserve_sell_price": 88.89,
+      "reserve_buy_price": 75.07,
+      "trading_sell_price": 148.19,
+      "trading_buy_price": 89.01
     },
     "scenarios": {
       "arb_only": {
@@ -72,6 +87,7 @@
         "total_cycling_cost": 1007677.0,
         "total_net": 15632393.0,
         "years_covered": 4.92,
+        "days_covered": 1797,
         "annualised_net": 3177369.0,
         "annualised_per_mw": 63547.0,
         "breakdown": {
@@ -99,57 +115,81 @@
         "price_shrink": 1.0,
         "offers_at_bid_time": false,
         "forecast_vintages": true,
-        "days_covered": 1797
+        "dynamic_shrink": false,
+        "guard_bands": false,
+        "plan_smoothing": 0,
+        "dispatch_smoothing": 0,
+        "credit_recovery": "any",
+        "block_start_margin": true,
+        "reserve_discharge_share": 0.0,
+        "reserve_to_absorbed": null,
+        "reserve_sell_price": null,
+        "reserve_buy_price": null,
+        "trading_sell_price": 142.65,
+        "trading_buy_price": 83.81
       },
       "fr_only": {
-        "total_gross": 20903208.0,
-        "total_cycling_cost": 353611.0,
-        "total_net": 20549597.0,
+        "total_gross": 20892392.0,
+        "total_cycling_cost": 355016.0,
+        "total_net": 20537376.0,
         "years_covered": 4.92,
-        "annualised_net": 4176817.0,
-        "annualised_per_mw": 83536.0,
+        "days_covered": 1797,
+        "annualised_net": 4174333.0,
+        "annualised_per_mw": 83487.0,
         "breakdown": {
-          "DCH": 2292754.0,
-          "DCL": 9555203.0,
-          "DMH": 292780.0,
-          "DML": 1536973.0,
-          "DRH": -1116461.0,
-          "DRL": 3419046.0,
-          "Arbitrage": 4922914.0
+          "DCH": 2292439.0,
+          "DCL": 9556736.0,
+          "DMH": 292929.0,
+          "DML": 1537744.0,
+          "DRH": -1116800.0,
+          "DRL": 3415269.0,
+          "Arbitrage": 4914074.0
         },
         "top_service": "DCL",
-        "fr_mw": 43.561887311481975,
-        "arb_mw": 4.061287891953703,
-        "total_mwh_cycled": 79735.6,
-        "total_delivery_mwh": 38134.8,
+        "fr_mw": 43.56033429276273,
+        "arb_mw": 4.060921212068722,
+        "total_mwh_cycled": 80238.9,
+        "total_delivery_mwh": 38099.7,
         "pre_eac_rule": "d1",
         "include_arbitrage": false,
         "fr_blocks_committed": 10721,
-        "soe_breach_periods": 203,
-        "soe_breach_blocks": 140,
+        "soe_breach_periods": 155,
+        "soe_breach_blocks": 89,
         "auction_share_cap": 0.2,
         "delivery_modelled": true,
         "offer_valuation": "formula",
         "price_shrink": 1.0,
         "offers_at_bid_time": false,
         "forecast_vintages": true,
-        "days_covered": 1797
+        "dynamic_shrink": false,
+        "guard_bands": false,
+        "plan_smoothing": 0,
+        "dispatch_smoothing": 0,
+        "credit_recovery": null,
+        "block_start_margin": true,
+        "reserve_discharge_share": 0.6747,
+        "reserve_to_absorbed": 0.5144,
+        "reserve_sell_price": 70.82,
+        "reserve_buy_price": 92.81,
+        "trading_sell_price": 94.67,
+        "trading_buy_price": 111.96
       }
     }
   },
   "naive_mpc": {
-    "computed_at": "2026-09-18T16:52:22.022299+00:00",
-    "git_sha": "815775df03cd04adc8bae47ab253fbd954510a14",
+    "computed_at": "2026-09-24T12:15:33.907209+00:00",
+    "git_sha": "8e5487c2b03fa84afa22a7ead2ed7fb86e02a5fb",
+    "engine": "a98b5e946e3d",
     "data_mtimes": {
-      "auctions.parquet": 1788868231.5648346,
-      "bess_fleet_capacity.parquet": 1788868243.1590447,
-      "forecast_walk_forward.parquet": 1789648135.4400334,
-      "forecast_walk_forward_early.parquet": 1789734023.0461378,
-      "generation_daily.parquet": 1788868243.155298,
-      "market_index.parquet": 1788868232.7657495,
-      "response_delivery.parquet": 1789573661.5762203,
-      "system_prices.parquet": 1788868232.9180892,
-      "wind_forecast.parquet": 1789655222.5186355
+      "auctions.parquet": 1789637260.552456,
+      "bess_fleet_capacity.parquet": 1789637260.552456,
+      "forecast_walk_forward.parquet": 1790000501.0174294,
+      "forecast_walk_forward_early.parquet": 1790000501.0334294,
+      "generation_daily.parquet": 1789637260.5564559,
+      "market_index.parquet": 1789637260.580456,
+      "response_delivery.parquet": 1789637260.608456,
+      "system_prices.parquet": 1789637260.6124558,
+      "wind_forecast.parquet": 1790000501.0374293
     },
     "params": {
       "power_mw": 50.0,
@@ -166,43 +206,57 @@
       "offer_valuation": "lp",
       "offer_information": "bid_time",
       "forecast_vintages": true,
+      "credit_recovery": "any",
+      "block_start_margin": true,
       "start_date": "2021-09-16",
       "end_date": "2026-08-17",
       "price_shrink": 0.5
     },
     "summary": {
-      "total_gross": 23157570.0,
-      "total_cycling_cost": 625959.0,
-      "total_net": 22531610.0,
+      "total_gross": 23437072.0,
+      "total_cycling_cost": 645475.0,
+      "total_net": 22791596.0,
       "years_covered": 4.92,
-      "annualised_net": 4579672.0,
-      "annualised_per_mw": 91593.0,
+      "days_covered": 1797,
+      "annualised_net": 4632516.0,
+      "annualised_per_mw": 92650.0,
       "breakdown": {
-        "DCH": 2004266.0,
-        "DCL": 8748921.0,
-        "DMH": 280476.0,
-        "DML": 1363247.0,
-        "DRH": -848888.0,
-        "DRL": 2821843.0,
-        "Arbitrage": 8787704.0
+        "DCH": 2010164.0,
+        "DCL": 8762623.0,
+        "DMH": 281873.0,
+        "DML": 1364398.0,
+        "DRH": -853088.0,
+        "DRL": 2841112.0,
+        "Arbitrage": 9029991.0
       },
       "top_service": "Arbitrage",
-      "fr_mw": 41.697984945831074,
-      "arb_mw": 6.360603983014244,
-      "total_mwh_cycled": 177822.9,
-      "total_delivery_mwh": 30830.2,
+      "fr_mw": 41.70101681050922,
+      "arb_mw": 6.358502093995699,
+      "total_mwh_cycled": 184335.9,
+      "total_delivery_mwh": 30822.6,
       "pre_eac_rule": "d1",
       "include_arbitrage": true,
-      "fr_blocks_committed": 10547,
-      "soe_breach_periods": 503,
-      "soe_breach_blocks": 458,
+      "fr_blocks_committed": 10544,
+      "soe_breach_periods": 163,
+      "soe_breach_blocks": 124,
       "auction_share_cap": 0.2,
       "delivery_modelled": true,
       "offer_valuation": "lp",
       "price_shrink": 0.5,
       "offers_at_bid_time": true,
       "forecast_vintages": true,
-      "days_covered": 1797
+      "dynamic_shrink": false,
+      "guard_bands": false,
+      "plan_smoothing": 0,
+      "dispatch_smoothing": 0,
+      "credit_recovery": "any",
+      "block_start_margin": true,
+      "reserve_discharge_share": 0.2113,
+      "reserve_to_absorbed": 0.3889,
+      "reserve_sell_price": 81.92,
+      "reserve_buy_price": 79.46,
+      "trading_sell_price": 140.83,
+      "trading_buy_price": 122.61
     },
     "scenarios": {
       "arb_only": {
@@ -210,6 +264,7 @@
         "total_cycling_cost": 1035442.0,
         "total_net": 5927559.0,
         "years_covered": 4.92,
+        "days_covered": 1797,
         "annualised_net": 1204809.0,
         "annualised_per_mw": 24096.0,
         "breakdown": {
@@ -237,57 +292,81 @@
         "price_shrink": 0.5,
         "offers_at_bid_time": true,
         "forecast_vintages": true,
-        "days_covered": 1797
+        "dynamic_shrink": false,
+        "guard_bands": false,
+        "plan_smoothing": 0,
+        "dispatch_smoothing": 0,
+        "credit_recovery": "any",
+        "block_start_margin": true,
+        "reserve_discharge_share": 0.0,
+        "reserve_to_absorbed": null,
+        "reserve_sell_price": null,
+        "reserve_buy_price": null,
+        "trading_sell_price": 130.53,
+        "trading_buy_price": 99.33
       },
       "fr_only": {
-        "total_gross": 20903208.0,
-        "total_cycling_cost": 353611.0,
-        "total_net": 20549597.0,
+        "total_gross": 20892392.0,
+        "total_cycling_cost": 355016.0,
+        "total_net": 20537376.0,
         "years_covered": 4.92,
-        "annualised_net": 4176817.0,
-        "annualised_per_mw": 83536.0,
+        "days_covered": 1797,
+        "annualised_net": 4174333.0,
+        "annualised_per_mw": 83487.0,
         "breakdown": {
-          "DCH": 2292754.0,
-          "DCL": 9555203.0,
-          "DMH": 292780.0,
-          "DML": 1536973.0,
-          "DRH": -1116461.0,
-          "DRL": 3419046.0,
-          "Arbitrage": 4922914.0
+          "DCH": 2292439.0,
+          "DCL": 9556736.0,
+          "DMH": 292929.0,
+          "DML": 1537744.0,
+          "DRH": -1116800.0,
+          "DRL": 3415269.0,
+          "Arbitrage": 4914074.0
         },
         "top_service": "DCL",
-        "fr_mw": 43.561887311481975,
-        "arb_mw": 4.061287891953703,
-        "total_mwh_cycled": 79735.6,
-        "total_delivery_mwh": 38134.8,
+        "fr_mw": 43.56033429276273,
+        "arb_mw": 4.060921212068722,
+        "total_mwh_cycled": 80238.9,
+        "total_delivery_mwh": 38099.7,
         "pre_eac_rule": "d1",
         "include_arbitrage": false,
         "fr_blocks_committed": 10721,
-        "soe_breach_periods": 203,
-        "soe_breach_blocks": 140,
+        "soe_breach_periods": 155,
+        "soe_breach_blocks": 89,
         "auction_share_cap": 0.2,
         "delivery_modelled": true,
         "offer_valuation": "formula",
         "price_shrink": 1.0,
         "offers_at_bid_time": false,
         "forecast_vintages": true,
-        "days_covered": 1797
+        "dynamic_shrink": false,
+        "guard_bands": false,
+        "plan_smoothing": 0,
+        "dispatch_smoothing": 0,
+        "credit_recovery": null,
+        "block_start_margin": true,
+        "reserve_discharge_share": 0.6747,
+        "reserve_to_absorbed": 0.5144,
+        "reserve_sell_price": 70.82,
+        "reserve_buy_price": 92.81,
+        "trading_sell_price": 94.67,
+        "trading_buy_price": 111.96
       }
     }
   },
   "ml_mpc": {
-    "computed_at": "2026-09-18T17:02:30.088175+00:00",
-    "git_sha": "815775df03cd04adc8bae47ab253fbd954510a14",
+    "computed_at": "2026-09-24T12:39:58.248769+00:00",
+    "git_sha": "8e5487c2b03fa84afa22a7ead2ed7fb86e02a5fb",
+    "engine": "a98b5e946e3d",
     "data_mtimes": {
-      "auctions.parquet": 1788868231.5648346,
-      "bess_fleet_capacity.parquet": 1788868243.1590447,
-      "forecast_walk_forward.parquet": 1789648135.4400334,
-      "forecast_walk_forward_early.parquet": 1789734023.0461378,
-      "generation_daily.parquet": 1788868243.155298,
-      "market_index.parquet": 1788868232.7657495,
-      "response_delivery.parquet": 1789573661.5762203,
-      "system_prices.parquet": 1788868232.9180892,
-      "wind_forecast.parquet": 1789655222.5186355
+      "auctions.parquet": 1789637260.552456,
+      "bess_fleet_capacity.parquet": 1789637260.552456,
+      "forecast_walk_forward.parquet": 1790000501.0174294,
+      "forecast_walk_forward_early.parquet": 1790000501.0334294,
+      "generation_daily.parquet": 1789637260.5564559,
+      "market_index.parquet": 1789637260.580456,
+      "response_delivery.parquet": 1789637260.608456,
+      "system_prices.parquet": 1789637260.6124558,
+      "wind_forecast.parquet": 1790000501.0374293
     },
     "params": {
       "power_mw": 50.0,
@@ -304,6 +383,8 @@
       "offer_valuation": "lp",
       "offer_information": "bid_time",
       "forecast_vintages": true,
+      "credit_recovery": "any",
+      "block_start_margin": true,
       "start_date": "2021-09-16",
       "end_date": "2026-08-17",
       "price_shrink": 0.5,
@@ -313,38 +394,50 @@
       "test_start": "2025-03-01"
     },
     "summary": {
-      "total_gross": 23875619.0,
-      "total_cycling_cost": 561384.0,
-      "total_net": 23314235.0,
+      "total_gross": 24174133.0,
+      "total_cycling_cost": 579405.0,
+      "total_net": 23594727.0,
       "years_covered": 4.92,
-      "annualised_net": 4738745.0,
-      "annualised_per_mw": 94775.0,
+      "days_covered": 1797,
+      "annualised_net": 4795756.0,
+      "annualised_per_mw": 95915.0,
       "breakdown": {
-        "DCH": 2084427.0,
-        "DCL": 9064745.0,
-        "DMH": 297748.0,
-        "DML": 1352263.0,
-        "DRH": -823513.0,
-        "DRL": 2924019.0,
-        "Arbitrage": 8975929.0
+        "DCH": 2086448.0,
+        "DCL": 9064502.0,
+        "DMH": 298786.0,
+        "DML": 1353790.0,
+        "DRH": -829544.0,
+        "DRL": 2944778.0,
+        "Arbitrage": 9255373.0
       },
-      "top_service": "DCL",
-      "fr_mw": 42.378224195498895,
-      "arb_mw": 5.611920941311144,
-      "total_mwh_cycled": 155108.5,
-      "total_delivery_mwh": 32019.5,
+      "top_service": "Arbitrage",
+      "fr_mw": 42.37321813183,
+      "arb_mw": 5.617452303585715,
+      "total_mwh_cycled": 161074.1,
+      "total_delivery_mwh": 32061.0,
       "pre_eac_rule": "d1",
       "include_arbitrage": true,
-      "fr_blocks_committed": 10636,
-      "soe_breach_periods": 514,
-      "soe_breach_blocks": 435,
+      "fr_blocks_committed": 10635,
+      "soe_breach_periods": 227,
+      "soe_breach_blocks": 139,
       "auction_share_cap": 0.2,
       "delivery_modelled": true,
       "offer_valuation": "lp",
       "price_shrink": 0.5,
       "offers_at_bid_time": true,
       "forecast_vintages": true,
-      "days_covered": 1797
+      "dynamic_shrink": false,
+      "guard_bands": false,
+      "plan_smoothing": 0,
+      "dispatch_smoothing": 0,
+      "credit_recovery": "any",
+      "block_start_margin": true,
+      "reserve_discharge_share": 0.2236,
+      "reserve_to_absorbed": 0.357,
+      "reserve_sell_price": 82.23,
+      "reserve_buy_price": 78.64,
+      "trading_sell_price": 133.97,
+      "trading_buy_price": 109.51
     },
     "scenarios": {
       "arb_only": {
@@ -352,6 +445,7 @@
         "total_cycling_cost": 836675.0,
         "total_net": 7827003.0,
         "years_covered": 4.92,
+        "days_covered": 1797,
         "annualised_net": 1590881.0,
         "annualised_per_mw": 31818.0,
         "breakdown": {
@@ -379,41 +473,64 @@
         "price_shrink": 0.5,
         "offers_at_bid_time": true,
         "forecast_vintages": true,
-        "days_covered": 1797
+        "dynamic_shrink": false,
+        "guard_bands": false,
+        "plan_smoothing": 0,
+        "dispatch_smoothing": 0,
+        "credit_recovery": "any",
+        "block_start_margin": true,
+        "reserve_discharge_share": 0.0,
+        "reserve_to_absorbed": null,
+        "reserve_sell_price": null,
+        "reserve_buy_price": null,
+        "trading_sell_price": 131.24,
+        "trading_buy_price": 90.17
       },
       "fr_only": {
-        "total_gross": 20903208.0,
-        "total_cycling_cost": 353611.0,
-        "total_net": 20549597.0,
+        "total_gross": 20892392.0,
+        "total_cycling_cost": 355016.0,
+        "total_net": 20537376.0,
         "years_covered": 4.92,
-        "annualised_net": 4176817.0,
-        "annualised_per_mw": 83536.0,
+        "days_covered": 1797,
+        "annualised_net": 4174333.0,
+        "annualised_per_mw": 83487.0,
         "breakdown": {
-          "DCH": 2292754.0,
-          "DCL": 9555203.0,
-          "DMH": 292780.0,
-          "DML": 1536973.0,
-          "DRH": -1116461.0,
-          "DRL": 3419046.0,
-          "Arbitrage": 4922914.0
+          "DCH": 2292439.0,
+          "DCL": 9556736.0,
+          "DMH": 292929.0,
+          "DML": 1537744.0,
+          "DRH": -1116800.0,
+          "DRL": 3415269.0,
+          "Arbitrage": 4914074.0
         },
         "top_service": "DCL",
-        "fr_mw": 43.561887311481975,
-        "arb_mw": 4.061287891953703,
-        "total_mwh_cycled": 79735.6,
-        "total_delivery_mwh": 38134.8,
+        "fr_mw": 43.56033429276273,
+        "arb_mw": 4.060921212068722,
+        "total_mwh_cycled": 80238.9,
+        "total_delivery_mwh": 38099.7,
         "pre_eac_rule": "d1",
         "include_arbitrage": false,
         "fr_blocks_committed": 10721,
-        "soe_breach_periods": 203,
-        "soe_breach_blocks": 140,
+        "soe_breach_periods": 155,
+        "soe_breach_blocks": 89,
         "auction_share_cap": 0.2,
         "delivery_modelled": true,
         "offer_valuation": "formula",
         "price_shrink": 1.0,
         "offers_at_bid_time": false,
         "forecast_vintages": true,
-        "days_covered": 1797
+        "dynamic_shrink": false,
+        "guard_bands": false,
+        "plan_smoothing": 0,
+        "dispatch_smoothing": 0,
+        "credit_recovery": null,
+        "block_start_margin": true,
+        "reserve_discharge_share": 0.6747,
+        "reserve_to_absorbed": 0.5144,
+        "reserve_sell_price": 70.82,
+        "reserve_buy_price": 92.81,
+        "trading_sell_price": 94.67,
+        "trading_buy_price": 111.96
       }
     },
     "model_metrics": {
@@ -699,105 +816,105 @@
       ],
       "fixed_split": {
         "train": {
-          "rmse": 18.51,
-          "mae": 7.28,
+          "rmse": 18.67,
+          "mae": 7.3,
           "spearman": 0.984,
           "n_samples": 104634,
-          "spike_rmse": 50.72,
-          "spread_bias": -26.06,
-          "spread_mae": 26.28
+          "spike_rmse": 51.32,
+          "spread_bias": -26.09,
+          "spread_mae": 26.32
         },
         "test": {
-          "rmse": 34.14,
-          "mae": 25.5,
-          "spearman": 0.607,
+          "rmse": 34.1,
+          "mae": 25.32,
+          "spearman": 0.606,
           "n_samples": 25678,
-          "spike_rmse": 50.92,
-          "spread_bias": -16.75,
-          "spread_mae": 29.07
+          "spike_rmse": 51.07,
+          "spread_bias": -17.2,
+          "spread_mae": 29.05
         }
       }
     },
     "feature_importances": [
       {
         "feature": "apx_lag_1d",
-        "importance": 0.24794030248595553
+        "importance": 0.2490675428699832
       },
       {
         "feature": "prev_day_mean",
-        "importance": 0.15007893756734506
+        "importance": 0.1457411083165694
       },
       {
         "feature": "prev_day_max",
-        "importance": 0.06278948860005201
+        "importance": 0.06357638504196048
       },
       {
         "feature": "apx_lag_2d",
-        "importance": 0.0597543788755706
+        "importance": 0.060950266074205735
       },
       {
         "feature": "apx_lag_7d",
-        "importance": 0.04561143532134415
+        "importance": 0.04498868558906634
       },
       {
         "feature": "sp_sin",
-        "importance": 0.040988066995520316
+        "importance": 0.04105911536480392
       },
       {
         "feature": "sp_cos",
-        "importance": 0.036945404823692046
-      },
-      {
-        "feature": "prev_day_min",
-        "importance": 0.0351911573841098
+        "importance": 0.03683935744518981
       },
       {
         "feature": "apx_lag_14d",
-        "importance": 0.03478943857011718
+        "importance": 0.0350073259897148
+      },
+      {
+        "feature": "prev_day_min",
+        "importance": 0.034819258873143695
       },
       {
         "feature": "rolling_7d_mean",
-        "importance": 0.02619835603581117
+        "importance": 0.02647250818494204
       },
       {
         "feature": "gen_fossil_frac",
-        "importance": 0.0199346324430051
-      },
-      {
-        "feature": "doy_cos",
-        "importance": 0.01962722449628792
+        "importance": 0.01994725311273615
       },
       {
         "feature": "gen_gas",
-        "importance": 0.019164846431733683
+        "importance": 0.019879813980546883
+      },
+      {
+        "feature": "doy_cos",
+        "importance": 0.019805129568622612
       },
       {
         "feature": "gen_pumped_storage",
-        "importance": 0.01882352666668073
+        "importance": 0.018361049352568052
       },
       {
         "feature": "gen_renewable_frac",
-        "importance": 0.018403794372548053
+        "importance": 0.018029578104464837
       },
       {
         "feature": "prev_day_std",
-        "importance": 0.017214053436216938
+        "importance": 0.01716963293843899
       },
       {
         "feature": "gen_nuclear",
-        "importance": 0.015093765261524276
+        "importance": 0.015421300824783336
       },
       {
         "feature": "gen_solar",
-        "importance": 0.013252582010283237
+        "importance": 0.013595416994452904
       },
       {
         "feature": "doy_sin",
-        "importance": 0.012985711625583046
+        "importance": 0.013440917862348304
       },
       {
         "feature": "gen_other",
-        "importance": 0.012714213862320316
+        "importance": 0.012818215531678672
       }
     ]
   }

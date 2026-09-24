@@ -19,26 +19,26 @@ Annualised net revenue per MW:
 
 | Strategy | Full stack | Arbitrage only | What it represents |
 |---|---|---|---|
-| Perfect Foresight | £117.8k | £63.5k | Theoretical ceiling; requires knowing day-D prices |
-| **ML (Random Forest)** | **£94.8k** | **£31.8k** | Realistic case: every forecast out-of-sample, from data that existed at each decision |
-| Naive (last complete day) | £91.6k | £24.1k | The floor; any real forecast must beat it |
+| Perfect Foresight | £118.5k | £63.5k | Theoretical ceiling; requires knowing day-D prices |
+| **ML (Random Forest)** | **£95.9k** | **£31.8k** | Realistic case: every forecast out-of-sample, from data that existed at each decision |
+| Naive (last complete day) | £92.7k | £24.1k | The floor; any real forecast must beat it |
 | FR only | £83.5k | — | A site that ignores arbitrage entirely |
 
-- **Foresight ratio 12%** — the share of the naive-to-perfect gap the forecast closes,
-  `(ML − Naive) / (PF − Naive)`. It sits at 10% through the 2021–22 gas crisis and 14% from
+- **Foresight ratio 13%** — the share of the naive-to-perfect gap the forecast closes,
+  `(ML − Naive) / (PF − Naive)`. It sits at 10% through the 2021–22 gas crisis and 15% from
   2023 onward, and the forecast beats naive in every year of the backtest. The industry's
-  usual measure, Percent of Perfect, subtracts no floor and reads 80.5% here — but the naive
-  floor alone reads 77.8% on it, which is why the harder ratio is the one reported.
+  usual measure, Percent of Perfect, subtracts no floor and reads 80.9% here — but the naive
+  floor alone reads 78.2% on it, which is why the harder ratio is the one reported.
 - **The money is significant; the accuracy is not.** Resampling the paired daily revenue
-  differences in four-week blocks puts the forecast's lead at £3.18k/MW/yr, 95% interval
-  £2.05k to £4.37k, and £1.79k [£0.88k, £2.76k] on the folds from 2025 alone. Its accuracy
+  differences in four-week blocks puts the forecast's lead at £3.26k/MW/yr, 95% interval
+  £2.13k to £4.45k, and £2.26k [£1.23k, £3.45k] on the folds from 2025 alone. Its accuracy
   edge over persistence is not distinguishable from noise: Diebold-Mariano returns p = 0.26 on
   squared error and p = 0.19 on the error in the day's spread. What the forecast is worth, it
   earns through capacity allocation rather than through precision.
 - **Offers are priced by planning the day.** Each day's response offers are chosen together
   with a half-hourly trading plan, so a MW held back costs what it takes out of that plan.
   That replaced a block-by-block estimate and added £7–12k/MW/yr to every strategy — more
-  than the forecast itself is worth over naive (£3.2k).
+  than the forecast itself is worth over naive (£3.3k).
 - **Every forecast is out-of-sample.** The model is refit quarterly on the history available
   at that point and predicts only the days that follow, so no day is forecast by a model that
   trained on it. An earlier version trained once and then backtested across its own training
@@ -46,11 +46,12 @@ Annualised net revenue per MW:
   in-sample forecasting is worth, and it is not small. Forecasts are also used only once the
   data behind them exists: offers made at 14:00 on the day before see data to two days before.
 - **Frequency response dominates the stack.** FR only earns £83.5k of the ML strategy's
-  £94.8k, so arbitrage is the margin rather than the business — and what the forecast adds
+  £95.9k, so arbitrage is the margin rather than the business — and what the forecast adds
   still arrives mostly through better capacity allocation, not better trading.
-- **The battery stays compliant.** It starts 0.4–0.6% of settlement periods outside the
-  state-of-energy range its contracts require, and almost every one is a single half-hour at
-  an EFA block boundary.
+- **The battery stays compliant.** It starts 0.1–0.3% of settlement periods outside the
+  state-of-energy range its contracts require, down from 0.4–0.6% before each plan kept a margin
+  at the start of every new block, where a burst of frequency response delivery used to leave
+  no slack. Most of those that remain are still at a block boundary.
 
 ## Scope
 
@@ -82,10 +83,12 @@ from the battery's actual state of energy at the bid deadline, and the Maximum S
 discharge to the end of tomorrow at half-hourly resolution, re-solving every period and
 executing only the first — model predictive control. State of energy is held inside NESO's
 running Minimum State of Energy Requirement, which resets each block, falls as the battery
-delivers response, and climbs back at the Energy Recovery rate. Reserved Capacity is
-available to recover delivered energy but never to trade. Requirements are enforced as
-penalised soft constraints, so a commitment the battery cannot physically reach degrades into
-recorded unavailability instead of an infeasible solve.
+delivers response, and climbs back at the Energy Recovery rate. Reserved Capacity recovers
+delivered energy at the price, so recovery can wait for a good one, but it earns only on energy
+delivery has put in play and never becomes trading capacity. Every plan meets each new block a
+margin inside the requirement it restores, because DR delivery is bursty. Requirements are
+enforced as penalised soft constraints, so a commitment the battery cannot physically reach
+degrades into recorded unavailability instead of an infeasible solve.
 
 **Response delivery.** Contracts are called on as GB frequency actually moved: NESO's
 one-second frequency record is integrated along each service's response curve into the energy
@@ -133,7 +136,7 @@ Re-run the model itself:
 ```bash
 pip install -r requirements.txt
 python scripts/prepare_data.py          # raw -> data/processed/
-python scripts/precompute_cache.py      # seven dispatch runs, ~60 min
+python scripts/precompute_cache.py      # seven dispatch runs, ~80 min
 python scripts/check_cache_consistency.py
 ```
 
@@ -178,7 +181,11 @@ guards is silent: a collection outage would leave the parquets untouched, reprod
 numbers, find nothing to commit and report green. `check_cache_consistency.py` gates the
 deploy for the same reason — the strategy parquets are written sequentially over the better
 part of an hour, so a build landing mid-run would publish a blend of strategies from
-different runs.
+different runs. It also fails if the engine code has changed since the cache was built: a
+cache from older code still agrees with itself, so the site would go on publishing numbers the
+current engine no longer produces. precompute records a fingerprint of the engine; the guard
+compares it with the tree, ignoring blank lines and comments, so only a change to the code forces
+a rebuild.
 
 Operational notes for the scheduled jobs are in `.github/workflows/RUNBOOK.md`.
 

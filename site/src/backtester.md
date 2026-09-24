@@ -591,11 +591,11 @@ halfway towards its daily mean, a setting chosen on the years before 2025. That 
 is worth about £4k/MW/yr to it, which makes it a stronger and fairer benchmark.</p>
 <p>The <b>foresight ratio</b> quantifies this as a fraction of the capturable improvement:
 <code>(ML − Naive) / (PF − Naive)</code>. The industry's usual measure, Percent of Perfect,
-subtracts no floor and reads 80.5% here — but the naive floor alone reads 77.8% on it, because
+subtracts no floor and reads 80.9% here — but the naive floor alone reads 78.2% on it, because
 most of the revenue is frequency response availability that no forecast moves. The harder
 ratio is the one reported for that reason.</p>
-<p>Resampled in four-week blocks, the model's lead is £3.18k/MW/yr with a 95% interval of
-£2.05k to £4.37k. Its <i>accuracy</i> edge over persistence is not distinguishable from noise
+<p>Resampled in four-week blocks, the model's lead is £3.26k/MW/yr with a 95% interval of
+£2.13k to £4.45k. Its <i>accuracy</i> edge over persistence is not distinguishable from noise
 (Diebold-Mariano p = 0.26 on squared error); what it is worth, it earns through allocation.</p>
 <p>It is a share of the <i>capturable</i> gap, so it moves when that gap moves: charging the
 model for the energy its contracts deliver lifted the floor towards the ceiling. The bigger
