@@ -5,12 +5,14 @@ decision layer**: given yesterday's auction results and price data, how should a
 split capacity between frequency response & wholesale arbitrage, and how much does forecast
 quality actually change the outcome?
 
+## One day, step by step
+
 The walkthrough below follows a single winter day — 8 January 2026 — from the raw price
 curve through to the dispatch the model settles on. Scroll, or select any step directly.
 
 ```js
 import {SERVICE_COLOURS, SERVICE_LABELS, STRATEGY_LABELS, gbp} from "./components/theme.js";
-import {choiceGroup, controlPanel, dateRange, slider} from "./components/controls.js";
+import {choiceGroup, controlPanel, dateRange} from "./components/controls.js";
 
 const manifest = await FileAttachment("data/manifest.json").json();
 const revenueAll = (await FileAttachment("data/revenue-monthly.parquet").parquet())
@@ -23,8 +25,7 @@ const socAll = (await FileAttachment("data/soc-week.parquet").parquet())
 
 ```js
 const ALL_SERVICES = ["DCH", "DCL", "DMH", "DML", "DRH", "DRL"];
-const BASE_POWER_MW = manifest.ml_mpc.params.power_mw;   // cache is computed at this rating
-const MAX_POWER_MW = 100;                                // NESO Maximum Sell Size per product
+const POWER_MW = manifest.ml_mpc.params.power_mw;   // the one rating the cache is computed at
 const DURATION_H = manifest.ml_mpc.params.duration_h;
 const EFF = manifest.ml_mpc.params.efficiency_rt;
 const BASE_CYCLING = manifest.ml_mpc.params.cycling_cost_per_mwh;
@@ -256,16 +257,13 @@ function buildFigure(s) {
 ## The model in full
 
 Everything below runs that same engine across the whole backtest window rather than one day.
-Set the asset, the price signal it trades on and the markets it may bid into; every figure on
-the rest of the page follows the selection.
+Choose the price signal the asset trades on, the markets it may bid into and the dates; every
+figure on the rest of the page follows the selection.
 
 ```js
 // Built here and observed in the next block rather than through view(), which
-// would display each control where its cell sits — five stacked form rows
-// instead of one panel.
-const powerInput = slider({
-  min: 1, max: MAX_POWER_MW, step: 1, value: BASE_POWER_MW, unit: "MW", label: "Asset power",
-});
+// would display each control where its cell sits — stacked form rows instead
+// of one panel.
 const strategyInput = choiceGroup(Object.keys(STRATEGY_LABELS), {
   value: "ml_mpc", format: (k) => STRATEGY_LABELS[k], label: "Price signal",
 });
@@ -275,7 +273,6 @@ const scenarioInput = choiceGroup(Object.keys(SCENARIO_LABELS), {
 const dateInputs = dateRange({value: bounds, min: bounds[0], max: bounds[1]});
 
 display(controlPanel([
-  {label: "Asset power", input: powerInput},
   {label: "Price signal", input: strategyInput},
   {label: "Markets", input: scenarioInput},
   {label: "Date range", input: dateInputs},
@@ -283,7 +280,6 @@ display(controlPanel([
 ```
 
 ```js
-const powerMw = Generators.input(powerInput);
 const strategyPick = Generators.input(strategyInput);
 const scenarioPick = Generators.input(scenarioInput);
 const fromPick = Generators.input(dateInputs.from);
@@ -291,19 +287,15 @@ const toPick = Generators.input(dateInputs.to);
 ```
 
 <div class="muted controls-note">
-Every figure comes from a precomputed run for a ${BASE_POWER_MW} MW / ${BASE_POWER_MW * DURATION_H} MWh
-reference asset and scales linearly with power at fixed duration. That holds while the battery
-is a price-taker, too small for its offers to move clearing prices. The slider stops at
-${MAX_POWER_MW} MW, NESO's Maximum Sell Size for a single product. Which products the battery
+Every figure comes from a precomputed run for one ${POWER_MW} MW / ${POWER_MW * DURATION_H} MWh
+reference asset. Revenue per MW is the figure to compare against other assets, though it is not
+exactly independent of size: the model never holds more than a fifth of an auction, and that limit
+binds a larger battery more often ([methodology](./methodology#known-limitations)). Which products the battery
 holds is decided by the model under NESO's rules rather than chosen here; the revenue breakdown
 below shows what it held.
 </div>
 
 ```js
-// Revenue scales linearly with power at fixed duration, so scaling the cached monthly
-// table by the power ratio is exact rather than an approximation.
-const scale = powerMw / BASE_POWER_MW;
-
 // The cached table is monthly, and the cache bounds are mid-month dates
 // (2021-09-16 / 2026-08-17). Comparing a month-start against a mid-month bound
 // would silently drop the first and last months, so widen to whole months.
@@ -326,7 +318,7 @@ function rowsFor(strategy, scenario) {
     .filter(inRange)
     .map((d) => {
       const row = {month_dt: d.month_dt};
-      for (const c of COLUMNS) row[c] = (d[c] ?? 0) * scale;
+      for (const c of COLUMNS) row[c] = d[c] ?? 0;
       return row;
     })
     .sort((a, b) => a.month_dt - b.month_dt);
@@ -367,7 +359,7 @@ function summarise(rows, mw) {
 }
 
 const monthly = rowsFor(strategyPick, scenarioPick);
-const summary = summarise(monthly, powerMw);
+const summary = summarise(monthly, POWER_MW);
 const breachPeriods = manifest[strategyPick].summary.soe_breach_periods;
 ```
 
@@ -380,7 +372,7 @@ const breachPeriods = manifest[strategyPick].summary.soe_breach_periods;
 <div class="card kpi"><h2>Top revenue stream</h2><span class="big">${summary ? (SERVICE_LABELS[summary.top] ?? summary.top) : "—"}</span></div>
 </div>
 
-Modelling a **${powerMw} MW / ${(powerMw * DURATION_H).toFixed(0)} MWh** asset
+Modelling a **${POWER_MW} MW / ${(POWER_MW * DURATION_H).toFixed(0)} MWh** asset
 (${DURATION_H}h duration, ${(EFF * 100).toFixed(0)}% round-trip efficiency) in
 **${SCENARIO_LABELS[scenarioPick]}**, using **${STRATEGY_LABELS[strategyPick]}** price signals
 and MPC dispatch over a rolling horizon to the end of tomorrow.
@@ -549,7 +541,7 @@ isolating how much *forecast quality* — not the optimiser — affects operatio
 // Apply the identical filter and scaling to all three strategies so the comparison
 // reflects whatever selection is active above.
 const allSummaries = Object.fromEntries(Object.keys(STRATEGY_LABELS).map((key) =>
-  [key, summarise(rowsFor(key, scenarioPick), powerMw)]
+  [key, summarise(rowsFor(key, scenarioPick), POWER_MW)]
 ));
 
 const pf = allSummaries.pf_mpc, nv = allSummaries.naive_mpc, ml = allSummaries.ml_mpc;
@@ -745,8 +737,8 @@ display(summary && summary.mwhCycled > 0 ? Inputs.table(
     return {
       "£/MWh cycled": c.toFixed(2),
       "Total net revenue": gbp(net),
-      "£k / MW / yr": summary.years > 0 && powerMw > 0
-        ? (net / summary.years / powerMw / 1e3).toFixed(1) : "—",
+      "£k / MW / yr": summary.years > 0 && POWER_MW > 0
+        ? (net / summary.years / POWER_MW / 1e3).toFixed(1) : "—",
       "": c === BASE_CYCLING ? "← base case" : "",
     };
   }), {rows: 8}
@@ -757,7 +749,7 @@ display(summary && summary.mwhCycled > 0 ? Inputs.table(
 if (summary && summary.mwhCycled > 0) display(html`<div class="muted">
 Gross revenue is held constant; only the cycling deduction changes. Total cycled across
 this selection: ${d3.format(",.0f")(summary.mwhCycled)} MWh
-(${d3.format(",.0f")(summary.mwhCycled / summary.years / powerMw)} MWh/MW/yr annualised).
+(${d3.format(",.0f")(summary.mwhCycled / summary.years / POWER_MW)} MWh/MW/yr annualised).
 </div>`);
 ```
 
@@ -771,7 +763,7 @@ const mixRows = [
   ["FR only", "fr_only"],
   ["Arbitrage only", "arb_only"],
 ].map(([label, key]) => {
-  const s = summarise(rowsFor(strategyPick, key), powerMw);
+  const s = summarise(rowsFor(strategyPick, key), POWER_MW);
   return s ? {
     Scenario: label,
     "Total net revenue": gbp(s.net),

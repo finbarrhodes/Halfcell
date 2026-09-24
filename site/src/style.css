@@ -345,7 +345,7 @@ form.oi input[type="checkbox"], form.oi input[type="radio"] { accent-color: var(
   font-weight: 700;
   letter-spacing: 0.09em;
   text-transform: uppercase;
-  color: var(--hc-teal);
+  color: var(--hc-teal-deep);
   display: block;
   margin-bottom: 0.35rem;
 }
@@ -615,3 +615,6 @@ form.oi input[type="checkbox"], form.oi input[type="radio"] { accent-color: var(
 
 /* Card headings sit at the top of the card, not 2rem down like page headings */
 .card h3 { margin-top: 0; font-size: 1.05rem; }
+
+/* Framework's footer uses --theme-foreground-faint, too light to read on paper */
+#observablehq-footer { color: var(--hc-ink-soft); }
