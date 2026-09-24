@@ -9,7 +9,7 @@ needed while diagnosing a failed run belongs here.
 | Workflow | Trigger | Duration | Writes to the repo? |
 |---|---|---|---|
 | `tests.yml` | push, PR, **Mondays 06:23 UTC** | ~1 min | no |
-| `refresh_data.yml` | **2nd of month 04:41 UTC**, manual | ~35–45 min | yes — commits to `main` |
+| `refresh_data.yml` | **2nd of month 04:41 UTC**, manual | ~80–100 min | yes — commits to `main` |
 | `deploy_site.yml` | push touching `site/`, `data/processed/`, `data/cache/`; manual | ~1 min | no |
 
 `refresh_data.yml` is the only one that commits. It publishes to the live site as a side
@@ -96,6 +96,17 @@ just re-dispatch.
 
 **`Trigger the site deploy`** — the data landed but the site was not rebuilt. Recover by
 dispatching the deploy by hand: `gh workflow run deploy_site.yml --ref main`.
+
+## Triage: `deploy_site.yml`
+
+**`Guard against a torn cache`** failing with *the cache was computed by engine …, but the
+code in the tree fingerprints as …* — the engine changed after the cache was last built, so
+the site would publish numbers the current code does not produce. The data is fine and
+nothing was deployed. Rebuild the cache: dispatch the refresh
+(`gh workflow run refresh_data.yml --ref main`), which rebuilds and redeploys, or run
+`python scripts/precompute_cache.py` locally and commit `data/cache/`. Blank lines and
+whole-line comments in the engine do not trigger this; any other edit, docstrings included,
+does.
 
 ## Known unknowns on the first run
 

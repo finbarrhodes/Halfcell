@@ -17,6 +17,6 @@ A positive mean gain means the model loses less than naive. The dispatch row use
 
 | Window | ML − naive (£k/MW/yr) | 95% interval | P(≤ 0) | Days |
 |---|---|---|---|---|
-| all | 3.18 | [+2.05, +4.37] | 0.000 | 1797 |
-| selection | 3.87 | [+2.25, +5.52] | 0.000 | 1203 |
-| confirmation | 1.79 | [+0.88, +2.76] | 0.000 | 594 |
+| all | 3.26 | [+2.13, +4.45] | 0.000 | 1797 |
+| selection | 3.76 | [+2.16, +5.38] | 0.000 | 1203 |
+| confirmation | 2.26 | [+1.23, +3.45] | 0.000 | 594 |

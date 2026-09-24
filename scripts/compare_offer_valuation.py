@@ -71,7 +71,15 @@ ENGINE_SOURCES = [
 # the average of qr, split conformal and spci.
 BAND_METHODS = ("qr", "cqr", "spci", "spci_b", "spci_w", "ens")
 # The configuration the site publishes, which every variant here is trying to beat
-SHIPPED = {"pf": "pf_lp_vint", "naive": "naive_lp_shrink0.5_bid_vint", "ml": "ml_lp_shrink0.5_bid_vint"}
+# Recovery credit is part of it from 2026-09-24, so a variant compared against these
+# needs "recany" in its spec to run on the same dispatch engine
+SHIPPED = {"pf": "pf_lp_recany_vint", "naive": "naive_lp_shrink0.5_recany_bid_vint",
+           "ml": "ml_lp_shrink0.5_recany_bid_vint"}
+
+
+def dispatch_tag(name: str) -> str | None:
+    """The recovery-credit or margin tag in a run name: runs compare only within one."""
+    return next((tag for tag in ("recany", "rec", "margin") if tag in name.split("_")), None)
 
 
 def parse_run(spec: str) -> tuple:
@@ -85,12 +93,17 @@ def parse_run(spec: str) -> tuple:
     given. Any of BAND_METHODS in place of "cp" uses that method's bands instead
     (ML only: they are built on the ML forecast). The first number is the constant
     shrink, the risk factor with "dyn", or the intercept with "tilt"; the second is
-    the tilt, or alpha with a band. Perfect foresight ignores everything but "vint".
+    the tilt, or alpha with a band. Perfect foresight ignores everything but "vint",
+    "rec" and "recany": those credit recovery through the Reserved Capacity at the
+    price (revenue_stack.run_dispatch), a dispatch change that applies to every
+    signal. "rec" spends the recovery allowance only on reserve flows, "recany" on
+    every trade: the two readings bracket the answer. Both keep a margin inside each
+    new block's requirement; "margin" keeps that margin without the credit.
     """
     parts = spec.strip().split(":")
     strategy, valuation, rest = parts[0], parts[1], parts[2:]
     flags = {part for part in rest
-             if part in ("bid", "vint", "dyn", "tilt", "cp", "blk", "dayg") + BAND_METHODS}
+             if part in ("bid", "vint", "dyn", "tilt", "cp", "blk", "dayg", "rec", "recany", "margin") + BAND_METHODS}
     # "sm5" smooths dispatch's plan over five half-hours, "osm5" the offer plan's
     smoothing = {part[:-len(part.lstrip("abcdefghijklmnopqrstuvwxyz"))] or part: part
                  for part in rest if part.startswith(("sm", "osm"))}
@@ -110,8 +123,12 @@ def parse_run(spec: str) -> tuple:
         guard = (second or 0.2, "block" if "blk" in flags else "day" if "dayg" in flags else "period")
     elif methods and strategy != "pf":
         guard = (second or 0.2, methods[0])
+    recovery = "any" if "recany" in flags else "reserve" if "rec" in flags else None
+    if recovery and "margin" in flags:
+        raise ValueError(f"bad run spec {spec!r}: credited recovery already keeps the margin")
     return (strategy, valuation, shrink, "bid" in flags and strategy != "pf", "vint" in flags,
-            mode if strategy != "pf" else None, second, guard, dispatch_smooth, offer_smooth)
+            mode if strategy != "pf" else None, second, guard, dispatch_smooth, offer_smooth, recovery,
+            "margin" in flags)
 
 
 def engine_fingerprint() -> str:
@@ -123,27 +140,29 @@ def engine_fingerprint() -> str:
 
 def run_name(strategy: str, valuation: str, shrink: float, bid_time: bool = False,
              vintages: bool = False, dynamic=None, second: float = 0.0, guard=None,
-             dispatch_smooth: int = 0, offer_smooth: int = 0) -> str:
+             dispatch_smooth: int = 0, offer_smooth: int = 0, recovery: str | None = None,
+             margin: bool = False) -> str:
     weight = (f"_a{shrink:g}b{second:+g}" if dynamic == "tilt" else
               f"_dyn{shrink:g}" if dynamic else
               f"_shrink{shrink:g}" if valuation == "lp" and shrink != 1.0 else "")
     band = ("" if not guard else f"_{guard[1]}{guard[0]:g}" if guard[1] in BAND_METHODS
             else f"_cp{guard[0]:g}{guard[1][:3]}")
     smooth = (f"_sm{dispatch_smooth}" if dispatch_smooth else "") + (f"_osm{offer_smooth}" if offer_smooth else "")
-    return (f"{strategy}_{valuation}" + weight + band + smooth
+    credit = {"reserve": "_rec", "any": "_recany"}.get(recovery, "_margin" if margin else "")
+    return (f"{strategy}_{valuation}" + weight + band + smooth + credit
             + ("_bid" if bid_time else "") + ("_vint" if vintages else ""))
 
 
 def backtest(strategy: str, valuation: str, shrink: float, bid_time: bool, vintages: bool,
              dynamic, second: float, guard, dispatch_smooth: int, offer_smooth: int,
-             fingerprint: str, fresh: bool) -> tuple:
+             recovery: str | None, margin: bool, fingerprint: str, fresh: bool) -> tuple:
     """One full-window backtest, cached. Runs in a worker process."""
     from scripts.build_forecast_walk_forward import backtest_window, load_or_build
     from src.analysis.price_forecast import run_forecast_backtest
     from src.analysis.revenue_stack import ALL_SERVICES, REFERENCE_BATTERY, run_backtest
 
     name = run_name(strategy, valuation, shrink, bid_time, vintages, dynamic, second, guard,
-                    dispatch_smooth, offer_smooth)
+                    dispatch_smooth, offer_smooth, recovery, margin)
     monthly_file = BENCH / f"offer_valuation_{name}_{fingerprint}.parquet"
     summary_file = monthly_file.with_suffix(".json")
     if monthly_file.exists() and summary_file.exists() and not fresh:
@@ -162,7 +181,8 @@ def backtest(strategy: str, valuation: str, shrink: float, bid_time: bool, vinta
     if strategy == "pf":
         # Smoothing answers forecast error, which perfect foresight does not have - it
         # keeps actual prices, as it keeps a shrink of 1
-        result = run_backtest(auctions, market_index, REFERENCE_BATTERY, forecast_vintages=vintages, **common)
+        result = run_backtest(auctions, market_index, REFERENCE_BATTERY, forecast_vintages=vintages,
+                              credit_recovery=recovery, block_start_margin=margin, **common)
     else:
         ml = strategy == "ml"
         prebuilt = guard is not None and guard[1] in BAND_METHODS
@@ -183,7 +203,8 @@ def backtest(strategy: str, valuation: str, shrink: float, bid_time: bool, vinta
                                        guard_window_days=GUARD_WINDOW_DAYS,
                                        guard_bands=bands(guard[1], guard[0]) if prebuilt else None,
                                        plan_smoothing=offer_smooth,
-                                       dispatch_smoothing=dispatch_smooth, **common)
+                                       dispatch_smoothing=dispatch_smooth, credit_recovery=recovery,
+                                       block_start_margin=margin, **common)
 
     BENCH.mkdir(parents=True, exist_ok=True)
     monthly = result["monthly"]
@@ -202,6 +223,11 @@ def split_revenue(monthly: pd.DataFrame, power_mw: float, select_before: str) ->
                        ("selection", months < pd.Timestamp(select_before)),
                        ("confirmation", months >= pd.Timestamp(select_before))):
         m = monthly[mask.to_numpy()]
+        # Months, not days: the first and last are partial, so this runs about 1.6%
+        # low against revenue_stack's day-based divisor. Every run in a report shares
+        # the window, so the bias scales all of them alike and cancels exactly in the
+        # comparisons and foresight ratios below. Left as is to keep the committed
+        # reports comparable without re-running every backtest behind them.
         years = len(m) / 12
         if years == 0:
             out[half] = None
@@ -221,8 +247,12 @@ def foresight(rows: dict, valuation_key: str, half: str) -> float | None:
     """(ML − naive) / (PF − naive) within one valuation; PF is the same with or without _bid."""
     # Perfect foresight has one run per valuation and horizon: everything the weight
     # names add (_shrink, _dyn, _a..b.., _bid) belongs to a forecast, not to it.
+    # Recovery credit and the block-start margin are dispatch changes it shares, so its
+    # ceiling carries the same tag.
     parts = valuation_key.split("_")
-    pf_key = parts[0] + ("_vint" if valuation_key.endswith("_vint") else "")
+    credit = dispatch_tag(valuation_key)
+    pf_key = (parts[0] + (f"_{credit}" if credit else "")
+              + ("_vint" if valuation_key.endswith("_vint") else ""))
     try:
         pf = rows[f"pf_{pf_key}"]["revenue"][half]["net"]
         naive, ml = (rows[f"{s}_{valuation_key}"]["revenue"][half]["net"] for s in ("naive", "ml"))
@@ -266,7 +296,9 @@ def write_report(rows: dict, select_before: str, fingerprint: str, report: str =
                   "| Run | Δ net vs shipped (sel) | Δ net vs shipped (conf) | Foresight (sel) | Foresight (conf) |",
                   "|---|---|---|---|---|"]
         for name, row in rows.items():
-            if not name.startswith("ml_"):
+            # Recovery credit changes dispatch for every signal: only runs on the shipped
+            # dispatch engine are measured against the shipped naive and ceiling
+            if not name.startswith("ml_") or dispatch_tag(name) != dispatch_tag(SHIPPED["ml"]):
                 continue
             cells = []
             for half in ("selection", "confirmation"):

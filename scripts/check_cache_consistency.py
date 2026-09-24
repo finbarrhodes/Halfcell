@@ -12,10 +12,18 @@ dangerous: strategies are only comparable if they came from the same source data
 File mtimes cannot be used for this, because git does not preserve them across a
 checkout. The manifest's own provenance fields are used instead.
 
+It also fails if the engine has changed since the cache was built. A cache from
+older code still reads as coherent - every strategy agrees with every other - so
+the site would go on publishing numbers the current engine no longer produces,
+and nothing would say so. precompute_cache.py records a fingerprint of the code
+that made the cache; this compares it with the code in the tree. Blank lines and
+whole-line comments are ignored, so only a change to the code forces a rebuild.
+
 Run from the project root:
     python scripts/check_cache_consistency.py
 """
 
+import hashlib
 import json
 import sys
 from datetime import datetime
@@ -33,6 +41,29 @@ SHARED_FILES = ("fr_only.parquet",)
 # Strategies from one run finish within minutes of each other; a wider spread
 # means the cache was assembled from separate runs.
 MAX_SPREAD_HOURS = 6.0
+
+# The code that turns the processed data into the cache: the engine, the forecast
+# path, and precompute_cache.py itself, whose constants set the shipped configuration
+ENGINE_SOURCES = (
+    "src/analysis/revenue_stack.py", "src/analysis/fr_allocation.py", "src/analysis/neso_rules.py",
+    "src/analysis/response_delivery.py", "src/analysis/price_forecast.py", "src/analysis/features.py",
+    "src/analysis/forecasting_models.py", "src/optimisation/mpc.py", "src/optimisation/day_ahead.py",
+    "scripts/precompute_cache.py",
+)
+
+
+def engine_fingerprint(root: Path = ROOT) -> str:
+    """A hash of ENGINE_SOURCES under `root`, blind to blank lines and whole-line comments."""
+    digest = hashlib.sha256()
+    for relative in ENGINE_SOURCES:
+        path = root / relative
+        if not path.exists():
+            digest.update(f"{relative}: missing\n".encode())
+            continue
+        lines = (line.rstrip() for line in path.read_text().splitlines())
+        code = "\n".join(line for line in lines if line.strip() and not line.lstrip().startswith("#"))
+        digest.update(f"{relative}\n{code}\n".encode())
+    return digest.hexdigest()[:12]
 
 
 def _fail(msg: str) -> None:
@@ -89,7 +120,8 @@ def main() -> None:
     shared_keys = ("power_mw", "duration_h", "efficiency_rt", "cycling_cost_per_mwh",
                    "availability_factor", "start_date", "end_date", "dispatch_method",
                    "pre_eac_rule", "auction_share_cap", "horizon", "delivery_modelled",
-                   "offer_valuation", "offer_information", "forecast_vintages")
+                   "offer_valuation", "offer_information", "forecast_vintages",
+                   "credit_recovery", "block_start_margin")
     ref_params = manifest[STRATEGIES[0]]["params"]
     for strategy in STRATEGIES[1:]:
         params = manifest[strategy]["params"]
@@ -103,12 +135,26 @@ def main() -> None:
     if not manifest["ml_mpc"].get("feature_importances"):
         _fail("ml_mpc has no feature_importances — the app cannot render them")
 
+    # And by the engine that is in the tree now
+    engines = {manifest[s].get("engine") for s in STRATEGIES}
+    if None in engines:
+        _fail("the manifest records no engine fingerprint — re-run scripts/precompute_cache.py")
+    if len(engines) > 1:
+        _fail(f"strategies were computed by different engines ({', '.join(sorted(engines))}) — "
+              "re-run scripts/precompute_cache.py to completion")
+    current = engine_fingerprint()
+    if engines != {current}:
+        _fail(f"the cache was computed by engine {engines.pop()}, but the code in the tree fingerprints "
+              f"as {current}: the site would publish numbers the current engine does not produce. "
+              "Re-run scripts/precompute_cache.py, or the refresh workflow")
+
     print("Cache consistent:")
     print(f"  strategies   : {', '.join(STRATEGIES)}")
     print(f"  window       : {ref_params['start_date']} → {ref_params['end_date']}")
     print(f"  asset        : {ref_params['power_mw']} MW / {ref_params['duration_h']}h")
     print(f"  computed     : {min(stamps).isoformat(timespec='seconds')} "
           f"(spread {spread_hours * 60:.0f} min)")
+    print(f"  engine       : {current}")
 
 
 if __name__ == "__main__":
