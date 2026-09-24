@@ -1,9 +1,10 @@
 # Methodology & Data Sources
 
 How the backtest works, the market rules it runs under, and where the data comes from.
-[The model](#the-model) and [the price forecast](#the-price-forecast) describe what runs, down to
-the clause behind each constraint. What that forecast is worth, and the experiments measured
-against it, are on [Research Experiments](./research).
+[The model](#the-model) describes the two decisions the battery makes each day and
+[the price forecast](#the-price-forecast) the signal they run on; the sections between them give
+the NESO rules those decisions obey, down to the clause. What that forecast is worth, and the
+experiments measured against it, are on [Research Experiments](./research).
 
 ```js
 const coverage = await FileAttachment("data/coverage.json").json();
@@ -66,7 +67,41 @@ left at the end of day D is valued at the day's mean forecast price less wear. V
 the plan would empty the store in the last block and make holding Low response there look
 expensive for no real reason.
 
-### NESO's rules
+### Stage 2: dispatch
+
+Dispatch is a rolling **Model Predictive Control (MPC) linear programme**, re-solved every
+settlement period. At each period it plans to the end of tomorrow, the furthest any forecast yet
+exists for (between 49 and ${p.horizon} periods), executes only the first period's decision,
+and re-solves: dispatch must be committed before future prices are known.
+
+```
+maximise  Σ price[t] × (p_dis[t] − p_chg[t]) × 0.5h  −  cycling_cost × Σ p_dis[t] × 0.5h
+```
+
+subject to the state-of-charge equation, the physical store, the power the contracts leave free
+on each side, and the state-of-energy range the contracts require at the start of every period,
+which makes the battery pre-position for upcoming blocks. That range is soft: missing it costs
+£5,000 per MWh, about 2.5× the highest price in the data, so the LP always moves towards
+compliance, never breaches a contract to capture a spread, and stays solvable when a requirement
+genuinely cannot be reached. A larger penalty would buy no safety; at £50,000 the solver
+returned 1% of solves as inaccurate. Charging and discharging at once is never optimal at a
+positive spread, so no binary variables are needed. Solved with the Clarabel interior-point
+solver through cvxpy ([Diamond & Boyd, 2016](https://www.jmlr.org/papers/v17/15-408.html)).
+
+A day's commitments enter dispatch at its bid deadline: an operator must be able to deliver
+everything it offered, so it positions for its offers before results publish, and for a
+price-taker the offers are exactly what clears. A settlement period that starts outside the
+requirement counts as unavailable
+([Service Terms](https://www.neso.energy/document/384606/download) 6.12) and loses an eighth of
+the block's availability payment; the [Forecasting & Dispatch](./backtester) page reports how many
+periods each strategy missed. Misses cluster at block boundaries, where a new block restores the
+full requirement, so every plan meets each later block's start a margin inside it: one half-hour
+of delivery at its recent 90th-percentile rate for what is held. DR delivery is bursty, and a
+store run up to the limit has no slack for a half-hour above the average. Trades execute at
+actual prices, so a forecast error can lose money
+on the day; that is intended.
+
+## NESO's rules
 
 `src/analysis/neso_rules.py` holds each rule with its clause. They decide which combinations are
 permitted:
@@ -134,41 +169,7 @@ holds DR comfortably. A sensitivity run holding every pre-EAC block in DC was dr
 DC stack in both directions cannot recover the energy it delivers, and spent a fifth of the pre-EAC
 half-hours unavailable.
 
-### Stage 2: dispatch
-
-Dispatch is a rolling **Model Predictive Control (MPC) linear programme**, re-solved every
-settlement period. At each period it plans to the end of tomorrow, the furthest any forecast yet
-exists for (between 49 and ${p.horizon} periods), executes only the first period's decision,
-and re-solves: dispatch must be committed before future prices are known.
-
-```
-maximise  Σ price[t] × (p_dis[t] − p_chg[t]) × 0.5h  −  cycling_cost × Σ p_dis[t] × 0.5h
-```
-
-subject to the state-of-charge equation, the physical store, the power the contracts leave free
-on each side, and the state-of-energy range the contracts require at the start of every period,
-which makes the battery pre-position for upcoming blocks. That range is soft: missing it costs
-£5,000 per MWh, about 2.5× the highest price in the data, so the LP always moves towards
-compliance, never breaches a contract to capture a spread, and stays solvable when a requirement
-genuinely cannot be reached. A larger penalty would buy no safety; at £50,000 the solver
-returned 1% of solves as inaccurate. Charging and discharging at once is never optimal at a
-positive spread, so no binary variables are needed. Solved with the Clarabel interior-point
-solver through cvxpy ([Diamond & Boyd, 2016](https://www.jmlr.org/papers/v17/15-408.html)).
-
-A day's commitments enter dispatch at its bid deadline: an operator must be able to deliver
-everything it offered, so it positions for its offers before results publish, and for a
-price-taker the offers are exactly what clears. A settlement period that starts outside the
-requirement counts as unavailable
-([Service Terms](https://www.neso.energy/document/384606/download) 6.12) and loses an eighth of
-the block's availability payment; the [Forecasting & Dispatch](./backtester) page reports how many
-periods each strategy missed. Misses cluster at block boundaries, where a new block restores the
-full requirement, so every plan meets each later block's start a margin inside it: one half-hour
-of delivery at its recent 90th-percentile rate for what is held. DR delivery is bursty, and a
-store run up to the limit has no slack for a half-hour above the average. Trades execute at
-actual prices, so a forecast error can lose money
-on the day; that is intended.
-
-### Response delivery
+## Response delivery
 
 A contract is not only a promise to stand ready. Whenever frequency leaves the deadband, a
 battery holding response has to deliver, and the energy that moves changes its state of charge.
@@ -228,7 +229,7 @@ moving as little energy as its requirement needs. Those trades still settle at m
 so its net revenue is availability payments less the cost of recovering delivered energy,
 losses and wear.
 
-### Revenue accounting
+## Revenue accounting
 
 - **Availability.** `clearing price (£/MW/h) × MW held × 4 hours` per EFA block, less an eighth
   of the block's payment for each unavailable settlement period. High and Low name the frequency
@@ -256,7 +257,7 @@ losses and wear.
   ([Service Terms](https://www.neso.energy/document/384606/download) 5 and 7). Missed
   state-of-energy requirements are deducted separately, period by period, before it applies.
 
-### Negative clearing prices
+## Negative clearing prices
 
 **13.5% of auction records (8,134 of 60,054) clear below zero**, concentrated in DR High (5,205)
 and DM High (2,816), and all of them after EAC went live: the legacy auctions never did. The
