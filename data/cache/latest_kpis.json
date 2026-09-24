@@ -1,13 +1,12 @@
 {
-  "dch_latest": 1.64,
-  "dch_latest_date": "2026-08-17",
-  "dch_30d_avg": 2.33,
-  "dch_90d_avg": 2.3,
-  "spread_latest": 67.82,
-  "spread_latest_date": "2026-08-17",
-  "spread_30d_avg": 97.32,
-  "spread_90d_avg": 90.63,
+  "spread_30d_avg": 97.82,
+  "spread_30d_avg_year_earlier": 56.86,
+  "spread_window_end": "2026-08-17",
+  "spread_window_days": 30,
+  "fleet_mw": 4974.0,
+  "fleet_month": "2026-03",
+  "fleet_mw_year_earlier": 3902.0,
   "data_start": "2021-09-16",
   "data_end": "2026-08-17",
-  "computed_at": "2026-09-24T12:40:23Z"
+  "computed_at": "2026-09-24T13:32:51Z"
 }

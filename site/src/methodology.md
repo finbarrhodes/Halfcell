@@ -623,8 +623,10 @@ recent 90th percentile that sets the margin.
 - *Walk-forward, but not nested.* Hyperparameters were chosen once rather than inside each fold, a
   rolling training window is untested against the expanding one, and quarterly refits are a
   modelling choice. Trees cannot extrapolate beyond the prices they have seen.
-- *Price-taker,* backed by the 20% auction-size limit, which is why results scale linearly with power
-  and the dispatch page stops at 100 MW.
+- *Price-taker,* backed by the 20% auction-size limit. The limit is a share of each auction rather
+  than of the battery, so revenue per MW is not quite independent of size: in the second quarter of
+  2022, with perfect foresight, a 25 MW battery earned 9% more per MW than the 50 MW reference. The site models the one
+  reference asset rather than scaling it.
 - *Continuous MW, unlimited orders.* EAC trades whole MW and caps each unit's orders per day.
 
 ## Data sources
