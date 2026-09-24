@@ -24,16 +24,6 @@ for (const a of document.querySelectorAll("a.observablehq-header-anchor")) {
   a.replaceWith(...a.childNodes);
 }
 
-// Methodology is flat — every heading on it is an h2 — so a menu there is a
-// twelve-item list with no hierarchy to lean on, taller than the page nav above
-// it and no faster to scan than the page. It opts out; the anchor unwrap above
-// still applies to it.
-//
-// Normalised because the path is extensionless on Cloudflare Pages and under
-// `observable preview`, but keeps .html when a built file is opened directly.
-const NO_SECTION_MENU = new Set(["/methodology"]);
-const path = location.pathname.replace(/\.html$/, "").replace(/\/$/, "") || "/";
-
 // Top-level sections only. Including h3 gave 12 and 17 entries on the two chart
 // pages — long enough that the menu stopped being scannable, which is the only
 // thing it is for. The h3s are still reachable by scrolling the section.
@@ -41,10 +31,9 @@ const path = location.pathname.replace(/\.html$/, "").replace(/\/$/, "") || "/";
 // Only headings markdown gave an id, which already excludes the raw-HTML
 // headings inside cards and KPI tiles. Nothing generates an h2 inside a step or
 // figure today; the filter keeps it that way if that changes.
-const sections =
-  main && !NO_SECTION_MENU.has(path)
-    ? [...main.querySelectorAll("h2[id]")].filter((h) => !h.closest(".step, .card, figure"))
-    : [];
+const sections = main
+  ? [...main.querySelectorAll("h2[id]")].filter((h) => !h.closest(".step, .card, figure"))
+  : [];
 
 if (active && sections.length) {
   const menu = document.createElement("ol");

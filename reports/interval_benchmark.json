@@ -1,0 +1,1535 @@
+{
+  "0.1": {
+    "days": 1631,
+    "first": "2022-03-01",
+    "last": "2026-08-17",
+    "methods": {
+      "scp": {
+        "all": [
+          {
+            "all": 0,
+            "n": 78265,
+            "coverage": 0.812,
+            "below": 0.089,
+            "above": 0.098,
+            "mean_width": 110.9,
+            "median_width": 83.0,
+            "pinball": 8.51,
+            "winkler": 170.2
+          }
+        ],
+        "year": [
+          {
+            "year": 2022,
+            "n": 14679,
+            "coverage": 0.726,
+            "below": 0.157,
+            "above": 0.117,
+            "mean_width": 177.3,
+            "median_width": 170.2,
+            "pinball": 17.61,
+            "winkler": 352.1
+          },
+          {
+            "year": 2023,
+            "n": 17513,
+            "coverage": 0.942,
+            "below": 0.03,
+            "above": 0.028,
+            "mean_width": 157.5,
+            "median_width": 159.0,
+            "pinball": 8.44,
+            "winkler": 168.8
+          },
+          {
+            "year": 2024,
+            "n": 17565,
+            "coverage": 0.791,
+            "below": 0.081,
+            "above": 0.129,
+            "mean_width": 70.3,
+            "median_width": 70.1,
+            "pinball": 5.23,
+            "winkler": 104.7
+          },
+          {
+            "year": 2025,
+            "n": 17518,
+            "coverage": 0.809,
+            "below": 0.1,
+            "above": 0.091,
+            "mean_width": 73.1,
+            "median_width": 75.9,
+            "pinball": 5.61,
+            "winkler": 112.2
+          },
+          {
+            "year": 2026,
+            "n": 10990,
+            "coverage": 0.762,
+            "below": 0.09,
+            "above": 0.147,
+            "mean_width": 72.8,
+            "median_width": 74.7,
+            "pinball": 6.34,
+            "winkler": 126.7
+          }
+        ]
+      },
+      "qr": {
+        "all": [
+          {
+            "all": 0,
+            "n": 78265,
+            "coverage": 0.841,
+            "below": 0.078,
+            "above": 0.08,
+            "mean_width": 117.7,
+            "median_width": 84.4,
+            "pinball": 8.01,
+            "winkler": 160.3
+          }
+        ],
+        "year": [
+          {
+            "year": 2022,
+            "n": 14679,
+            "coverage": 0.778,
+            "below": 0.096,
+            "above": 0.126,
+            "mean_width": 284.4,
+            "median_width": 162.0,
+            "pinball": 19.62,
+            "winkler": 392.4
+          },
+          {
+            "year": 2023,
+            "n": 17513,
+            "coverage": 0.878,
+            "below": 0.082,
+            "above": 0.04,
+            "mean_width": 93.3,
+            "median_width": 84.1,
+            "pinball": 6.01,
+            "winkler": 120.1
+          },
+          {
+            "year": 2024,
+            "n": 17565,
+            "coverage": 0.869,
+            "below": 0.072,
+            "above": 0.059,
+            "mean_width": 73.4,
+            "median_width": 73.3,
+            "pinball": 4.76,
+            "winkler": 95.2
+          },
+          {
+            "year": 2025,
+            "n": 17518,
+            "coverage": 0.86,
+            "below": 0.07,
+            "above": 0.07,
+            "mean_width": 72.6,
+            "median_width": 71.1,
+            "pinball": 5.02,
+            "winkler": 100.4
+          },
+          {
+            "year": 2026,
+            "n": 10990,
+            "coverage": 0.794,
+            "below": 0.072,
+            "above": 0.133,
+            "mean_width": 76.8,
+            "median_width": 74.2,
+            "pinball": 5.69,
+            "winkler": 113.8
+          }
+        ]
+      },
+      "cqr": {
+        "all": [
+          {
+            "all": 0,
+            "n": 78265,
+            "coverage": 0.78,
+            "below": 0.109,
+            "above": 0.111,
+            "mean_width": 117.0,
+            "median_width": 76.5,
+            "pinball": 8.16,
+            "winkler": 163.2
+          }
+        ],
+        "year": [
+          {
+            "year": 2022,
+            "n": 14679,
+            "coverage": 0.77,
+            "below": 0.174,
+            "above": 0.057,
+            "mean_width": 314.9,
+            "median_width": 192.3,
+            "pinball": 20.29,
+            "winkler": 405.8
+          },
+          {
+            "year": 2023,
+            "n": 17513,
+            "coverage": 0.815,
+            "below": 0.097,
+            "above": 0.087,
+            "mean_width": 91.0,
+            "median_width": 81.4,
+            "pinball": 6.24,
+            "winkler": 124.8
+          },
+          {
+            "year": 2024,
+            "n": 17565,
+            "coverage": 0.747,
+            "below": 0.089,
+            "above": 0.164,
+            "mean_width": 60.7,
+            "median_width": 60.7,
+            "pinball": 4.69,
+            "winkler": 93.8
+          },
+          {
+            "year": 2025,
+            "n": 17518,
+            "coverage": 0.802,
+            "below": 0.1,
+            "above": 0.098,
+            "mean_width": 63.7,
+            "median_width": 62.2,
+            "pinball": 4.95,
+            "winkler": 99.0
+          },
+          {
+            "year": 2026,
+            "n": 10990,
+            "coverage": 0.754,
+            "below": 0.09,
+            "above": 0.156,
+            "mean_width": 69.3,
+            "median_width": 66.4,
+            "pinball": 5.67,
+            "winkler": 113.3
+          }
+        ]
+      },
+      "spci": {
+        "all": [
+          {
+            "all": 0,
+            "n": 78265,
+            "coverage": 0.867,
+            "below": 0.065,
+            "above": 0.068,
+            "mean_width": 118.1,
+            "median_width": 108.6,
+            "pinball": 8.33,
+            "winkler": 166.6
+          }
+        ],
+        "year": [
+          {
+            "year": 2022,
+            "n": 14679,
+            "coverage": 0.691,
+            "below": 0.166,
+            "above": 0.143,
+            "mean_width": 153.6,
+            "median_width": 148.0,
+            "pinball": 16.58,
+            "winkler": 331.5
+          },
+          {
+            "year": 2023,
+            "n": 17513,
+            "coverage": 0.946,
+            "below": 0.034,
+            "above": 0.021,
+            "mean_width": 137.8,
+            "median_width": 135.6,
+            "pinball": 7.48,
+            "winkler": 149.6
+          },
+          {
+            "year": 2024,
+            "n": 17565,
+            "coverage": 0.929,
+            "below": 0.032,
+            "above": 0.039,
+            "mean_width": 106.8,
+            "median_width": 107.0,
+            "pinball": 5.91,
+            "winkler": 118.2
+          },
+          {
+            "year": 2025,
+            "n": 17518,
+            "coverage": 0.894,
+            "below": 0.048,
+            "above": 0.058,
+            "mean_width": 96.8,
+            "median_width": 98.6,
+            "pinball": 5.94,
+            "winkler": 118.8
+          },
+          {
+            "year": 2026,
+            "n": 10990,
+            "coverage": 0.834,
+            "below": 0.062,
+            "above": 0.105,
+            "mean_width": 91.4,
+            "median_width": 94.1,
+            "pinball": 6.36,
+            "winkler": 127.1
+          }
+        ]
+      },
+      "spci_b": {
+        "all": [
+          {
+            "all": 0,
+            "n": 78265,
+            "coverage": 0.864,
+            "below": 0.069,
+            "above": 0.066,
+            "mean_width": 117.4,
+            "median_width": 108.4,
+            "pinball": 8.4,
+            "winkler": 168.0
+          }
+        ],
+        "year": [
+          {
+            "year": 2022,
+            "n": 14679,
+            "coverage": 0.681,
+            "below": 0.178,
+            "above": 0.141,
+            "mean_width": 150.5,
+            "median_width": 145.4,
+            "pinball": 16.9,
+            "winkler": 338.0
+          },
+          {
+            "year": 2023,
+            "n": 17513,
+            "coverage": 0.943,
+            "below": 0.037,
+            "above": 0.02,
+            "mean_width": 137.4,
+            "median_width": 134.8,
+            "pinball": 7.52,
+            "winkler": 150.4
+          },
+          {
+            "year": 2024,
+            "n": 17565,
+            "coverage": 0.928,
+            "below": 0.034,
+            "above": 0.038,
+            "mean_width": 106.8,
+            "median_width": 107.0,
+            "pinball": 5.92,
+            "winkler": 118.3
+          },
+          {
+            "year": 2025,
+            "n": 17518,
+            "coverage": 0.894,
+            "below": 0.05,
+            "above": 0.056,
+            "mean_width": 96.7,
+            "median_width": 98.6,
+            "pinball": 5.95,
+            "winkler": 119.0
+          },
+          {
+            "year": 2026,
+            "n": 10990,
+            "coverage": 0.835,
+            "below": 0.062,
+            "above": 0.103,
+            "mean_width": 91.4,
+            "median_width": 94.1,
+            "pinball": 6.34,
+            "winkler": 126.8
+          }
+        ]
+      },
+      "spci_w": {
+        "all": [
+          {
+            "all": 0,
+            "n": 78265,
+            "coverage": 0.868,
+            "below": 0.064,
+            "above": 0.067,
+            "mean_width": 118.1,
+            "median_width": 108.1,
+            "pinball": 8.24,
+            "winkler": 164.9
+          }
+        ],
+        "year": [
+          {
+            "year": 2022,
+            "n": 14679,
+            "coverage": 0.701,
+            "below": 0.16,
+            "above": 0.139,
+            "mean_width": 156.1,
+            "median_width": 149.9,
+            "pinball": 16.21,
+            "winkler": 324.3
+          },
+          {
+            "year": 2023,
+            "n": 17513,
+            "coverage": 0.945,
+            "below": 0.034,
+            "above": 0.021,
+            "mean_width": 136.5,
+            "median_width": 134.0,
+            "pinball": 7.43,
+            "winkler": 148.6
+          },
+          {
+            "year": 2024,
+            "n": 17565,
+            "coverage": 0.928,
+            "below": 0.033,
+            "above": 0.039,
+            "mean_width": 106.3,
+            "median_width": 106.7,
+            "pinball": 5.89,
+            "winkler": 117.8
+          },
+          {
+            "year": 2025,
+            "n": 17518,
+            "coverage": 0.894,
+            "below": 0.048,
+            "above": 0.058,
+            "mean_width": 96.6,
+            "median_width": 98.5,
+            "pinball": 5.93,
+            "winkler": 118.7
+          },
+          {
+            "year": 2026,
+            "n": 10990,
+            "coverage": 0.834,
+            "below": 0.061,
+            "above": 0.105,
+            "mean_width": 91.4,
+            "median_width": 93.7,
+            "pinball": 6.34,
+            "winkler": 126.9
+          }
+        ]
+      },
+      "ens": {
+        "all": [
+          {
+            "all": 0,
+            "n": 78265,
+            "coverage": 0.86,
+            "below": 0.072,
+            "above": 0.067,
+            "mean_width": 115.6,
+            "median_width": 91.9,
+            "pinball": 7.95,
+            "winkler": 159.1
+          }
+        ],
+        "year": [
+          {
+            "year": 2022,
+            "n": 14679,
+            "coverage": 0.751,
+            "below": 0.136,
+            "above": 0.113,
+            "mean_width": 205.1,
+            "median_width": 171.2,
+            "pinball": 16.95,
+            "winkler": 339.1
+          },
+          {
+            "year": 2023,
+            "n": 17513,
+            "coverage": 0.941,
+            "below": 0.041,
+            "above": 0.018,
+            "mean_width": 129.5,
+            "median_width": 124.8,
+            "pinball": 7.13,
+            "winkler": 142.6
+          },
+          {
+            "year": 2024,
+            "n": 17565,
+            "coverage": 0.89,
+            "below": 0.055,
+            "above": 0.055,
+            "mean_width": 83.5,
+            "median_width": 83.8,
+            "pinball": 5.09,
+            "winkler": 101.7
+          },
+          {
+            "year": 2025,
+            "n": 17518,
+            "coverage": 0.872,
+            "below": 0.068,
+            "above": 0.06,
+            "mean_width": 80.8,
+            "median_width": 81.2,
+            "pinball": 5.37,
+            "winkler": 107.4
+          },
+          {
+            "year": 2026,
+            "n": 10990,
+            "coverage": 0.81,
+            "below": 0.073,
+            "above": 0.117,
+            "mean_width": 80.3,
+            "median_width": 79.9,
+            "pinball": 5.95,
+            "winkler": 119.1
+          }
+        ]
+      }
+    }
+  },
+  "0.2": {
+    "days": 1631,
+    "first": "2022-03-01",
+    "last": "2026-08-17",
+    "methods": {
+      "scp": {
+        "all": [
+          {
+            "all": 0,
+            "n": 78265,
+            "coverage": 0.63,
+            "below": 0.175,
+            "above": 0.195,
+            "mean_width": 65.2,
+            "median_width": 50.8,
+            "pinball": 12.17,
+            "winkler": 121.7
+          }
+        ],
+        "year": [
+          {
+            "year": 2022,
+            "n": 14679,
+            "coverage": 0.503,
+            "below": 0.289,
+            "above": 0.208,
+            "mean_width": 102.7,
+            "median_width": 99.6,
+            "pinball": 25.36,
+            "winkler": 253.6
+          },
+          {
+            "year": 2023,
+            "n": 17513,
+            "coverage": 0.811,
+            "below": 0.091,
+            "above": 0.098,
+            "mean_width": 88.3,
+            "median_width": 89.9,
+            "pinball": 10.88,
+            "winkler": 108.8
+          },
+          {
+            "year": 2024,
+            "n": 17565,
+            "coverage": 0.597,
+            "below": 0.146,
+            "above": 0.257,
+            "mean_width": 43.0,
+            "median_width": 44.0,
+            "pinball": 7.93,
+            "winkler": 79.3
+          },
+          {
+            "year": 2025,
+            "n": 17518,
+            "coverage": 0.623,
+            "below": 0.197,
+            "above": 0.179,
+            "mean_width": 45.3,
+            "median_width": 47.3,
+            "pinball": 8.37,
+            "winkler": 83.7
+          },
+          {
+            "year": 2026,
+            "n": 10990,
+            "coverage": 0.573,
+            "below": 0.17,
+            "above": 0.258,
+            "mean_width": 45.3,
+            "median_width": 46.2,
+            "pinball": 9.41,
+            "winkler": 94.1
+          }
+        ]
+      },
+      "qr": {
+        "all": [
+          {
+            "all": 0,
+            "n": 78265,
+            "coverage": 0.652,
+            "below": 0.155,
+            "above": 0.193,
+            "mean_width": 65.6,
+            "median_width": 49.9,
+            "pinball": 11.06,
+            "winkler": 110.6
+          }
+        ],
+        "year": [
+          {
+            "year": 2022,
+            "n": 14679,
+            "coverage": 0.569,
+            "below": 0.181,
+            "above": 0.25,
+            "mean_width": 140.7,
+            "median_width": 95.1,
+            "pinball": 25.32,
+            "winkler": 253.2
+          },
+          {
+            "year": 2023,
+            "n": 17513,
+            "coverage": 0.697,
+            "below": 0.184,
+            "above": 0.118,
+            "mean_width": 55.0,
+            "median_width": 50.1,
+            "pinball": 8.46,
+            "winkler": 84.6
+          },
+          {
+            "year": 2024,
+            "n": 17565,
+            "coverage": 0.697,
+            "below": 0.135,
+            "above": 0.168,
+            "mean_width": 45.3,
+            "median_width": 42.1,
+            "pinball": 6.94,
+            "winkler": 69.4
+          },
+          {
+            "year": 2025,
+            "n": 17518,
+            "coverage": 0.676,
+            "below": 0.143,
+            "above": 0.182,
+            "mean_width": 45.3,
+            "median_width": 41.0,
+            "pinball": 7.42,
+            "winkler": 74.2
+          },
+          {
+            "year": 2026,
+            "n": 10990,
+            "coverage": 0.584,
+            "below": 0.125,
+            "above": 0.291,
+            "mean_width": 46.8,
+            "median_width": 41.8,
+            "pinball": 8.54,
+            "winkler": 85.4
+          }
+        ]
+      },
+      "cqr": {
+        "all": [
+          {
+            "all": 0,
+            "n": 78265,
+            "coverage": 0.597,
+            "below": 0.19,
+            "above": 0.213,
+            "mean_width": 67.0,
+            "median_width": 46.1,
+            "pinball": 11.18,
+            "winkler": 111.8
+          }
+        ],
+        "year": [
+          {
+            "year": 2022,
+            "n": 14679,
+            "coverage": 0.61,
+            "below": 0.254,
+            "above": 0.136,
+            "mean_width": 166.8,
+            "median_width": 123.0,
+            "pinball": 25.7,
+            "winkler": 257.0
+          },
+          {
+            "year": 2023,
+            "n": 17513,
+            "coverage": 0.614,
+            "below": 0.207,
+            "above": 0.179,
+            "mean_width": 53.0,
+            "median_width": 47.1,
+            "pinball": 8.83,
+            "winkler": 88.3
+          },
+          {
+            "year": 2024,
+            "n": 17565,
+            "coverage": 0.566,
+            "below": 0.151,
+            "above": 0.283,
+            "mean_width": 38.2,
+            "median_width": 35.4,
+            "pinball": 6.89,
+            "winkler": 68.9
+          },
+          {
+            "year": 2025,
+            "n": 17518,
+            "coverage": 0.629,
+            "below": 0.182,
+            "above": 0.189,
+            "mean_width": 41.5,
+            "median_width": 37.9,
+            "pinball": 7.36,
+            "winkler": 73.6
+          },
+          {
+            "year": 2026,
+            "n": 10990,
+            "coverage": 0.553,
+            "below": 0.153,
+            "above": 0.294,
+            "mean_width": 43.0,
+            "median_width": 38.4,
+            "pinball": 8.44,
+            "winkler": 84.4
+          }
+        ]
+      },
+      "spci": {
+        "all": [
+          {
+            "all": 0,
+            "n": 78265,
+            "coverage": 0.688,
+            "below": 0.141,
+            "above": 0.171,
+            "mean_width": 69.8,
+            "median_width": 62.5,
+            "pinball": 11.92,
+            "winkler": 119.2
+          }
+        ],
+        "year": [
+          {
+            "year": 2022,
+            "n": 14679,
+            "coverage": 0.488,
+            "below": 0.28,
+            "above": 0.231,
+            "mean_width": 95.2,
+            "median_width": 91.3,
+            "pinball": 24.2,
+            "winkler": 242.0
+          },
+          {
+            "year": 2023,
+            "n": 17513,
+            "coverage": 0.815,
+            "below": 0.097,
+            "above": 0.088,
+            "mean_width": 81.4,
+            "median_width": 79.0,
+            "pinball": 10.21,
+            "winkler": 102.1
+          },
+          {
+            "year": 2024,
+            "n": 17565,
+            "coverage": 0.742,
+            "below": 0.094,
+            "above": 0.164,
+            "mean_width": 60.9,
+            "median_width": 61.7,
+            "pinball": 8.29,
+            "winkler": 82.9
+          },
+          {
+            "year": 2025,
+            "n": 17518,
+            "coverage": 0.706,
+            "below": 0.125,
+            "above": 0.169,
+            "mean_width": 56.2,
+            "median_width": 57.7,
+            "pinball": 8.57,
+            "winkler": 85.7
+          },
+          {
+            "year": 2026,
+            "n": 10990,
+            "coverage": 0.638,
+            "below": 0.126,
+            "above": 0.235,
+            "mean_width": 53.2,
+            "median_width": 54.5,
+            "pinball": 9.42,
+            "winkler": 94.2
+          }
+        ]
+      },
+      "spci_b": {
+        "all": [
+          {
+            "all": 0,
+            "n": 78265,
+            "coverage": 0.686,
+            "below": 0.142,
+            "above": 0.172,
+            "mean_width": 69.5,
+            "median_width": 62.5,
+            "pinball": 11.99,
+            "winkler": 119.9
+          }
+        ],
+        "year": [
+          {
+            "year": 2022,
+            "n": 14679,
+            "coverage": 0.481,
+            "below": 0.28,
+            "above": 0.239,
+            "mean_width": 93.5,
+            "median_width": 89.9,
+            "pinball": 24.49,
+            "winkler": 244.9
+          },
+          {
+            "year": 2023,
+            "n": 17513,
+            "coverage": 0.812,
+            "below": 0.099,
+            "above": 0.089,
+            "mean_width": 81.4,
+            "median_width": 79.0,
+            "pinball": 10.23,
+            "winkler": 102.3
+          },
+          {
+            "year": 2024,
+            "n": 17565,
+            "coverage": 0.742,
+            "below": 0.094,
+            "above": 0.164,
+            "mean_width": 60.9,
+            "median_width": 61.7,
+            "pinball": 8.29,
+            "winkler": 82.9
+          },
+          {
+            "year": 2025,
+            "n": 17518,
+            "coverage": 0.706,
+            "below": 0.128,
+            "above": 0.166,
+            "mean_width": 56.1,
+            "median_width": 57.7,
+            "pinball": 8.58,
+            "winkler": 85.8
+          },
+          {
+            "year": 2026,
+            "n": 10990,
+            "coverage": 0.638,
+            "below": 0.128,
+            "above": 0.234,
+            "mean_width": 53.2,
+            "median_width": 54.5,
+            "pinball": 9.42,
+            "winkler": 94.2
+          }
+        ]
+      },
+      "spci_w": {
+        "all": [
+          {
+            "all": 0,
+            "n": 78265,
+            "coverage": 0.688,
+            "below": 0.14,
+            "above": 0.171,
+            "mean_width": 69.7,
+            "median_width": 62.3,
+            "pinball": 11.85,
+            "winkler": 118.5
+          }
+        ],
+        "year": [
+          {
+            "year": 2022,
+            "n": 14679,
+            "coverage": 0.495,
+            "below": 0.273,
+            "above": 0.233,
+            "mean_width": 96.5,
+            "median_width": 92.0,
+            "pinball": 23.91,
+            "winkler": 239.1
+          },
+          {
+            "year": 2023,
+            "n": 17513,
+            "coverage": 0.813,
+            "below": 0.098,
+            "above": 0.089,
+            "mean_width": 80.5,
+            "median_width": 78.1,
+            "pinball": 10.13,
+            "winkler": 101.3
+          },
+          {
+            "year": 2024,
+            "n": 17565,
+            "coverage": 0.741,
+            "below": 0.095,
+            "above": 0.164,
+            "mean_width": 60.6,
+            "median_width": 61.4,
+            "pinball": 8.26,
+            "winkler": 82.6
+          },
+          {
+            "year": 2025,
+            "n": 17518,
+            "coverage": 0.705,
+            "below": 0.126,
+            "above": 0.168,
+            "mean_width": 56.1,
+            "median_width": 57.6,
+            "pinball": 8.56,
+            "winkler": 85.6
+          },
+          {
+            "year": 2026,
+            "n": 10990,
+            "coverage": 0.638,
+            "below": 0.127,
+            "above": 0.235,
+            "mean_width": 53.2,
+            "median_width": 54.5,
+            "pinball": 9.41,
+            "winkler": 94.1
+          }
+        ]
+      },
+      "ens": {
+        "all": [
+          {
+            "all": 0,
+            "n": 78265,
+            "coverage": 0.673,
+            "below": 0.151,
+            "above": 0.175,
+            "mean_width": 66.9,
+            "median_width": 56.3,
+            "pinball": 11.39,
+            "winkler": 113.9
+          }
+        ],
+        "year": [
+          {
+            "year": 2022,
+            "n": 14679,
+            "coverage": 0.524,
+            "below": 0.252,
+            "above": 0.223,
+            "mean_width": 112.9,
+            "median_width": 99.4,
+            "pinball": 24.21,
+            "winkler": 242.1
+          },
+          {
+            "year": 2023,
+            "n": 17513,
+            "coverage": 0.806,
+            "below": 0.109,
+            "above": 0.085,
+            "mean_width": 74.9,
+            "median_width": 71.8,
+            "pinball": 9.58,
+            "winkler": 95.8
+          },
+          {
+            "year": 2024,
+            "n": 17565,
+            "coverage": 0.695,
+            "below": 0.12,
+            "above": 0.185,
+            "mean_width": 49.8,
+            "median_width": 49.3,
+            "pinball": 7.47,
+            "winkler": 74.7
+          },
+          {
+            "year": 2025,
+            "n": 17518,
+            "coverage": 0.684,
+            "below": 0.149,
+            "above": 0.167,
+            "mean_width": 48.9,
+            "median_width": 48.5,
+            "pinball": 7.94,
+            "winkler": 79.4
+          },
+          {
+            "year": 2026,
+            "n": 10990,
+            "coverage": 0.609,
+            "below": 0.136,
+            "above": 0.255,
+            "mean_width": 48.4,
+            "median_width": 47.6,
+            "pinball": 8.93,
+            "winkler": 89.3
+          }
+        ]
+      }
+    }
+  },
+  "0.3": {
+    "days": 1631,
+    "first": "2022-03-01",
+    "last": "2026-08-17",
+    "methods": {
+      "scp": {
+        "all": [
+          {
+            "all": 0,
+            "n": 78265,
+            "coverage": 0.476,
+            "below": 0.23,
+            "above": 0.294,
+            "mean_width": 43.1,
+            "median_width": 37.5,
+            "pinball": 14.41,
+            "winkler": 96.1
+          }
+        ],
+        "year": [
+          {
+            "year": 2022,
+            "n": 14679,
+            "coverage": 0.343,
+            "below": 0.376,
+            "above": 0.281,
+            "mean_width": 65.7,
+            "median_width": 62.9,
+            "pinball": 29.97,
+            "winkler": 199.8
+          },
+          {
+            "year": 2023,
+            "n": 17513,
+            "coverage": 0.608,
+            "below": 0.179,
+            "above": 0.212,
+            "mean_width": 51.7,
+            "median_width": 50.9,
+            "pinball": 12.02,
+            "winkler": 80.1
+          },
+          {
+            "year": 2024,
+            "n": 17565,
+            "coverage": 0.448,
+            "below": 0.188,
+            "above": 0.364,
+            "mean_width": 29.8,
+            "median_width": 29.6,
+            "pinball": 9.71,
+            "winkler": 64.7
+          },
+          {
+            "year": 2025,
+            "n": 17518,
+            "coverage": 0.51,
+            "below": 0.217,
+            "above": 0.273,
+            "mean_width": 35.2,
+            "median_width": 37.0,
+            "pinball": 10.25,
+            "winkler": 68.3
+          },
+          {
+            "year": 2026,
+            "n": 10990,
+            "coverage": 0.433,
+            "below": 0.203,
+            "above": 0.364,
+            "mean_width": 33.1,
+            "median_width": 34.3,
+            "pinball": 11.58,
+            "winkler": 77.2
+          }
+        ]
+      },
+      "qr": {
+        "all": [
+          {
+            "all": 0,
+            "n": 78265,
+            "coverage": 0.472,
+            "below": 0.213,
+            "above": 0.315,
+            "mean_width": 43.2,
+            "median_width": 35.8,
+            "pinball": 13.23,
+            "winkler": 88.2
+          }
+        ],
+        "year": [
+          {
+            "year": 2022,
+            "n": 14679,
+            "coverage": 0.371,
+            "below": 0.266,
+            "above": 0.362,
+            "mean_width": 82.2,
+            "median_width": 57.5,
+            "pinball": 29.41,
+            "winkler": 196.1
+          },
+          {
+            "year": 2023,
+            "n": 17513,
+            "coverage": 0.52,
+            "below": 0.263,
+            "above": 0.217,
+            "mean_width": 36.9,
+            "median_width": 33.7,
+            "pinball": 10.12,
+            "winkler": 67.5
+          },
+          {
+            "year": 2024,
+            "n": 17565,
+            "coverage": 0.528,
+            "below": 0.17,
+            "above": 0.301,
+            "mean_width": 33.1,
+            "median_width": 31.1,
+            "pinball": 8.53,
+            "winkler": 56.9
+          },
+          {
+            "year": 2025,
+            "n": 17518,
+            "coverage": 0.501,
+            "below": 0.189,
+            "above": 0.31,
+            "mean_width": 33.3,
+            "median_width": 30.0,
+            "pinball": 9.16,
+            "winkler": 61.1
+          },
+          {
+            "year": 2026,
+            "n": 10990,
+            "coverage": 0.394,
+            "below": 0.169,
+            "above": 0.437,
+            "mean_width": 32.9,
+            "median_width": 28.7,
+            "pinball": 10.59,
+            "winkler": 70.6
+          }
+        ]
+      },
+      "cqr": {
+        "all": [
+          {
+            "all": 0,
+            "n": 78265,
+            "coverage": 0.46,
+            "below": 0.234,
+            "above": 0.305,
+            "mean_width": 46.5,
+            "median_width": 35.8,
+            "pinball": 13.38,
+            "winkler": 89.2
+          }
+        ],
+        "year": [
+          {
+            "year": 2022,
+            "n": 14679,
+            "coverage": 0.45,
+            "below": 0.325,
+            "above": 0.225,
+            "mean_width": 103.3,
+            "median_width": 81.4,
+            "pinball": 29.74,
+            "winkler": 198.3
+          },
+          {
+            "year": 2023,
+            "n": 17513,
+            "coverage": 0.469,
+            "below": 0.274,
+            "above": 0.257,
+            "mean_width": 37.1,
+            "median_width": 33.4,
+            "pinball": 10.59,
+            "winkler": 70.6
+          },
+          {
+            "year": 2024,
+            "n": 17565,
+            "coverage": 0.438,
+            "below": 0.176,
+            "above": 0.386,
+            "mean_width": 29.7,
+            "median_width": 28.0,
+            "pinball": 8.52,
+            "winkler": 56.8
+          },
+          {
+            "year": 2025,
+            "n": 17518,
+            "coverage": 0.517,
+            "below": 0.21,
+            "above": 0.273,
+            "mean_width": 33.9,
+            "median_width": 31.0,
+            "pinball": 9.17,
+            "winkler": 61.1
+          },
+          {
+            "year": 2026,
+            "n": 10990,
+            "coverage": 0.405,
+            "below": 0.184,
+            "above": 0.411,
+            "mean_width": 32.5,
+            "median_width": 28.6,
+            "pinball": 10.48,
+            "winkler": 69.9
+          }
+        ]
+      },
+      "spci": {
+        "all": [
+          {
+            "all": 0,
+            "n": 78265,
+            "coverage": 0.495,
+            "below": 0.221,
+            "above": 0.284,
+            "mean_width": 43.4,
+            "median_width": 38.5,
+            "pinball": 14.13,
+            "winkler": 94.2
+          }
+        ],
+        "year": [
+          {
+            "year": 2022,
+            "n": 14679,
+            "coverage": 0.337,
+            "below": 0.357,
+            "above": 0.305,
+            "mean_width": 62.6,
+            "median_width": 59.4,
+            "pinball": 28.89,
+            "winkler": 192.6
+          },
+          {
+            "year": 2023,
+            "n": 17513,
+            "coverage": 0.602,
+            "below": 0.204,
+            "above": 0.194,
+            "mean_width": 48.6,
+            "median_width": 46.8,
+            "pinball": 11.59,
+            "winkler": 77.3
+          },
+          {
+            "year": 2024,
+            "n": 17565,
+            "coverage": 0.531,
+            "below": 0.161,
+            "above": 0.309,
+            "mean_width": 36.2,
+            "median_width": 36.3,
+            "pinball": 9.79,
+            "winkler": 65.3
+          },
+          {
+            "year": 2025,
+            "n": 17518,
+            "coverage": 0.511,
+            "below": 0.2,
+            "above": 0.289,
+            "mean_width": 35.2,
+            "median_width": 36.0,
+            "pinball": 10.28,
+            "winkler": 68.5
+          },
+          {
+            "year": 2026,
+            "n": 10990,
+            "coverage": 0.454,
+            "below": 0.195,
+            "above": 0.351,
+            "mean_width": 34.3,
+            "median_width": 35.2,
+            "pinball": 11.52,
+            "winkler": 76.8
+          }
+        ]
+      },
+      "spci_b": {
+        "all": [
+          {
+            "all": 0,
+            "n": 78265,
+            "coverage": 0.488,
+            "below": 0.215,
+            "above": 0.297,
+            "mean_width": 42.8,
+            "median_width": 38.4,
+            "pinball": 14.27,
+            "winkler": 95.1
+          }
+        ],
+        "year": [
+          {
+            "year": 2022,
+            "n": 14679,
+            "coverage": 0.323,
+            "below": 0.344,
+            "above": 0.333,
+            "mean_width": 59.6,
+            "median_width": 57.4,
+            "pinball": 29.29,
+            "winkler": 195.3
+          },
+          {
+            "year": 2023,
+            "n": 17513,
+            "coverage": 0.596,
+            "below": 0.198,
+            "above": 0.206,
+            "mean_width": 48.4,
+            "median_width": 46.6,
+            "pinball": 11.68,
+            "winkler": 77.8
+          },
+          {
+            "year": 2024,
+            "n": 17565,
+            "coverage": 0.53,
+            "below": 0.16,
+            "above": 0.309,
+            "mean_width": 36.2,
+            "median_width": 36.3,
+            "pinball": 9.79,
+            "winkler": 65.3
+          },
+          {
+            "year": 2025,
+            "n": 17518,
+            "coverage": 0.506,
+            "below": 0.197,
+            "above": 0.297,
+            "mean_width": 35.1,
+            "median_width": 36.0,
+            "pinball": 10.33,
+            "winkler": 68.9
+          },
+          {
+            "year": 2026,
+            "n": 10990,
+            "coverage": 0.44,
+            "below": 0.186,
+            "above": 0.374,
+            "mean_width": 34.1,
+            "median_width": 35.2,
+            "pinball": 11.76,
+            "winkler": 78.4
+          }
+        ]
+      },
+      "spci_w": {
+        "all": [
+          {
+            "all": 0,
+            "n": 78265,
+            "coverage": 0.495,
+            "below": 0.221,
+            "above": 0.285,
+            "mean_width": 43.4,
+            "median_width": 38.5,
+            "pinball": 14.06,
+            "winkler": 93.8
+          }
+        ],
+        "year": [
+          {
+            "year": 2022,
+            "n": 14679,
+            "coverage": 0.341,
+            "below": 0.353,
+            "above": 0.306,
+            "mean_width": 63.2,
+            "median_width": 59.6,
+            "pinball": 28.67,
+            "winkler": 191.2
+          },
+          {
+            "year": 2023,
+            "n": 17513,
+            "coverage": 0.598,
+            "below": 0.205,
+            "above": 0.197,
+            "mean_width": 47.9,
+            "median_width": 46.2,
+            "pinball": 11.52,
+            "winkler": 76.8
+          },
+          {
+            "year": 2024,
+            "n": 17565,
+            "coverage": 0.531,
+            "below": 0.161,
+            "above": 0.308,
+            "mean_width": 36.1,
+            "median_width": 36.3,
+            "pinball": 9.77,
+            "winkler": 65.1
+          },
+          {
+            "year": 2025,
+            "n": 17518,
+            "coverage": 0.51,
+            "below": 0.201,
+            "above": 0.289,
+            "mean_width": 35.2,
+            "median_width": 36.1,
+            "pinball": 10.27,
+            "winkler": 68.5
+          },
+          {
+            "year": 2026,
+            "n": 10990,
+            "coverage": 0.453,
+            "below": 0.196,
+            "above": 0.351,
+            "mean_width": 34.3,
+            "median_width": 35.2,
+            "pinball": 11.51,
+            "winkler": 76.8
+          }
+        ]
+      },
+      "ens": {
+        "all": [
+          {
+            "all": 0,
+            "n": 78265,
+            "coverage": 0.488,
+            "below": 0.22,
+            "above": 0.292,
+            "mean_width": 43.2,
+            "median_width": 38.2,
+            "pinball": 13.64,
+            "winkler": 90.9
+          }
+        ],
+        "year": [
+          {
+            "year": 2022,
+            "n": 14679,
+            "coverage": 0.35,
+            "below": 0.339,
+            "above": 0.311,
+            "mean_width": 70.1,
+            "median_width": 62.7,
+            "pinball": 28.79,
+            "winkler": 192.0
+          },
+          {
+            "year": 2023,
+            "n": 17513,
+            "coverage": 0.592,
+            "below": 0.208,
+            "above": 0.199,
+            "mean_width": 45.7,
+            "median_width": 43.9,
+            "pinball": 10.99,
+            "winkler": 73.3
+          },
+          {
+            "year": 2024,
+            "n": 17565,
+            "coverage": 0.508,
+            "below": 0.171,
+            "above": 0.321,
+            "mean_width": 33.0,
+            "median_width": 32.8,
+            "pinball": 9.12,
+            "winkler": 60.8
+          },
+          {
+            "year": 2025,
+            "n": 17518,
+            "coverage": 0.513,
+            "below": 0.202,
+            "above": 0.285,
+            "mean_width": 34.5,
+            "median_width": 34.2,
+            "pinball": 9.74,
+            "winkler": 64.9
+          },
+          {
+            "year": 2026,
+            "n": 10990,
+            "coverage": 0.433,
+            "below": 0.188,
+            "above": 0.379,
+            "mean_width": 33.4,
+            "median_width": 32.8,
+            "pinball": 11.07,
+            "winkler": 73.8
+          }
+        ]
+      }
+    }
+  }
+}

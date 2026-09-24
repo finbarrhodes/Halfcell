@@ -18,6 +18,7 @@ statsmodels>=0.14.0
 xgboost>=2.0.0
 lightgbm>=4.0.0
 cvxpy>=1.4.0
+quantile-forest>=1.4.0  # quantile regression forests: quantile bands and SPCI
 holidays>=0.40
 
 # Configuration
