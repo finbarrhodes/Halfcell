@@ -53,6 +53,7 @@ export default {
   pages: [
     {name: "Market Overview", path: "/dashboard"},
     {name: "Forecasting & Dispatch", path: "/backtester"},
+    {name: "Research Experiments", path: "/research"},
     {name: "Methodology & Data", path: "/methodology"},
   ],
 

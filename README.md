@@ -221,7 +221,7 @@ src/
   optimisation/mpc.py     The rolling dispatch LP
   data_collection/        NESO, Elexon, REPD and frequency collectors
 scripts/                  prepare_data, precompute_cache, KPIs, OG card, guards, benchmarks
-site/                     Observable Framework site (Market Overview, Backtester, Methodology)
+site/                     Observable Framework site (Market Overview, Backtester, Research, Methodology)
 tests/                    Unit and integration suites
 data/
   raw/                    API responses (gitignored)

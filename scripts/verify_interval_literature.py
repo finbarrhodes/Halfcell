@@ -2,7 +2,7 @@
 """
 Check the two claims Halfcell makes about O'Connor et al. (2025)
 ===============================================================
-The methodology page says two things about the benchmark this project's interval
+The Research Experiments page says two things about the benchmark this project's interval
 work is built on (arXiv:2502.04935): that its EnbPI and SPCI "0.1-0.9" bands are
 nominally 90% intervals rather than the 80% they are compared against, and that
 on the random-forest forecasts the paper publishes, the forest's own quantiles
@@ -212,7 +212,7 @@ def main() -> None:
         "The conformal bands are narrower than quantile regression's and cover less, despite",
         "being nominally wider — the mislabelling is not what flatters them.",
         "",
-        "**A caveat carried on the methodology page.** The paper's Table 3 ranks the same three",
+        "**A caveat carried on the Research Experiments page.** The paper's Table 3 ranks the same three",
         f"the other way for this model and market: QR {PAPER_TABLE_3['QR']}, EnbPI "
         f"{PAPER_TABLE_3['EnbPI']}, SPCI {PAPER_TABLE_3['SPCI']}. None of the usual scoring",
         "conventions reproduces those values from the published forecasts. The ranking does",
