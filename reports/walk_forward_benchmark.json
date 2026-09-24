@@ -66,5 +66,73 @@
         "spread_mae": 29.76
       }
     }
+  },
+  {
+    "model": "hgb",
+    "fit_minutes": 2.86,
+    "folds": 20,
+    "metrics": {
+      "all": {
+        "rmse": 48.1,
+        "mae": 30.67,
+        "spearman": 0.792,
+        "spike_rmse": 109.74,
+        "n_samples": 86233,
+        "spread_bias": -18.09,
+        "spread_mae": 40.96
+      },
+      "selection": {
+        "rmse": 53.05,
+        "mae": 33.11,
+        "spearman": 0.835,
+        "spike_rmse": 123.31,
+        "n_samples": 60557,
+        "spread_bias": -24.91,
+        "spread_mae": 46.56
+      },
+      "confirmation": {
+        "rmse": 33.64,
+        "mae": 24.94,
+        "spearman": 0.605,
+        "spike_rmse": 49.15,
+        "n_samples": 25676,
+        "spread_bias": -2.01,
+        "spread_mae": 27.75
+      }
+    }
+  },
+  {
+    "model": "hgb-pinball",
+    "fit_minutes": 4.58,
+    "folds": 20,
+    "metrics": {
+      "all": {
+        "rmse": 45.81,
+        "mae": 26.49,
+        "spearman": 0.82,
+        "spike_rmse": 114.39,
+        "n_samples": 86233,
+        "spread_bias": -42.79,
+        "spread_mae": 47.71
+      },
+      "selection": {
+        "rmse": 51.68,
+        "mae": 29.73,
+        "spearman": 0.852,
+        "spike_rmse": 130.28,
+        "n_samples": 60557,
+        "spread_bias": -51.2,
+        "spread_mae": 54.97
+      },
+      "confirmation": {
+        "rmse": 27.39,
+        "mae": 18.84,
+        "spearman": 0.669,
+        "spike_rmse": 42.38,
+        "n_samples": 25676,
+        "spread_bias": -22.95,
+        "spread_mae": 30.61
+      }
+    }
   }
 ]
