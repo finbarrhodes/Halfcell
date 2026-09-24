@@ -24,9 +24,14 @@ const revenue = await FileAttachment("data/revenue-monthly.parquet").parquet();
 ```
 
 ```js
+// Dates are UTC calendar days; formatting them in local time would shift them west of GMT.
 const ml = manifest.ml_mpc;
 const fmtGbp = (v) =>
   Math.abs(v) >= 1e6 ? `£${(v / 1e6).toFixed(2)}M` : `£${(v / 1e3).toFixed(0)}k`;
+const fmtDay = (iso) => new Date(iso).toLocaleDateString("en-GB", {day: "numeric", month: "long", year: "numeric", timeZone: "UTC"});
+const fmtDayShort = (iso) => new Date(iso).toLocaleDateString("en-GB", {day: "numeric", month: "short", year: "numeric", timeZone: "UTC"});
+const fmtMonth = (ym) => new Date(`${ym}-01`).toLocaleDateString("en-GB", {month: "long", year: "numeric", timeZone: "UTC"});
+const fmtChange = (now, then) => `${now >= then ? "+" : "−"}${Math.abs((now / then - 1) * 100).toFixed(0)}%`;
 ```
 
 ## What's in this tool
@@ -34,8 +39,8 @@ const fmtGbp = (v) =>
 <div class="grid grid-cols-3">
   <div class="card nav">
     <h2><a href="./dashboard">Market Overview →</a></h2>
-    <p>What markets do batteries operate in? A look into frequency response auctions (DC, DR, DM), High vs Low spread
-    dynamics, system settlement prices, and generation mix trends.</p>
+    <p>What markets do batteries operate in? A look into frequency response auctions (DC, DR, DM),
+    wholesale and system prices, and generation mix trends.</p>
   </div>
   <div class="card nav">
     <h2><a href="./backtester">Forecasting & Dispatch →</a></h2>
@@ -77,7 +82,9 @@ const cumulative = (() => {
       const services = ["DCH", "DCL", "DMH", "DML", "DRH", "DRL"];
       const gross =
         d3.sum(services, (s) => r[`${s}_rev`] ?? 0) + (r.imbalance_revenue_gbp ?? 0);
-      total += gross - (r.cycling_cost_gbp ?? 0);
+      // Wear on every MWh discharged, trades and response delivery alike, as in the
+      // published totals: without the delivery term the chart ran 0.3-0.4% high
+      total += gross - (r.cycling_cost_gbp ?? 0) - (r.delivery_cycling_cost_gbp ?? 0);
       out.push({strategy, month: new Date(r.month_dt), total});
     }
   }
@@ -110,47 +117,47 @@ display(resize((width) => Plot.plot({
 
 ## How the market got here
 
-Six years that took frequency response from a new product to a saturated one. The
-compression visible in the charts above is the story this table tells in words.
+Five years in which frequency response went from the battery fleet's main income to a minor
+one, and the fleet turned to wholesale trading and the Balancing Mechanism.
 
-| Year | Event |
+| Year | What changed |
 |---|---|
-| **2020** | NESO launches Dynamic Containment (DC) — BESS becomes the dominant provider within months, displacing gas peakers |
-| **2021** | Day-ahead DC auctions for each EFA block; the auction results on this site begin on 16 September |
-| **2022** | Revenue peak — DM and DR join DC in late March, though a unit can still offer only one service per block; DC Low averages £17.51/MW/h over the year; leading assets earning ~£156k/MW/year |
-| **Late 2022** | Rapid capacity influx saturates frequency response markets; clearing prices begin a sharp, sustained decline |
-| **2023** | Revenue compression accelerates; wholesale arbitrage and Capacity Market grow significantly in relative importance. In November the Enduring Auction Capability lets a unit split capacity across DC, DM and DR in the same block, and prices can go negative |
-| **2024–25** | Stack diversification — operators blend FR, arbitrage, and BM participation; long-duration projects begin to emerge |
+| **2020** | National Grid ESO, now NESO, launches Dynamic Containment on 1 October: sub-second response that only fast assets can provide, and batteries are its first providers ([NESO](https://www.neso.energy/news/national-grid-eso-debuts-dynamic-containment-frequency-response-service)) |
+| **2021** | DC moves to day-ahead auctions for each EFA block; the auction results on this site begin on 16 September |
+| **2022** | The revenue peak. DM and DR join DC on 26 March, though a unit can still offer only one service per block. DC Low averages £17.51/MW/h over the year, and the fleet a record £156k/MW, 63% of it from DC ([Modo](https://modoenergy.com/research/modo-2022-review-part-2-battery-energy-storage)) |
+| **Late 2022** | New capacity outruns what NESO buys: DC Low falls from £37.04/MW/h in June to £6.34 in December |
+| **2023** | DC Low averages £2.70/MW/h, and fleet revenue falls to £51k/MW, or £65k with the Capacity Market, whose share reaches 30% by December ([Modo](https://modoenergy.com/research/modo-battery-energy-storage-year-review-2023-capacity-revenues-frequency-response)). On 2 November the Enduring Auction Capability lets a unit split capacity across DC, DM and DR in one block, and prices can go below zero |
+| **2024** | Revenue moves to wholesale trading and the Balancing Mechanism, where battery dispatch reaches a record 141 GWh; the fleet averages £50k/MW, and two-thirds of new capacity is two-hour ([Modo](https://modoenergy.com/research/en/gb-battery-energy-storage-markets-2024-year-in-review-great-britain-wholesale-balancing-mechanism-frequency-response-reserve)) |
+| **2025–26** | Response prices stay near their floor, and DR High clears below zero in most blocks (77% in 2025, 92% in 2026 to date), paid for by the energy it absorbs ([methodology](./methodology#negative-clearing-prices)) |
 
-Most of this table is hand-compiled market context rather than computed from the datasets
-below, so unlike the rest of the site it is not reproducible from the pipeline. The
-exceptions are the auction dates and the 2022 DC Low average, which come from the auction
-data.
+Clearing prices, dates and shares of blocks come from the auction data behind this site. Fleet
+revenues are Modo Energy's benchmark, which measures a different set of assets from anything
+modelled here.
 
 ## Market snapshot
 
-Where the GB frequency response and wholesale markets sit right now, against their
-recent averages. Figures update whenever the data pipeline is re-run.
+Where the market stood at the end of the data, ${fmtDay(kpis.spread_window_end)}, against a
+year earlier. The figures update with each monthly refresh.
 
 <div class="grid grid-cols-4">
   <div class="card kpi">
-    <h2>DC High — latest</h2>
-    <span class="big">£${kpis.dch_latest.toFixed(2)}</span>
-    <div class="muted">£/MW/h · 30d avg £${kpis.dch_30d_avg.toFixed(2)}</div>
+    <h2>GB battery fleet</h2>
+    <span class="big">${(kpis.fleet_mw / 1e3).toFixed(1)} GW</span>
+    <div class="muted">operational in ${fmtMonth(kpis.fleet_month)} · ${fmtChange(kpis.fleet_mw, kpis.fleet_mw_year_earlier)} on a year earlier · REPD, recent months provisional</div>
   </div>
   <div class="card kpi">
-    <h2>Wholesale spread — latest</h2>
-    <span class="big">£${kpis.spread_latest.toFixed(2)}</span>
-    <div class="muted">£/MWh peak-to-trough · 30d avg £${kpis.spread_30d_avg.toFixed(2)}</div>
+    <h2>Wholesale spread, last ${kpis.spread_window_days} days</h2>
+    <span class="big">£${kpis.spread_30d_avg.toFixed(0)}/MWh</span>
+    <div class="muted">average daily peak-to-trough · £${kpis.spread_30d_avg_year_earlier.toFixed(0)} a year earlier (${fmtChange(kpis.spread_30d_avg, kpis.spread_30d_avg_year_earlier)})</div>
   </div>
   <div class="card kpi">
     <h2>Modelled revenue — ML strategy</h2>
     <span class="big">£${(ml.summary.annualised_per_mw / 1e3).toFixed(0)}k</span>
-    <div class="muted">per MW per year · 50 MW / 2h reference asset</div>
+    <div class="muted">per MW per year · ${ml.params.power_mw} MW / ${ml.params.duration_h}h reference asset</div>
   </div>
   <div class="card kpi">
     <h2>Data through</h2>
-    <span class="big">${ml.params.end_date}</span>
+    <span class="big">${fmtDayShort(ml.params.end_date)}</span>
     <div class="muted">${ml.summary.years_covered} years backtested</div>
   </div>
 </div>
