@@ -37,3 +37,16 @@ def test_a_band_method_carries_its_alpha():
 def test_ambiguous_band_specs_are_refused(spec):
     with pytest.raises(ValueError, match="one band at a time"):
         parse_run(spec)
+
+
+def test_credited_runs_are_measured_against_a_credited_ceiling():
+    """Recovery credit changes dispatch for every signal, perfect foresight included."""
+    from scripts.compare_offer_valuation import foresight
+
+    def run(net):
+        return {"revenue": {"all": {"net": net}}}
+    rows = {"pf_lp_vint": run(100.0), "pf_lp_rec_vint": run(120.0),
+            "naive_lp_shrink0.5_bid_vint": run(80.0), "ml_lp_shrink0.5_bid_vint": run(82.0),
+            "naive_lp_shrink0.5_rec_bid_vint": run(90.0), "ml_lp_shrink0.5_rec_bid_vint": run(93.0)}
+    assert foresight(rows, "lp_shrink0.5_bid_vint", "all") == pytest.approx(0.1)       # 2 / 20
+    assert foresight(rows, "lp_shrink0.5_rec_bid_vint", "all") == pytest.approx(0.1)   # 3 / 30, not 3 / 10

@@ -234,8 +234,11 @@ def foresight(rows: dict, valuation_key: str, half: str) -> float | None:
     """(ML − naive) / (PF − naive) within one valuation; PF is the same with or without _bid."""
     # Perfect foresight has one run per valuation and horizon: everything the weight
     # names add (_shrink, _dyn, _a..b.., _bid) belongs to a forecast, not to it.
+    # Recovery credit is a dispatch change it shares, so its ceiling carries the same tag.
     parts = valuation_key.split("_")
-    pf_key = parts[0] + ("_vint" if valuation_key.endswith("_vint") else "")
+    credit = next((tag for tag in ("recany", "rec") if tag in parts), None)
+    pf_key = (parts[0] + (f"_{credit}" if credit else "")
+              + ("_vint" if valuation_key.endswith("_vint") else ""))
     try:
         pf = rows[f"pf_{pf_key}"]["revenue"][half]["net"]
         naive, ml = (rows[f"{s}_{valuation_key}"]["revenue"][half]["net"] for s in ("naive", "ml"))
@@ -279,7 +282,9 @@ def write_report(rows: dict, select_before: str, fingerprint: str, report: str =
                   "| Run | Δ net vs shipped (sel) | Δ net vs shipped (conf) | Foresight (sel) | Foresight (conf) |",
                   "|---|---|---|---|---|"]
         for name, row in rows.items():
-            if not name.startswith("ml_"):
+            # Recovery credit changes dispatch for every signal, so a credited run has
+            # its own naive and ceiling above; against the uncredited ones it would mix engines
+            if not name.startswith("ml_") or {"rec", "recany"} & set(name.split("_")):
                 continue
             cells = []
             for half in ("selection", "confirmation"):
