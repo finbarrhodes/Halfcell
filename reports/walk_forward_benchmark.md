@@ -1,0 +1,10 @@
+# Model benchmark on walk-forward folds
+
+Refit every 3 months, each origin predicting only the days that follow. Folds before 2025-01-01 are the selection set; the rest are held back as confirmation.
+
+Spread bias is reported beside the accuracy metrics because it is the only one that charges a forecast for spread it invents: LEAR won every other column here and earned £19k/MW/yr less than reusing yesterday's prices.
+
+| Model | RMSE (sel) | RMSE (conf) | Spearman (sel) | Spearman (conf) | Spike RMSE (conf) | Spread bias (conf) | Spread MAE (conf) | Fit time |
+|---|---|---|---|---|---|---|---|---|
+| rf | 53.09 | 35.24 | 0.841 | 0.587 | 52.49 | -12.55 | 29.53 | 0.0 min |
+| rf-residual | 56.98 | 27.45 | 0.832 | 0.673 | 38.09 | -18.9 | 29.76 | 25.7 min |

@@ -1,0 +1,70 @@
+[
+  {
+    "model": "rf",
+    "fit_minutes": 0.02,
+    "folds": 20,
+    "metrics": {
+      "all": {
+        "rmse": 48.46,
+        "mae": 31.21,
+        "spearman": 0.793,
+        "spike_rmse": 110.83,
+        "n_samples": 86233,
+        "spread_bias": -31.52,
+        "spread_mae": 45.09
+      },
+      "selection": {
+        "rmse": 53.09,
+        "mae": 33.16,
+        "spearman": 0.841,
+        "spike_rmse": 125.1,
+        "n_samples": 60557,
+        "spread_bias": -39.55,
+        "spread_mae": 51.68
+      },
+      "confirmation": {
+        "rmse": 35.24,
+        "mae": 26.61,
+        "spearman": 0.587,
+        "spike_rmse": 52.49,
+        "n_samples": 25676,
+        "spread_bias": -12.55,
+        "spread_mae": 29.53
+      }
+    }
+  },
+  {
+    "model": "rf-residual",
+    "fit_minutes": 25.68,
+    "folds": 20,
+    "metrics": {
+      "all": {
+        "rmse": 50.04,
+        "mae": 28.15,
+        "spearman": 0.804,
+        "spike_rmse": 116.41,
+        "n_samples": 86233,
+        "spread_bias": -23.8,
+        "spread_mae": 43.52
+      },
+      "selection": {
+        "rmse": 56.98,
+        "mae": 32.11,
+        "spearman": 0.832,
+        "spike_rmse": 127.75,
+        "n_samples": 60557,
+        "spread_bias": -25.88,
+        "spread_mae": 49.35
+      },
+      "confirmation": {
+        "rmse": 27.45,
+        "mae": 18.83,
+        "spearman": 0.673,
+        "spike_rmse": 38.09,
+        "n_samples": 25676,
+        "spread_bias": -18.9,
+        "spread_mae": 29.76
+      }
+    }
+  }
+]
