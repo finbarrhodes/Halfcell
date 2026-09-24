@@ -494,6 +494,7 @@ def run_forecast_backtest(
     plan_smoothing: int = 0,
     dispatch_smoothing: int = 0,
     credit_recovery: str | None = None,
+    block_start_margin: bool = False,
 ) -> dict:
     """
     Forecast-driven revenue backtest for the 'naive' or 'ml' strategy.
@@ -556,6 +557,8 @@ def run_forecast_backtest(
     dispatch_smoothing: the same for dispatch's own rolling plan, where the trade is
                        actually committed (revenue_stack.run_dispatch)
     credit_recovery  : let recovery through the Reserved Capacity earn at the price
+                       (revenue_stack.run_dispatch)
+    block_start_margin: keep a margin inside each new block's requirement, without credit
                        (revenue_stack.run_dispatch)
 
     Returns
@@ -648,4 +651,5 @@ def run_forecast_backtest(
         guard_low_by_date=guard_low, guard_high_by_date=guard_high,
         plan_smoothing=plan_smoothing, dispatch_smoothing=dispatch_smoothing,
         credit_recovery=credit_recovery,
+        block_start_margin=block_start_margin,
     )

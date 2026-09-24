@@ -560,3 +560,31 @@ def test_an_unknown_recovery_credit_mode_is_refused():
     day = pd.Timestamp("2026-03-02")
     with pytest.raises(ValueError, match="credit_recovery"):
         _absorbing(day, "sometimes")
+
+
+def test_the_block_start_margin_lowers_only_the_limit_at_each_later_block_start(monkeypatch):
+    """One half-hour of absorption at the recent 90th-percentile rate, at held blocks' starts only."""
+    import numpy as np
+    import src.optimisation.mpc as mpc
+    day = pd.Timestamp("2026-03-02")
+    flat = {day: pd.Series(80.0, index=range(1, 49))}
+    schedule = _holding(day, DRH=20.0)
+    schedule["soc_max_mwh"] = 70.0
+    real = mpc.solve_mpc
+
+    def planned_limits(margin):
+        seen = []
+
+        def spy(**kwargs):
+            seen.append(np.asarray(kwargs["soc_max"], dtype=float).copy())
+            return real(**kwargs)
+        monkeypatch.setattr(mpc, "solve_mpc", spy)
+        run_dispatch(flat, BATTERY, [day], flat, schedule=schedule,
+                     delivery=_delivery([day], dr_high=0.05), block_start_margin=margin)
+        return seen[10]                  # the plan made at SP11, with ten periods of delivery seen
+
+    lowered = planned_limits(False) - planned_limits(True)
+    starts = [4, 12, 20, 28]             # SP15, 23, 31 and 39, counted from SP11
+    np.testing.assert_allclose(lowered[starts], BATTERY.efficiency_rt * 20.0 * 0.05, rtol=1e-9)
+    # SP47 opens the next day's first block, which holds nothing, so it keeps no margin
+    np.testing.assert_allclose(np.delete(lowered, starts), 0.0, atol=1e-12)

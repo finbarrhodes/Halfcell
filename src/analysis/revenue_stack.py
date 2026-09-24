@@ -139,8 +139,9 @@ RECOVERY_CREDIT_MODES = (None, "reserve", "any")
 # Recovery that earns at the price waits for a good one, and so runs the store close
 # to the headroom a new block restores; delivery above its recent average in the last
 # half-hours then leaves no slack, and the block starts outside its requirement. With
-# credit, the plan meets each later block's start this many half-hours of delivery
-# inside it, at the recent 90th-percentile rate for what is held. Chosen on 2024 Q1,
+# credit, or block_start_margin alone, the plan meets each later block's start this
+# many half-hours of delivery inside it, at the recent 90th-percentile rate for what
+# is held. Chosen on 2024 Q1,
 # perfect foresight, as the most revenue with no more breaches than the uncredited
 # engine: one half-hour +9.1% and 4 breaches against 17, two +7.3% and none.
 RECOVERY_BOUNDARY_MARGIN_PERIODS = 1
@@ -939,6 +940,7 @@ def run_dispatch(
     early_forecast_prices_by_date: dict | None = None,
     dispatch_smoothing: int = 0,
     credit_recovery: str | None = None,
+    block_start_margin: bool = False,
 ) -> tuple[list, list, dict]:
     """
     Rolling MPC dispatch over every settlement period, around FR commitments.
@@ -984,6 +986,12 @@ def run_dispatch(
     reserve, so trading that sells absorbed energy leaves the allowance standing;
     "any" treats delivered energy as leaving first by whatever route, so every
     trade spends it. None, the default, leaves the reserve uncredited.
+
+    block_start_margin makes the plan meet each later block's start a margin
+    inside the requirement that block restores (RECOVERY_BOUNDARY_MARGIN_PERIODS).
+    Credit turns it on, since recovery that waits for a price otherwise runs the
+    store up to the limit; alone, it separates what the margin does for
+    compliance from what the credit does for revenue.
 
     Trades execute at actual prices. Per-period revenue can be negative when a
     forecast misleads, or when recovering delivered energy costs money; both are
@@ -1060,7 +1068,7 @@ def run_dispatch(
     recent_burst_per_mw = (
         pd.DataFrame(per_mw).rolling(DELIVERY_PLANNING_WINDOW, min_periods=1)
         .quantile(RECOVERY_BOUNDARY_QUANTILE).shift(1).fillna(0.0).to_numpy()
-        if credit_recovery is not None else None)
+        if credit_recovery is not None or block_start_margin else None)
 
     # Running Minimum State of Energy Requirement per direction, and its adjustments
     need_lo, need_hi = np.zeros(n), np.zeros(n)
@@ -1201,7 +1209,7 @@ def run_dispatch(
             later = block_start[points] != block_start[i]
             lo = np.where(later, lo + np.concatenate([[0.0], np.cumsum(expected_out)]), lo)
             hi = np.where(later, hi - eta * np.concatenate([[0.0], np.cumsum(expected_in)]), hi)
-            if credit and RECOVERY_BOUNDARY_MARGIN_PERIODS > 0:
+            if (credit or block_start_margin) and RECOVERY_BOUNDARY_MARGIN_PERIODS > 0:
                 starts = later & (block_start[points] == points)
                 k = RECOVERY_BOUNDARY_MARGIN_PERIODS
                 burst_out = k * (q_low_by_period[points] @ recent_burst_per_mw[i, _LOW_COLUMNS])
@@ -1289,6 +1297,7 @@ def run_strategy(
     plan_smoothing: int = 0,
     dispatch_smoothing: int = 0,
     credit_recovery: str | None = None,
+    block_start_margin: bool = False,
 ) -> dict:
     """
     The shared engine behind every strategy: schedule, dispatch, settle.
@@ -1346,6 +1355,7 @@ def run_strategy(
             early_forecast_prices_by_date=early_forecast_prices_by_date,
             dispatch_smoothing=dispatch_smoothing,
             credit_recovery=credit_recovery,
+            block_start_margin=block_start_margin,
         )
     else:
         energy_rows, soc_traj, breaches = [], [], {}
@@ -1396,6 +1406,7 @@ def run_strategy(
         "plan_smoothing":      plan_smoothing,
         "dispatch_smoothing":  dispatch_smoothing,
         "credit_recovery":     credit_recovery,
+        "block_start_margin":  block_start_margin or (credit_recovery is not None and include_arbitrage),
         **_reserve_diagnostics(energy_rows, battery.efficiency_rt),
     }
     result = _build_result(anc_wide, imb_wide, battery, avg_fr_mw, avg_arb_mw, soc_traj, extras,
@@ -1422,6 +1433,7 @@ def run_backtest(
     price_shrink: float = 1.0,
     forecast_vintages: bool = False,
     credit_recovery: str | None = None,
+    block_start_margin: bool = False,
 ) -> dict:
     """
     Perfect-foresight revenue backtest: actual day-D prices are the signal.
@@ -1446,6 +1458,8 @@ def run_backtest(
                     strategies must; see run_strategy
     credit_recovery : let recovery through the Reserved Capacity earn at the price,
                     within what delivery has put in play; see run_dispatch
+    block_start_margin : meet each new block a margin inside its requirement, without
+                    credit; see run_dispatch
 
     Returns
     -------
@@ -1464,6 +1478,7 @@ def run_backtest(
         offer_valuation=offer_valuation, price_shrink=price_shrink,
         forecast_vintages=forecast_vintages,
         credit_recovery=credit_recovery,
+        block_start_margin=block_start_margin,
     )
 
 
