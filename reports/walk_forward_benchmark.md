@@ -9,9 +9,11 @@ Spread bias is reported beside the accuracy metrics because it is the only one t
 | rf | 53.09 | 35.24 | 0.841 | 0.587 | 52.49 | -12.55 | 29.53 | 0.0 min |
 | rf-residual | 56.98 | 27.45 | 0.832 | 0.673 | 38.09 | -18.9 | 29.76 | 0.0 min |
 | hgb | 53.05 | 33.64 | 0.835 | 0.605 | 49.15 | -2.01 | 27.75 | 0.0 min |
+| hgb-pinball | 51.68 | 27.39 | 0.852 | 0.669 | 42.38 | -22.95 | 30.61 | 0.0 min |
 
 | Model | £k/MW/yr | Foresight ratio | Unavailable periods |
 |---|---|---|---|
 | rf | 87.3 | -11.0% | 494 |
 | rf-residual | 86.7 | -13.4% | 543 |
 | hgb | 86.3 | -14.7% | 402 |
+| hgb-pinball | 89.4 | -2.8% | 599 |

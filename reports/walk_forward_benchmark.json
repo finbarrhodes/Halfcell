@@ -118,5 +118,45 @@
       "breach_periods": 402,
       "window_from": "2021-09-16"
     }
+  },
+  {
+    "model": "hgb-pinball",
+    "fit_minutes": 0.0,
+    "folds": 20,
+    "metrics": {
+      "all": {
+        "rmse": 45.81,
+        "mae": 26.49,
+        "spearman": 0.82,
+        "spike_rmse": 114.39,
+        "n_samples": 86233,
+        "spread_bias": -42.79,
+        "spread_mae": 47.71
+      },
+      "selection": {
+        "rmse": 51.68,
+        "mae": 29.73,
+        "spearman": 0.852,
+        "spike_rmse": 130.28,
+        "n_samples": 60557,
+        "spread_bias": -51.2,
+        "spread_mae": 54.97
+      },
+      "confirmation": {
+        "rmse": 27.39,
+        "mae": 18.84,
+        "spearman": 0.669,
+        "spike_rmse": 42.38,
+        "n_samples": 25676,
+        "spread_bias": -22.95,
+        "spread_mae": 30.61
+      }
+    },
+    "revenue": {
+      "annualised_per_mw": 89393.0,
+      "foresight_ratio": -0.0284,
+      "breach_periods": 599,
+      "window_from": "2021-09-16"
+    }
   }
 ]
