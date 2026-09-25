@@ -861,7 +861,7 @@ makes the offer stage value trading headroom it will never use, declining freque
 contracts worth having, while missing a real spread only forgoes upside. This is the metric that decided
 the model choice, and none of the rows above it can see that failure — spike-RMSE scores error
 on spikes that *happened*, so inventing them is free. See
-[why the model is not chosen by accuracy](./methodology#why-the-model-is-not-chosen-by-accuracy).
+[why the model is not chosen by accuracy](./research#why-the-model-is-not-chosen-by-accuracy).
 
 Read the Spearman row with care: each column pools every period in its own window, so the
 three cover different spans and are not directly comparable, and pooling across years mixes

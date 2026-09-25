@@ -36,7 +36,7 @@ const fmtChange = (now, then) => `${now >= then ? "+" : "−"}${Math.abs((now / 
 
 ## What's in this tool
 
-<div class="grid grid-cols-3">
+<div class="grid grid-cols-2">
   <div class="card nav">
     <h2><a href="./dashboard">Market Overview →</a></h2>
     <p>What markets do batteries operate in? A look into frequency response auctions (DC, DR, DM),
@@ -48,9 +48,14 @@ const fmtChange = (now, then) => `${now >= then ? "+" : "−"}${Math.abs((now / 
     dispatch, benchmarking three price forecasting strategies.</p>
   </div>
   <div class="card nav">
+    <h2><a href="./research">Research Experiments →</a></h2>
+    <p>What the forecast is actually worth, and the experiments measured against it: model choice,
+    features, offer discounting, guard bands and reserve timing — most of which did not ship.</p>
+  </div>
+  <div class="card nav">
     <h2><a href="./methodology">Methodology & Data →</a></h2>
-    <p>How the model works, what its forecast is worth, case studies of what was tried and
-    set aside, and the data behind it.</p>
+    <p>How the model works, the NESO rules and settlement mechanics it runs under, its known
+    limitations, and the data behind it.</p>
   </div>
 </div>
 

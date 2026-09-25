@@ -27,7 +27,7 @@ of price outside the band, at the labelled level; lower is better.
 The conformal bands are narrower than quantile regression's and cover less, despite
 being nominally wider — the mislabelling is not what flatters them.
 
-**A caveat carried on the methodology page.** The paper's Table 3 ranks the same three
+**A caveat carried on the Research Experiments page.** The paper's Table 3 ranks the same three
 the other way for this model and market: QR 33.7, EnbPI 32.14, SPCI 31.65. None of the usual scoring
 conventions reproduces those values from the published forecasts. The ranking does
 appear if the miscoverage penalty is left unscaled by `1/alpha`, which charges a band
