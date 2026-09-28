@@ -1,0 +1,8 @@
+# The other forecasting models, used only by the benchmark scripts
+# (scripts/benchmark_walk_forward.py, scripts/ablate_features.py). The published
+# forecast is the Random Forest, which needs nothing beyond requirements.txt.
+#     pip install -r requirements.txt -r requirements-research.txt -c constraints.txt
+
+xgboost>=2.0.0
+lightgbm>=4.0.0
+torch>=2.0.0  # the DNN ("dnn"); not pinned in constraints.txt

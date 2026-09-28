@@ -1,5 +1,5 @@
 # Development and test dependencies. Install alongside requirements.txt:
-#     pip install -r requirements.txt -r requirements-dev.txt
+#     pip install -r requirements.txt -r requirements-dev.txt -c constraints.txt
 #
 # The runtime requirements deliberately exclude these so the refresh and deploy
 # workflows install only what the pipeline needs.
