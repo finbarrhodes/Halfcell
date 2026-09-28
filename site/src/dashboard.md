@@ -16,7 +16,8 @@ either direction. That capability is what the frequency response markets buy and
 batteries' roles in the grids of the future will continue to grow. 
 
 ```js
-import {EFA_BLOCKS, SERVICE_COLOURS, FUEL_COLOURS, rangeFor, rollingMean} from "./components/theme.js";
+import {BRAND, EFA_BLOCKS, SERVICES, SERVICE_COLOURS, FUEL_COLOURS, rangeFor, rollingMean}
+  from "./components/theme.js";
 import {choiceGroup} from "./components/controls.js";
 import {watchSteps} from "./components/scrolly.js";
 
@@ -29,7 +30,6 @@ const sysPrices = (await FileAttachment("data/system-prices-daily.parquet").parq
 const generation = (await FileAttachment("data/generation-daily.parquet").parquet())
   .toArray().map((d) => ({...d, date: new Date(d.date)}));
 
-const SERVICE_ORDER = ["DCH", "DCL", "DMH", "DML", "DRH", "DRL"];
 // The two auction rule changes that split the history (see Frequency Response)
 const EAC_GO_LIVE = new Date("2023-11-02");
 const RESERVE_RULE = new Date("2024-11-15");
@@ -55,7 +55,7 @@ const spreads = (() => {
 const shareOf = (rows, test) => Math.round(d3.mean(rows, (d) => (test(d) ? 1 : 0)) * 100);
 const lowAbove = Object.fromEntries(PAIRS.map(([m]) =>
   [m, shareOf(spreads.filter((d) => d.market === m), (d) => d.spread < 0)]));
-const eacNegative = Object.fromEntries(SERVICE_ORDER.map((s) =>
+const eacNegative = Object.fromEntries(SERVICES.map((s) =>
   [s, shareOf(auctions.filter((d) => d.service === s && d.date >= EAC_GO_LIVE), (d) => d.clearing_price < 0)]));
 ```
 
@@ -308,14 +308,14 @@ function clearingChart({era, focus, zero}, width) {
     width, height: 420, marginLeft: 45, marginRight: 10, marginTop: 24, marginBottom: 36,
     x: {label: null, domain: [x0, x1]},
     y: {label: "£/MW/h", grid: true},
-    color: {legend: true, domain: SERVICE_ORDER, range: SERVICE_ORDER.map((s) => SERVICE_COLOURS[s])},
+    color: {legend: true, domain: SERVICES, range: SERVICES.map((s) => SERVICE_COLOURS[s])},
     marks: [
       Plot.ruleY([0], zero
-        ? {stroke: "#C9400A", strokeWidth: 1.5}
+        ? {stroke: BRAND.orange, strokeWidth: 1.5}
         : {stroke: "currentColor", strokeOpacity: 0.3}),
-      Plot.ruleX(markers, {x: "date", stroke: "#9C948E", strokeDasharray: "3 3"}),
+      Plot.ruleX(markers, {x: "date", stroke: BRAND.inkFaint, strokeDasharray: "3 3"}),
       Plot.text(markers, {x: "date", text: "label", frameAnchor: "top", dy: -14, dx: 4,
-                          textAnchor: "start", fill: "#66605C", fontSize: 10}),
+                          textAnchor: "start", fill: BRAND.inkSoft, fontSize: 10}),
       Plot.line(rows.filter((d) => !inFocus(d)),
         {x: "date", y: "value", z: "service", stroke: "service", strokeWidth: 1, strokeOpacity: 0.18}),
       Plot.line(rows.filter(inFocus),
@@ -428,7 +428,7 @@ display(resize((width) => Plot.plot({
   width, height: 420, marginLeft: 55,
   x: {label: null},
   y: {label: "£/MWh", grid: true},
-  color: {legend: true, domain: PRICE_SERIES, range: ["#0D7680", "#C9400A"]},
+  color: {legend: true, domain: PRICE_SERIES, range: [BRAND.teal, BRAND.orange]},
   marks: [
     Plot.ruleY([0], {strokeOpacity: 0.3}),
     Plot.areaY(priceBands, {x: "date", y1: "low", y2: "high", z: "series", fill: "series", fillOpacity: 0.12}),
@@ -463,9 +463,9 @@ display(resize((width) => Plot.plot({
   y: {label: "Daily peak-to-trough spread (£/MWh)", grid: true},
   marks: [
     Plot.ruleY([0], {strokeOpacity: 0.3}),
-    Plot.line(marketDaily, {x: "date", y: "spread", stroke: "#C9400A", strokeOpacity: 0.35}),
+    Plot.line(marketDaily, {x: "date", y: "spread", stroke: BRAND.orange, strokeOpacity: 0.35}),
     Plot.line(rollingMean(marketDaily, 28, "date", "spread"),
-      {x: "date", y: "spread", stroke: "#8B2020", strokeWidth: 2}),
+      {x: "date", y: "spread", stroke: BRAND.red, strokeWidth: 2}),
   ],
 })));
 ```

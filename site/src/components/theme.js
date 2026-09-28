@@ -1,5 +1,15 @@
-// Shared palette and labels — mirrors src/visualization/ so the static site and
-// the Python app stay visually consistent while both exist.
+// Shared palette and labels for every page's charts. A colour or label used on
+// more than one page belongs here rather than inline, so the pages cannot drift.
+
+// The six products, in the order every chart and table lists them
+export const SERVICES = ["DCH", "DCL", "DMH", "DML", "DRH", "DRL"];
+
+// The CSS tokens in src/style.css, for chart marks, which cannot read CSS
+// variables. red is chart-only: the heavy line over a lighter orange one.
+export const BRAND = {
+  ink: "#33302E", inkSoft: "#66605C", inkFaint: "#9C948E",
+  teal: "#0D7680", orange: "#C9400A", red: "#8B2020",
+};
 
 export const SERVICE_COLOURS = {
   DCH: "#0D7680", DCL: "#5BA8AE",

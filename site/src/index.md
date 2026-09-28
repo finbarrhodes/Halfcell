@@ -18,7 +18,7 @@ const [kpis, manifest] = await Promise.all([
 ```
 
 ```js
-import {STRATEGY_COLOURS, rangeFor} from "./components/theme.js";
+import {SERVICES, STRATEGY_COLOURS, STRATEGY_LABELS, rangeFor} from "./components/theme.js";
 
 const revenue = await FileAttachment("data/revenue-monthly.parquet").parquet();
 ```
@@ -84,9 +84,8 @@ const cumulative = (() => {
   for (const [strategy, rs] of byStrategy) {
     let total = 0;
     for (const r of d3.sort(rs, (d) => d.month_dt)) {
-      const services = ["DCH", "DCL", "DMH", "DML", "DRH", "DRL"];
       const gross =
-        d3.sum(services, (s) => r[`${s}_rev`] ?? 0) + (r.imbalance_revenue_gbp ?? 0);
+        d3.sum(SERVICES, (s) => r[`${s}_rev`] ?? 0) + (r.imbalance_revenue_gbp ?? 0);
       // Wear on every MWh discharged, trades and response delivery alike, as in the
       // published totals: without the delivery term the chart ran 0.3-0.4% high
       total += gross - (r.cycling_cost_gbp ?? 0) - (r.delivery_cycling_cost_gbp ?? 0);
@@ -96,8 +95,7 @@ const cumulative = (() => {
   return out;
 })();
 
-const labels = {pf_mpc: "Perfect Foresight", naive_mpc: "Naive (D-1)", ml_mpc: "ML Model"};
-const strategies = Object.keys(labels);
+const strategies = Object.keys(STRATEGY_LABELS);
 ```
 
 ```js
@@ -111,7 +109,7 @@ display(resize((width) => Plot.plot({
     legend: true,
     domain: strategies,
     range: rangeFor(STRATEGY_COLOURS, strategies),
-    tickFormat: (d) => labels[d],
+    tickFormat: (d) => STRATEGY_LABELS[d],
   },
   marks: [
     Plot.ruleY([0]),
