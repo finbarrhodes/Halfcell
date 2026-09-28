@@ -1,0 +1,62 @@
+{
+  "model": "hgb-pinball",
+  "accuracy": {
+    "dispatch/squared_error": {
+      "mean_difference": 474.83225923599974,
+      "t_stat": 2.303493432899015,
+      "p_value": 0.02136669365874077,
+      "n": 1768,
+      "lags": 12
+    },
+    "dispatch/spread_error": {
+      "mean_difference": -5.422450478642038,
+      "t_stat": -2.686191864907984,
+      "p_value": 0.007294838665126509,
+      "n": 1768,
+      "lags": 12
+    },
+    "offer/squared_error": {
+      "mean_difference": 269.9426812706693,
+      "t_stat": 0.6110182875069395,
+      "p_value": 0.5412661074900476,
+      "n": 1767,
+      "lags": 12
+    },
+    "offer/spread_error": {
+      "mean_difference": -4.2147368141589405,
+      "t_stat": -1.715426334739322,
+      "p_value": 0.08644249977307358,
+      "n": 1767,
+      "lags": 12
+    }
+  },
+  "revenue": {
+    "all": {
+      "mean": 2.1195604916143163,
+      "low": -0.08116114515812552,
+      "high": 4.029535836513663,
+      "share_below_zero": 0.0286,
+      "block": 28,
+      "resamples": 20000
+    },
+    "selection": {
+      "mean": 2.3861899846649224,
+      "low": -0.8178093023671814,
+      "high": 5.177687576427519,
+      "share_below_zero": 0.06355,
+      "block": 28,
+      "resamples": 20000
+    },
+    "confirmation": {
+      "mean": 1.5795684375067758,
+      "low": 0.5580552170682579,
+      "high": 2.614816554166912,
+      "share_below_zero": 0.00115,
+      "block": 28,
+      "resamples": 20000
+    }
+  },
+  "block_days": 28,
+  "resamples": 20000,
+  "select_before": "2025-01-01"
+}
