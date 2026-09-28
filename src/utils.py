@@ -9,10 +9,6 @@ from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
 import pandas as pd
 from loguru import logger
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
 
 # Project root directory
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -82,31 +78,6 @@ def setup_logging(config: Optional[Dict[str, Any]] = None):
     )
     
     logger.info(f"Logging initialized at {log_level} level")
-
-
-def get_api_key(service: str) -> str:
-    """
-    Retrieve API key from environment variables.
-    
-    Args:
-        service: Name of the service (e.g., 'ELEXON')
-        
-    Returns:
-        API key string
-        
-    Raises:
-        ValueError: If API key not found
-    """
-    env_var = f"{service.upper()}_API_KEY"
-    api_key = os.getenv(env_var)
-    
-    if not api_key:
-        raise ValueError(
-            f"API key for {service} not found. "
-            f"Please set {env_var} in your .env file."
-        )
-    
-    return api_key
 
 
 def parse_date(date_str: str) -> datetime:
@@ -202,51 +173,6 @@ def save_dataframe(
     return filepath
 
 
-def load_dataframe(
-    filename: str,
-    data_type: str = 'raw',
-    format: str = 'csv'
-) -> pd.DataFrame:
-    """
-    Load DataFrame from file.
-    
-    Args:
-        filename: Name of the file
-        data_type: 'raw' or 'processed'
-        format: File format ('csv', 'parquet', 'pickle')
-        
-    Returns:
-        Loaded DataFrame
-    """
-    if data_type == 'raw':
-        directory = RAW_DATA_DIR
-    elif data_type == 'processed':
-        directory = PROCESSED_DATA_DIR
-    else:
-        raise ValueError(f"Invalid data_type: {data_type}")
-    
-    # Add extension if not present
-    if not filename.endswith(f'.{format}'):
-        filename = f"{filename}.{format}"
-    
-    filepath = directory / filename
-    
-    if not filepath.exists():
-        raise FileNotFoundError(f"File not found: {filepath}")
-    
-    if format == 'csv':
-        df = pd.read_csv(filepath)
-    elif format == 'parquet':
-        df = pd.read_parquet(filepath)
-    elif format == 'pickle':
-        df = pd.read_pickle(filepath)
-    else:
-        raise ValueError(f"Unsupported format: {format}")
-    
-    logger.info(f"Loaded data from {filepath}")
-    return df
-
-
 def calculate_settlement_period(timestamp: datetime) -> int:
     """
     GB electricity settlement period (1-48) for a local-time timestamp.
@@ -296,19 +222,3 @@ def settlement_periods_in_day(date) -> int:
 
     hours = (end.astimezone(ZoneInfo("UTC")) - start.astimezone(ZoneInfo("UTC"))).total_seconds() / 3600
     return int(round(hours * 2))
-
-
-if __name__ == "__main__":
-    # Test utility functions
-    setup_logging()
-    config = load_config()
-    logger.info(f"Configuration loaded: {config['project']['name']}")
-    
-    # Test date range generation
-    dates = generate_date_range("2024-01-01", "2024-01-07")
-    logger.info(f"Generated {len(dates)} dates")
-    
-    # Test settlement period calculation
-    test_time = datetime(2024, 1, 1, 15, 30)
-    period = calculate_settlement_period(test_time)
-    logger.info(f"Settlement period for {test_time}: {period}")
