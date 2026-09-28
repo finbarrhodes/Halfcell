@@ -223,6 +223,7 @@ src/
 scripts/                  prepare_data, precompute_cache, KPIs, OG card, guards, benchmarks
 site/                     Observable Framework site (Market Overview, Backtester, Research, Methodology)
 tests/                    Unit and integration suites
+reports/                  Experiment records behind the Methodology and Research pages; see reports/README.md
 data/
   raw/                    API responses (gitignored)
   processed/              Cleaned parquets (committed)

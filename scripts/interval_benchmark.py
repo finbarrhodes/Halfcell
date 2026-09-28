@@ -55,6 +55,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
+from scripts.provenance import stamp, stamp_lines
 
 import numpy as np
 import pandas as pd
@@ -246,6 +247,7 @@ def write_report(results: dict, report: str) -> None:
         for method, scores in block["methods"].items():
             by_year = {row["year"]: row["winkler"] for row in scores["year"]}
             lines.append(f"| {method} | " + " | ".join(f"{by_year.get(y, float('nan')):.1f}" for y in years) + " |")
+    stamp_lines(lines, stamp())
     (REPORTS / f"{report}.md").write_text("\n".join(lines) + "\n")
     print(f"Wrote reports/{report}.md")
 

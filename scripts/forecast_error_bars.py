@@ -36,6 +36,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
+from scripts.provenance import stamp, stamp_lines
 
 import numpy as np
 import pandas as pd
@@ -168,9 +169,11 @@ def main() -> None:
               f"P(≤0) {out['share_below_zero']:.3f}  days {len(frame)}")
 
     REPORTS.mkdir(exist_ok=True)
+    provenance = stamp()
     (REPORTS / "forecast_error_bars.json").write_text(json.dumps(
         {"accuracy": accuracy, "revenue": revenue, "block_days": args.block,
-         "resamples": args.resamples, "select_before": args.select_before}, indent=2) + "\n")
+         "resamples": args.resamples, "select_before": args.select_before,
+         "provenance": provenance}, indent=2) + "\n")
 
     fmt = lambda x: f"{x:+.2f}"
     lines = [
@@ -203,6 +206,7 @@ def main() -> None:
     for name, out in revenue.items():
         lines.append(f"| {name} | {out['mean']:.2f} | [{fmt(out['low'])}, {fmt(out['high'])}] | "
                      f"{out['share_below_zero']:.3f} | {len(halves[name])} |")
+    stamp_lines(lines, provenance)
     (REPORTS / "forecast_error_bars.md").write_text("\n".join(lines) + "\n")
     print("\nWrote reports/forecast_error_bars.md")
 

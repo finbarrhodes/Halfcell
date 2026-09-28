@@ -29,6 +29,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from scripts.provenance import stamp, stamp_lines
 
 import pandas as pd
 
@@ -107,6 +108,7 @@ def write_report(rows: list, select_before: str) -> None:
             if rev:
                 lines.append(f"| {row['model']} | {row['variant']} | "
                              f"{rev['annualised_per_mw'] / 1e3:.1f} | {rev['foresight_ratio'] * 100:.1f}% |")
+    stamp_lines(lines, stamp())
     (REPORTS / "feature_ablation.md").write_text("\n".join(lines) + "\n")
 
 
