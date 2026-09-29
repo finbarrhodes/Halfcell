@@ -85,7 +85,7 @@ const cumulative = (() => {
     let total = 0;
     for (const r of d3.sort(rs, (d) => d.month_dt)) {
       const gross =
-        d3.sum(SERVICES, (s) => r[`${s}_rev`] ?? 0) + (r.imbalance_revenue_gbp ?? 0);
+        d3.sum(SERVICES, (s) => r[`${s}_rev`] ?? 0) + (r.trading_revenue_gbp ?? 0);
       // Wear on every MWh discharged, trades and response delivery alike, as in the
       // published totals: without the delivery term the chart ran 0.3-0.4% high
       total += gross - (r.cycling_cost_gbp ?? 0) - (r.delivery_cycling_cost_gbp ?? 0);

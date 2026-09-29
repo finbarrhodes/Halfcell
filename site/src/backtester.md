@@ -303,7 +303,7 @@ const fromMonth = d3.utcMonth.floor(fromPick);
 const toMonth = d3.utcMonth.floor(toPick);
 const inRange = (d) => d.month_dt >= fromMonth && d.month_dt <= toMonth;
 
-const COLUMNS = [...SERVICES.map((s) => `${s}_rev`), "imbalance_revenue_gbp",
+const COLUMNS = [...SERVICES.map((s) => `${s}_rev`), "trading_revenue_gbp",
                  "cycling_cost_gbp", "mwh_cycled", "delivery_mwh", "delivery_cycling_cost_gbp"];
 const TRADING = "Wholesale trading";
 
@@ -328,7 +328,7 @@ function summarise(rows, mw) {
   if (!rows.length) return null;
   const svc = {};
   for (const s of SERVICES) svc[s] = d3.sum(rows, (d) => d[`${s}_rev`]);
-  const arb = d3.sum(rows, (d) => d.imbalance_revenue_gbp);
+  const arb = d3.sum(rows, (d) => d.trading_revenue_gbp);
   // Wear on every MWh discharged: trades and energy delivered under FR contracts alike
   const cyc = d3.sum(rows, (d) => d.cycling_cost_gbp + d.delivery_cycling_cost_gbp);
   const gross = d3.sum(Object.values(svc)) + arb;
@@ -390,7 +390,7 @@ deducted above.
 
 ```js
 const streams = [...SERVICES.map((s) => ({key: `${s}_rev`, label: s})),
-                 {key: "imbalance_revenue_gbp", label: TRADING}];
+                 {key: "trading_revenue_gbp", label: TRADING}];
 
 const stacked = monthly.flatMap((d) => [
   ...streams

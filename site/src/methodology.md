@@ -12,6 +12,10 @@ const manifest = await FileAttachment("data/manifest.json").json();
 const p = manifest.ml_mpc.params;
 const fmt = (d) => new Date(d).toLocaleDateString("en-GB", {year: "numeric", month: "short"});
 const pct = (x) => `${(x * 100).toFixed(0)}%`;
+// Every dispatch run the site publishes: each strategy's full stack and arbitrage only, and FR only
+const publishedRuns = ["pf_mpc", "naive_mpc", "ml_mpc"].flatMap((k) =>
+  [manifest[k].summary, manifest[k].scenarios.arb_only]).concat([manifest.ml_mpc.scenarios.fr_only]);
+const solveFailures = d3.sum(publishedRuns, (s) => s.solve_failures ?? 0);
 ```
 
 ## The model
@@ -87,6 +91,9 @@ genuinely cannot be reached. A larger penalty would buy no safety; at £50,000 t
 returned 1% of solves as inaccurate. Charging and discharging at once is never optimal at a
 positive spread, so no binary variables are needed. Solved with the Clarabel interior-point
 solver through cvxpy ([Diamond & Boyd, 2016](https://www.jmlr.org/papers/v17/15-408.html)).
+A half-hour whose LP fails to solve trades nothing and leaves delivery unrecovered, so failures
+are counted: ${solveFailures === 0 ? "there are none" : `${d3.format(",")(solveFailures)} half-hours`}
+across the ${publishedRuns.length} dispatch runs behind the published figures.
 
 A day's commitments enter dispatch at its bid deadline: an operator must be able to deliver
 everything it offered, so it positions for its offers before results publish, and for a
