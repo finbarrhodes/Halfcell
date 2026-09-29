@@ -1,88 +1,25 @@
-# Halfcell Configuration
+# Halfcell configuration: data collection and logging only.
+#
+# Every key here is read by the code. The model's settings live elsewhere: the
+# published backtest configuration in scripts/precompute_cache.py, and NESO's
+# rules in src/analysis/neso_rules.py. API base URLs are constants in each
+# collector under src/data_collection/.
 
-project:
-  name: "Halfcell"
-  version: "0.1.0"
-  author: "Finbar Rhodes"
-
-# Data collection settings
 data_collection:
-  # Date range for historical data
   start_date: "2019-01-01"
   end_date: null   # null => collect through today; override with --end
-  
-  # Update frequency for automated collection
-  update_frequency: "daily"  # daily, weekly, monthly
 
-# API Configuration
 apis:
   national_grid_eso:
-    # NESO Data Portal — CKAN datastore API (no key required)
-    base_url: "https://api.neso.energy/api/3/action"
-    datasets:
-      dynamic_containment: "dynamic-containment-data"
-      dynamic_regulation: "dynamic-regulation-requirements"
-      dynamic_moderation: "dynamic-moderation-requirements"
+    # NESO Data Portal (CKAN, no key required)
     demand_data_dataset_id: "8f2fe0af-871c-488d-8bad-960426f24601"
     rate_limit: 2  # datastore limit: 2 requests per minute
 
   elexon:
     # Elexon Insights Solution API (no key required)
-    base_url: "https://data.elexon.co.uk/bmrs/api/v1"
-    endpoints:
-      system_prices: "/balancing/settlement/system-prices"
-      market_index: "/balancing/pricing/market-index"
-      generation_by_fuel: "/datasets/FUELHH"
     rate_limit: 60  # requests per minute
 
-# Market segments to analyze
-markets:
-  - "Dynamic Containment (DC)"
-  - "Dynamic Regulation (DR)"
-  - "Dynamic Moderation (DM)"
-  - "Balancing Mechanism (BM)"
-  - "Frequency Response (FR)"
-  - "Day-Ahead Market"
-
-# Analysis parameters
-analysis:
-  # Time series analysis
-  frequency: "30T"  # 30-minute settlement periods
-  
-  # Seasonal decomposition
-  seasonal_period: 48  # 48 half-hourly periods = 1 day
-  
-  # Outlier detection
-  outlier_threshold: 3  # standard deviations
-  
-  # Feature engineering
-  lag_features: [1, 2, 48, 96]  # 30min, 1h, 1day, 2days
-  rolling_windows: [48, 336]  # 1 day, 1 week
-
-# Forecasting parameters
-forecasting:
-  # Train/test split
-  test_size: 0.2
-  
-  # Forecast horizon
-  horizon: 48  # 48 periods = 1 day ahead
-  
-  # Models to compare
-  models:
-    - "arima"
-    - "prophet"
-    - "random_forest"
-    - "gradient_boosting"
-  
-  # Cross-validation
-  cv_folds: 5
-  
-  # Hyperparameter tuning
-  tune_hyperparameters: true
-  n_trials: 50  # for grid search
-
-# Logging
 logging:
-  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR; the LOG_LEVEL environment variable overrides it
   format: "{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}"
-  file: "logs/bess_analysis.log"
+  file: "bess_analysis.log"  # under logs/

@@ -42,6 +42,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
+from scripts.provenance import stamp, stamp_lines
 
 import pandas as pd
 
@@ -263,8 +264,10 @@ def foresight(rows: dict, valuation_key: str, half: str) -> float | None:
 
 def write_report(rows: dict, select_before: str, fingerprint: str, report: str = "offer_valuation") -> None:
     REPORTS.mkdir(exist_ok=True)
+    provenance = stamp()
     (REPORTS / f"{report}.json").write_text(json.dumps(
-        {"engine": fingerprint, "select_before": select_before, "runs": rows}, indent=2) + "\n")
+        {"engine": fingerprint, "select_before": select_before, "runs": rows,
+         "provenance": provenance}, indent=2) + "\n")
 
     def cells(row, half):
         r = row["revenue"].get(half)
@@ -309,6 +312,7 @@ def write_report(rows: dict, select_before: str, fingerprint: str, report: str =
                 ratio = (row["revenue"][half]["net"] - naive) / (pf - naive) if pf != naive else None
                 cells.append(fmt(ratio))
             lines.append(f"| {name} | " + " | ".join(cells) + " |")
+    stamp_lines(lines, provenance)
     (REPORTS / f"{report}.md").write_text("\n".join(lines) + "\n")
 
 

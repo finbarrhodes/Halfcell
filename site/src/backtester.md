@@ -11,7 +11,8 @@ The walkthrough below follows a single winter day — 8 January 2026 — from th
 curve through to the dispatch the model settles on. Scroll, or select any step directly.
 
 ```js
-import {SERVICE_COLOURS, SERVICE_LABELS, STRATEGY_COLOURS, STRATEGY_LABELS, gbp} from "./components/theme.js";
+import {BRAND, SERVICES, SERVICE_COLOURS, SERVICE_LABELS, STRATEGY_COLOURS, STRATEGY_LABELS, gbp, rangeFor}
+  from "./components/theme.js";
 import {choiceGroup, controlPanel, dateRange, dayViews} from "./components/controls.js";
 
 const manifest = await FileAttachment("data/manifest.json").json();
@@ -24,7 +25,6 @@ const socAll = (await FileAttachment("data/soc-week.parquet").parquet())
 ```
 
 ```js
-const ALL_SERVICES = ["DCH", "DCL", "DMH", "DML", "DRH", "DRL"];
 const POWER_MW = manifest.ml_mpc.params.power_mw;   // the one rating the cache is computed at
 const DURATION_H = manifest.ml_mpc.params.duration_h;
 const EFF = manifest.ml_mpc.params.efficiency_rt;
@@ -183,7 +183,7 @@ function buildFigure(s) {
     return Plot.plot({height: 380, marginLeft: 55, x: spAxis,
       y: {label: "£/MWh", grid: true},
       marks: [Plot.ruleY([0]),
-              Plot.line(dayPrices, {x: "sp", y: "price", stroke: "#0D7680", strokeWidth: 2})]});
+              Plot.line(dayPrices, {x: "sp", y: "price", stroke: BRAND.teal, strokeWidth: 2})]});
   }
 
   if (s === 1) {
@@ -191,15 +191,15 @@ function buildFigure(s) {
       y: {label: "£/MWh", grid: true},
       marks: [
         Plot.ruleY([0]),
-        Plot.line(dayPrices, {x: "sp", y: "price", stroke: "#33302E", strokeWidth: 1.5}),
+        Plot.line(dayPrices, {x: "sp", y: "price", stroke: BRAND.ink, strokeWidth: 1.5}),
         Plot.dot(dayPrices.filter((d) => cheap.includes(d.sp)),
-          {x: "sp", y: "price", fill: "#0D7680", r: 5, symbol: "square"}),
+          {x: "sp", y: "price", fill: BRAND.teal, r: 5, symbol: "square"}),
         Plot.dot(dayPrices.filter((d) => dear.includes(d.sp)),
-          {x: "sp", y: "price", fill: "#C9400A", r: 5}),
+          {x: "sp", y: "price", fill: BRAND.orange, r: 5}),
         Plot.text([{sp: cheap[0], price: d3.min(dayPrices, (d) => d.price)}],
-          {x: "sp", y: "price", text: ["charge"], dy: 20, fill: "#0D7680", fontWeight: 600}),
+          {x: "sp", y: "price", text: ["charge"], dy: 20, fill: BRAND.teal, fontWeight: 600}),
         Plot.text([{sp: dear[0], price: d3.max(dayPrices, (d) => d.price)}],
-          {x: "sp", y: "price", text: ["discharge"], dy: -14, fill: "#C9400A", fontWeight: 600}),
+          {x: "sp", y: "price", text: ["discharge"], dy: -14, fill: BRAND.orange, fontWeight: 600}),
       ]});
   }
 
@@ -210,13 +210,13 @@ function buildFigure(s) {
       y: {label: "£/MWh (spot)", grid: true},
       marks: [
         Plot.ruleY([0]),
-        Plot.line(dayPrices, {x: "sp", y: "price", stroke: "#33302E",
+        Plot.line(dayPrices, {x: "sp", y: "price", stroke: BRAND.ink,
                               strokeWidth: 1.2, strokeOpacity: 0.45}),
         Plot.ruleX([8.5, 16.5, 24.5, 32.5, 40.5],
-          {stroke: "#9C948E", strokeDasharray: "3 3"}),
+          {stroke: BRAND.inkFaint, strokeDasharray: "3 3"}),
         Plot.text(d3.range(6).map((i) => ({x: i * 8 + 4.5, label: `EFA ${i + 1}`})),
           {x: "x", y: d3.max(dayPrices, (d) => d.price) * 0.96,
-           text: "label", fill: "#66605C", fontSize: 10}),
+           text: "label", fill: BRAND.inkSoft, fontSize: 10}),
       ]});
   }
 
@@ -231,14 +231,14 @@ function buildFigure(s) {
     height: 380, marginLeft: 55, x: spAxis,
     y: {label: "State of charge", domain: [0, 1], tickFormat: ".0%", grid: true},
     color: {legend: s >= 5, domain: Object.values(STRATEGY_LABELS),
-            range: ["#4E8A3C", "#C9400A", "#0D7680"]},
+            range: rangeFor(STRATEGY_COLOURS, Object.keys(STRATEGY_LABELS))},
     marks: [
       Plot.areaY(band, {x: "sp", y1: "lo", y2: "hi", curve: "step-after",
-                        fill: "#0D7680", fillOpacity: 0.1}),
-      Plot.line(band, {x: "sp", y: "lo", curve: "step-after", stroke: "#0D7680", strokeDasharray: "4 3"}),
-      Plot.line(band, {x: "sp", y: "hi", curve: "step-after", stroke: "#0D7680", strokeDasharray: "4 3"}),
+                        fill: BRAND.teal, fillOpacity: 0.1}),
+      Plot.line(band, {x: "sp", y: "lo", curve: "step-after", stroke: BRAND.teal, strokeDasharray: "4 3"}),
+      Plot.line(band, {x: "sp", y: "hi", curve: "step-after", stroke: BRAND.teal, strokeDasharray: "4 3"}),
       Plot.line(traces, {x: "sp", y: "soc",
-                         stroke: s >= 5 ? "strategy" : () => "#0D7680", strokeWidth: 2}),
+                         stroke: s >= 5 ? "strategy" : () => BRAND.teal, strokeWidth: 2}),
     ],
   });
 }
@@ -303,7 +303,7 @@ const fromMonth = d3.utcMonth.floor(fromPick);
 const toMonth = d3.utcMonth.floor(toPick);
 const inRange = (d) => d.month_dt >= fromMonth && d.month_dt <= toMonth;
 
-const COLUMNS = [...ALL_SERVICES.map((s) => `${s}_rev`), "imbalance_revenue_gbp",
+const COLUMNS = [...SERVICES.map((s) => `${s}_rev`), "imbalance_revenue_gbp",
                  "cycling_cost_gbp", "mwh_cycled", "delivery_mwh", "delivery_cycling_cost_gbp"];
 const TRADING = "Wholesale trading";
 
@@ -327,7 +327,7 @@ function rowsFor(strategy, scenario) {
 function summarise(rows, mw) {
   if (!rows.length) return null;
   const svc = {};
-  for (const s of ALL_SERVICES) svc[s] = d3.sum(rows, (d) => d[`${s}_rev`]);
+  for (const s of SERVICES) svc[s] = d3.sum(rows, (d) => d[`${s}_rev`]);
   const arb = d3.sum(rows, (d) => d.imbalance_revenue_gbp);
   // Wear on every MWh discharged: trades and energy delivered under FR contracts alike
   const cyc = d3.sum(rows, (d) => d.cycling_cost_gbp + d.delivery_cycling_cost_gbp);
@@ -389,7 +389,7 @@ deducted above.
 ### Monthly revenue stack
 
 ```js
-const streams = [...ALL_SERVICES.map((s) => ({key: `${s}_rev`, label: s})),
+const streams = [...SERVICES.map((s) => ({key: `${s}_rev`, label: s})),
                  {key: "imbalance_revenue_gbp", label: TRADING}];
 
 const stacked = monthly.flatMap((d) => [
@@ -403,8 +403,8 @@ const stacked = monthly.flatMap((d) => [
     : []),
 ]);
 
-const streamDomain = [...ALL_SERVICES.map((s) => SERVICE_LABELS[s]), TRADING, "Cycling wear cost"];
-const streamRange = [...ALL_SERVICES.map((s) => SERVICE_COLOURS[s]),
+const streamDomain = [...SERVICES.map((s) => SERVICE_LABELS[s]), TRADING, "Cycling wear cost"];
+const streamRange = [...SERVICES.map((s) => SERVICE_COLOURS[s]),
                      SERVICE_COLOURS.Arbitrage, SERVICE_COLOURS["Cycling cost"]];
 
 display(resize((width) => Plot.plot({
@@ -539,12 +539,12 @@ function weekChart(width) {
     y: {label: "State of charge", domain: [0, 1], tickFormat: ".0%", grid: true},
     marks: [
       // Average range the FR contracts required at each point in the week
-      Plot.areaY(socWeek, {x: "period", y1: "reqLo", y2: "reqHi", fill: "#0D7680", fillOpacity: 0.08}),
-      Plot.line(socWeek, {x: "period", y: "reqLo", stroke: "#0D7680", strokeDasharray: "4 3", strokeWidth: 1}),
-      Plot.line(socWeek, {x: "period", y: "reqHi", stroke: "#0D7680", strokeDasharray: "4 3", strokeWidth: 1}),
+      Plot.areaY(socWeek, {x: "period", y1: "reqLo", y2: "reqHi", fill: BRAND.teal, fillOpacity: 0.08}),
+      Plot.line(socWeek, {x: "period", y: "reqLo", stroke: BRAND.teal, strokeDasharray: "4 3", strokeWidth: 1}),
+      Plot.line(socWeek, {x: "period", y: "reqHi", stroke: BRAND.teal, strokeDasharray: "4 3", strokeWidth: 1}),
       Plot.ruleX(d3.range(1, 7).map((d) => d * 48), {stroke: "grey", strokeOpacity: 0.3, strokeDasharray: "2 3"}),
-      Plot.areaY(socWeek, {x: "period", y1: "lo", y2: "hi", fill: "#C9400A", fillOpacity: 0.12}),
-      Plot.line(socWeek, {x: "period", y: "mean", stroke: "#C9400A", strokeWidth: 2}),
+      Plot.areaY(socWeek, {x: "period", y1: "lo", y2: "hi", fill: BRAND.orange, fillOpacity: 0.12}),
+      Plot.line(socWeek, {x: "period", y: "mean", stroke: BRAND.orange, strokeWidth: 2}),
       Plot.tip(socWeek, Plot.pointerX({
         x: "period", y: "mean",
         title: (d) => `${DAYS[Math.floor(d.period / 48)]} SP ${(d.period % 48) + 1}\nmean ${(d.mean * 100).toFixed(1)}%\n±1 sd ${(d.lo * 100).toFixed(1)}–${(d.hi * 100).toFixed(1)}%\nrequired ${(d.reqLo * 100).toFixed(0)}–${(d.reqHi * 100).toFixed(0)}% (avg)`,
@@ -573,15 +573,15 @@ function dayChart(date, width) {
     y: {label: "State of charge", domain: [0, 1], tickFormat: ".0%", grid: true},
     color: {domain: strategyDomain, range: strategyRange, legend: true},
     marks: [
-      Plot.ruleX([8.5, 16.5, 24.5, 32.5, 40.5], {stroke: "#9C948E", strokeOpacity: 0.5, strokeDasharray: "3 3"}),
+      Plot.ruleX([8.5, 16.5, 24.5, 32.5, 40.5], {stroke: BRAND.inkFaint, strokeOpacity: 0.5, strokeDasharray: "3 3"}),
       // What that day's contracts required: response energy in store, headroom above
-      Plot.areaY(chosen, {x: "sp", y1: "lo", y2: "hi", curve: "step-after", fill: "#0D7680", fillOpacity: 0.1}),
-      Plot.line(chosen, {x: "sp", y: "lo", curve: "step-after", stroke: "#0D7680",
+      Plot.areaY(chosen, {x: "sp", y1: "lo", y2: "hi", curve: "step-after", fill: BRAND.teal, fillOpacity: 0.1}),
+      Plot.line(chosen, {x: "sp", y: "lo", curve: "step-after", stroke: BRAND.teal,
                          strokeDasharray: "4 3", strokeWidth: 1, strokeOpacity: 0.6}),
-      Plot.line(chosen, {x: "sp", y: "hi", curve: "step-after", stroke: "#0D7680",
+      Plot.line(chosen, {x: "sp", y: "hi", curve: "step-after", stroke: BRAND.teal,
                          strokeDasharray: "4 3", strokeWidth: 1, strokeOpacity: 0.6}),
       // Context, not a fourth trace: light enough to read behind the dispatch
-      priceScale ? Plot.line(shown, {x: "sp", y: (d) => priceScale(d.price), stroke: "#9C948E",
+      priceScale ? Plot.line(shown, {x: "sp", y: (d) => priceScale(d.price), stroke: BRAND.inkFaint,
                                      strokeWidth: 1, strokeOpacity: 0.9}) : null,
       // An explicit axis mark for the price suppresses Plot's implicit one, so the
       // state-of-charge axis has to be asked for by name as well.
@@ -713,9 +713,10 @@ const arbRatio = pf?.breakdown[TRADING]
 <div class="card">${resize((width) => Plot.plot({
   width, height: 360, marginLeft: 62, marginBottom: 42,
   x: {label: null, domain: ["naive_mpc", "ml_mpc", "pf_mpc"],
-      tickFormat: (k) => ({naive_mpc: "Naive*", ml_mpc: "ML Model", pf_mpc: "Perfect Foresight"})[k]},
+      tickFormat: (k) => ({...STRATEGY_LABELS, naive_mpc: "Naive*"})[k]},
   y: {label: "Annualised net (£k / MW / yr)", grid: true, zero: true},
-  color: {domain: ["naive_mpc", "ml_mpc", "pf_mpc"], range: ["#C9400A", "#0D7680", "#4E8A3C"]},
+  color: {domain: ["naive_mpc", "ml_mpc", "pf_mpc"],
+          range: rangeFor(STRATEGY_COLOURS, ["naive_mpc", "ml_mpc", "pf_mpc"])},
   marks: [
     Plot.ruleY([0]),
     Plot.barY(Object.entries(allSummaries).filter(([, s]) => s),
@@ -787,7 +788,7 @@ display(resize((width) => importances.length ? Plot.plot({
   x: {label: "Importance", grid: true},
   y: {label: null, domain: importances.map((d) => d.feature)},
   marks: [
-    Plot.barX(importances, {x: "importance", y: "feature", fill: "#0D7680"}),
+    Plot.barX(importances, {x: "importance", y: "feature", fill: BRAND.teal}),
     Plot.text(importances, {x: "importance", y: "feature", dx: 4, textAnchor: "start",
                             text: (d) => d.importance.toFixed(3)}),
   ],
@@ -835,12 +836,12 @@ display(resize((width) => folds.length ? Plot.plot({
   y: {label: "Fold RMSE (£/MWh)", grid: true, zero: true},
   marks: [
     Plot.ruleY([0]),
-    Plot.barY(folds, {x: "origin", y: "rmse", fill: "#0D7680", tip: true,
+    Plot.barY(folds, {x: "origin", y: "rmse", fill: BRAND.teal, tip: true,
                       channels: folds[0]?.spread_bias == null
                         ? {"training rows": "train_rows", "Spearman": "spearman"}
                         : {"training rows": "train_rows", "Spearman": "spearman",
                            "spread bias": "spread_bias"}}),
-    Plot.ruleY([wf.rmse], {stroke: "#C9400A", strokeDasharray: "4 3"}),
+    Plot.ruleY([wf.rmse], {stroke: BRAND.orange, strokeDasharray: "4 3"}),
   ],
 }) : html`<i>No per-fold metrics in the manifest — re-run scripts/precompute_cache.py.</i>`));
 ```

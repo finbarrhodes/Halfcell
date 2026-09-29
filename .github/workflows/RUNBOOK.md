@@ -10,7 +10,7 @@ needed while diagnosing a failed run belongs here.
 |---|---|---|---|
 | `tests.yml` | push, PR, **Mondays 06:23 UTC** | ~1 min | no |
 | `refresh_data.yml` | **2nd of month 04:41 UTC**, manual | ~80–100 min | yes — commits to `main` |
-| `deploy_site.yml` | push touching `site/`, `data/processed/`, `data/cache/`; manual | ~1 min | no |
+| `deploy_site.yml` | push touching `site/`, `data/processed/`, `data/cache/`; manual; pull requests (build only, no deploy) | ~1 min | no |
 
 `refresh_data.yml` is the only one that commits. It publishes to the live site as a side
 effect, so its gates matter — see *Recovery* below.

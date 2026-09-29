@@ -134,7 +134,7 @@ npm --prefix site run dev       # local preview on :3000
 Re-run the model itself:
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.txt -c constraints.txt
 python scripts/prepare_data.py          # raw -> data/processed/
 python scripts/precompute_cache.py      # seven dispatch runs, ~80 min
 python scripts/check_cache_consistency.py
@@ -153,7 +153,7 @@ half-hourly delivery table is committed.
 ## Tests
 
 ```bash
-pip install -r requirements.txt -r requirements-dev.txt
+pip install -r requirements.txt -r requirements-dev.txt -c constraints.txt
 pytest -m "not integration"     # 370 tests, no network — what CI runs
 pytest -m integration           # live NESO + Elexon contract checks
 pytest --cov=src tests/         # with coverage
@@ -174,7 +174,7 @@ rotation each April, and Elexon's date-parameter semantics.
 |---|---|---|
 | `tests.yml` | push, PR, weekly | Unit suite; the weekly run makes the upstream contract checks a hard failure |
 | `refresh_data.yml` | 2nd of each month | Collect, append, rebuild the cache, verify freshness, commit |
-| `deploy_site.yml` | push to `main` touching `site/`, `data/processed/` or `data/cache/` | Build and deploy to Cloudflare Pages |
+| `deploy_site.yml` | push to `main` touching `site/`, `data/processed/` or `data/cache/`; pull requests touching those, `src/` or `scripts/` | Build and deploy to Cloudflare Pages (build only on pull requests) |
 
 The refresh workflow asserts data freshness before committing, because the failure mode it
 guards is silent: a collection outage would leave the parquets untouched, reproduce identical
@@ -223,6 +223,7 @@ src/
 scripts/                  prepare_data, precompute_cache, KPIs, OG card, guards, benchmarks
 site/                     Observable Framework site (Market Overview, Backtester, Research, Methodology)
 tests/                    Unit and integration suites
+reports/                  Experiment records behind the Methodology and Research pages; see reports/README.md
 data/
   raw/                    API responses (gitignored)
   processed/              Cleaned parquets (committed)

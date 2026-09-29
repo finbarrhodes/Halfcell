@@ -8,16 +8,28 @@ on:
       - 'data/processed/**'
       - 'data/cache/**'
       - '.github/workflows/deploy_site.yml'
+  # Pull requests build the site without deploying it, so a page that fails to
+  # build is caught before merge rather than by the deploy after it. src/ and
+  # scripts/ are included because the build's cache guard fingerprints the engine.
+  pull_request:
+    paths:
+      - 'site/**'
+      - 'data/processed/**'
+      - 'data/cache/**'
+      - 'src/**'
+      - 'scripts/**'
+      - '.github/workflows/deploy_site.yml'
   workflow_dispatch:
 
-# Never let two deploys race; a later push supersedes an in-flight build.
+# Never let two deploys race; a later push supersedes an in-flight build. Each
+# pull request has its own group, so a PR build never cancels a deploy.
 concurrency:
-  group: deploy-site
+  group: deploy-site-${{ github.event_name == 'pull_request' && github.ref || 'main' }}
   cancel-in-progress: true
 
 jobs:
   build:
-    name: Build and deploy
+    name: ${{ github.event_name == 'pull_request' && 'Build site' || 'Build and deploy' }}
     runs-on: ubuntu-latest
 
     steps:
@@ -33,7 +45,7 @@ jobs:
           cache: 'pip'
 
       - name: Install Python dependencies
-        run: pip install pandas pyarrow matplotlib
+        run: pip install pandas pyarrow matplotlib -c constraints.txt
 
       - uses: actions/setup-node@v7
         with:
@@ -61,6 +73,7 @@ jobs:
       # wrangler's own error for a missing token is a wall of prose about
       # creating one; this says which secret is absent and where it goes.
       - name: Check deploy credentials
+        if: github.event_name != 'pull_request'
         env:
           TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -79,6 +92,7 @@ jobs:
       # wrangler-action v4 changed its default Wrangler to v4. `pages deploy` is
       # unchanged, and nothing here pins a wrangler version or reads its output.
       - name: Deploy to Cloudflare Pages
+        if: github.event_name != 'pull_request'
         uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}

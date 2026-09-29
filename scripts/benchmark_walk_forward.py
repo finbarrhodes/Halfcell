@@ -32,6 +32,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from scripts.provenance import stamp, stamp_lines
 
 import pandas as pd
 
@@ -125,9 +126,9 @@ def revenue_for(predictions, auctions, market_index, delivery, window, pf, naive
     }
 
 
-def write_report(rows: list, select_before: str) -> None:
+def write_report(rows: list, select_before: str, report: str = "walk_forward_benchmark") -> None:
     REPORTS.mkdir(exist_ok=True)
-    (REPORTS / "walk_forward_benchmark.json").write_text(json.dumps(rows, indent=2) + "\n")
+    (REPORTS / f"{report}.json").write_text(json.dumps(rows, indent=2) + "\n")
 
     def cell(row, half, key):
         block = row["metrics"].get(half)
@@ -156,7 +157,8 @@ def write_report(rows: list, select_before: str) -> None:
             if rev:
                 lines.append(f"| {row['model']} | {rev['annualised_per_mw'] / 1e3:.1f} "
                              f"| {rev['foresight_ratio'] * 100:.1f}% | {rev['breach_periods']} |")
-    (REPORTS / "walk_forward_benchmark.md").write_text("\n".join(lines) + "\n")
+    stamp_lines(lines, stamp())
+    (REPORTS / f"{report}.md").write_text("\n".join(lines) + "\n")
 
 
 def main() -> None:
@@ -171,6 +173,7 @@ def main() -> None:
     parser.add_argument("--revenue-from", default=None,
                         help="restrict the dispatch backtest to this start date; baselines are "
                              "recomputed for the same window rather than read from the cache")
+    parser.add_argument("--report", default="walk_forward_benchmark", help="report name under reports/")
     args = parser.parse_args()
 
     auctions = pd.read_parquet(PROCESSED / "auctions.parquet")
@@ -219,9 +222,9 @@ def main() -> None:
                   f"foresight {row['revenue']['foresight_ratio'] * 100:.1f}%", flush=True)
 
         rows.append(row)
-        write_report(rows, args.select_before)   # written as we go, so a long run is never wasted
+        write_report(rows, args.select_before, args.report)   # written as we go, so a long run is never wasted
 
-    print(f"\nWrote reports/walk_forward_benchmark.md and .json")
+    print(f"\nWrote reports/{args.report}.md and .json")
     for row in rows:
         conf = row["metrics"]["confirmation"]
         print(f"  {row['model']:<5} confirmation RMSE {conf['rmse']:>6}  ρ {conf['spearman']:>6}"

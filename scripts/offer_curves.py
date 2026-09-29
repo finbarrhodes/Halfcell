@@ -28,6 +28,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
+from scripts.provenance import stamp, stamp_lines
 
 import numpy as np
 import pandas as pd
@@ -117,7 +118,8 @@ def main() -> None:
     }
 
     REPORTS.mkdir(exist_ok=True)
-    (REPORTS / "offer_curves.json").write_text(json.dumps(result, indent=2) + "\n")
+    provenance = stamp()
+    (REPORTS / "offer_curves.json").write_text(json.dumps({**result, "provenance": provenance}, indent=2) + "\n")
     lines = [
         f"# Offer curves, {result['date']}",
         "",
@@ -133,6 +135,7 @@ def main() -> None:
         low = result["plan_gbp_per_mw_h"]["DCL"][k]
         lines.append(f"| {k + 1} | {result['block_mean_price'][k]} | {result['formula_gbp_per_mw_h'][k]} | "
                      f"{' · '.join(f'{c:g}' for c in high)} | {' · '.join(f'{c:g}' for c in low)} |")
+    stamp_lines(lines, provenance)
     (REPORTS / "offer_curves.md").write_text("\n".join(lines) + "\n")
     print("\n".join(lines))
 

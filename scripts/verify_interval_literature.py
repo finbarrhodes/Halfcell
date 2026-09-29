@@ -54,6 +54,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
+from scripts.provenance import stamp, stamp_lines
 
 import numpy as np
 import pandas as pd
@@ -176,8 +177,10 @@ def main() -> None:
         print(f"    {name:<7}{row['0.1-0.9']['interval_score_unscaled_penalty']:>8.1f}")
 
     REPORTS.mkdir(exist_ok=True)
+    provenance = stamp()
     (REPORTS / "interval_literature_check.json").write_text(json.dumps(
-        {"nominal_level": level, "scores": scores, "paper_table_3_rf_dam": PAPER_TABLE_3}, indent=2) + "\n")
+        {"nominal_level": level, "scores": scores, "paper_table_3_rf_dam": PAPER_TABLE_3,
+         "provenance": provenance}, indent=2) + "\n")
 
     lines = [
         "# Checking two claims about O'Connor et al. (2025)",
@@ -225,6 +228,7 @@ def main() -> None:
     for name, row in scores.items():
         lines.append(f"| {name} | {row['0.1-0.9']['interval_score_unscaled_penalty']:.1f} |")
     lines += ["", "That is a reading of their table, not a claim about their code."]
+    stamp_lines(lines, provenance)
     (REPORTS / "interval_literature_check.md").write_text("\n".join(lines) + "\n")
     print("\nWrote reports/interval_literature_check.md")
 
