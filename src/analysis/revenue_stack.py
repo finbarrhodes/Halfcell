@@ -134,8 +134,10 @@ OFFER_VALUATIONS = ("formula", "lp")
 AUCTION_SHARE_CAP = 0.20
 
 # How recovery through the Reserved Capacity is credited in dispatch; see run_dispatch.
-# None leaves it uncredited, as published.
-RECOVERY_CREDIT_MODES = (None, "reserve", "any")
+# "any", published, credits it; None leaves it uncredited, as a site with no prices to
+# trade against must. A looser reading, "reserve", was set aside on 2026-09-24
+# (reports/offer_valuation_recovery.md).
+RECOVERY_CREDIT_MODES = (None, "any")
 # Recovery that earns at the price waits for a good one, and so runs the store close
 # to the headroom a new block restores; delivery above its recent average in the last
 # half-hours then leaves no slack, and the block starts outside its requirement. With
@@ -173,7 +175,7 @@ _SETTLEMENT_PERIODS_PER_BLOCK = 8
 TRAJECTORY_COLUMNS = ["date", "sp", "soc_frac", "soc_min_frac", "soc_max_frac"]
 
 # Every cached table carries the same columns, whichever streams a scenario has
-REVENUE_COLUMNS = [f"{p}_rev" for p in PRODUCTS] + ["imbalance_revenue_gbp", "cycling_cost_gbp", "mwh_cycled",
+REVENUE_COLUMNS = [f"{p}_rev" for p in PRODUCTS] + ["trading_revenue_gbp", "cycling_cost_gbp", "mwh_cycled",
                                                     "delivery_mwh", "delivery_cycling_cost_gbp"]
 
 
@@ -205,6 +207,32 @@ REFERENCE_BATTERY = BatterySpec(
     cycling_cost_per_mwh=3.0, # Mid-range estimate consistent with Li-ion degradation literature
     availability_factor=0.95, # Min threshold in DC/EAC service agreements; GB fleet consistent
 )
+
+
+@dataclass(frozen=True)
+class EngineConfig:
+    """
+    How the engine values offers and plans dispatch. PUBLISHED is the model the site
+    shows: scripts/precompute_cache.py runs it, records it in the manifest, and every
+    entry point defaults to it, so a call that sets nothing runs the published model.
+    """
+    offer_valuation: str = "lp"           # offers priced by the day-ahead trading plan
+    offer_information: str = "bid_time"   # offers see only what existed at 14:00 on D-1
+    forecast_vintages: bool = True        # dispatch plans tomorrow on the early forecast, and stops there
+    credit_recovery: str | None = "any"   # recovery through the reserve earns at the price
+    block_start_margin: bool = True       # plans meet each new block a margin inside its requirement
+    horizon: int = 96                     # periods in each dispatch plan, before vintages end it
+    initial_soc_frac: float = 0.5
+    pre_eac_rule: str = "d1"
+
+
+PUBLISHED = EngineConfig()
+
+# Weight on the offer plan's forecast deviations from its daily mean, per signal. Chosen
+# on the pre-2025 folds only (0.25 / 0.5 / 0.75 / 1 tried; reports/offer_valuation_vintages.md):
+# 0.5 for both, narrowly for ML, whose 0.5 and 0.75 are within £0.3k on either half.
+# Perfect foresight has nothing to hedge against, so it plans on actual prices as they are.
+PRICE_SHRINK = {"pf": 1.0, "naive": 0.5, "ml": 0.5}
 
 
 # ---------------------------------------------------------------------------
@@ -420,29 +448,29 @@ def _daily_revenue(blocks: pd.DataFrame, energy_rows: list, battery: "BatterySpe
     takes from the evening before - the same shift for every strategy, so a difference
     between two of them is unaffected.
     """
-    columns = ["fr_revenue_gbp", "imbalance_revenue_gbp", "cycling_cost_gbp",
+    columns = ["fr_revenue_gbp", "trading_revenue_gbp", "cycling_cost_gbp",
                "delivery_cycling_cost_gbp", "net_revenue"]
     fr = (blocks.groupby(blocks["date"].dt.normalize())["revenue_gbp"].sum().rename("fr_revenue_gbp")
           if not blocks.empty else pd.Series(dtype=float, name="fr_revenue_gbp"))
     if energy_rows:
         rows = pd.DataFrame(energy_rows)
         energy = rows.groupby(pd.to_datetime(rows["date"]).dt.normalize())[
-            ["imbalance_revenue_gbp", "cycling_cost_gbp", "delivery_cycling_cost_gbp"]].sum()
+            ["trading_revenue_gbp", "cycling_cost_gbp", "delivery_cycling_cost_gbp"]].sum()
     else:
-        energy = pd.DataFrame(columns=["imbalance_revenue_gbp", "cycling_cost_gbp",
+        energy = pd.DataFrame(columns=["trading_revenue_gbp", "cycling_cost_gbp",
                                        "delivery_cycling_cost_gbp"])
     table = pd.concat([fr, energy], axis=1).fillna(0.0).sort_index()
     if table.empty:
         return pd.DataFrame(columns=["date"] + columns)
     table *= battery.availability_factor
-    table["net_revenue"] = (table["fr_revenue_gbp"] + table["imbalance_revenue_gbp"]
+    table["net_revenue"] = (table["fr_revenue_gbp"] + table["trading_revenue_gbp"]
                             - table["cycling_cost_gbp"] - table["delivery_cycling_cost_gbp"])
     return table.rename_axis("date").reset_index()[["date"] + columns]
 
 
 def _build_result(
     anc_wide: pd.DataFrame,
-    imb_wide: pd.DataFrame,
+    trading_wide: pd.DataFrame,
     battery: "BatterySpec",
     avg_fr_mw: float,
     avg_arb_mw: float,
@@ -456,7 +484,7 @@ def _build_result(
 
     Returns {"monthly": DataFrame, "summary": dict, "soc_trajectory": DataFrame | None}.
     """
-    frames = [f for f in [anc_wide, imb_wide] if not f.empty]
+    frames = [f for f in [anc_wide, trading_wide] if not f.empty]
     if not frames:
         return {"monthly": pd.DataFrame(), "summary": dict(extras or {}), "soc_trajectory": None}
 
@@ -466,7 +494,7 @@ def _build_result(
             monthly[col] = 0.0
     monthly["month_dt"] = monthly["month"].dt.to_timestamp()
 
-    rev_cols  = [c for c in monthly.columns if c.endswith("_rev") or c == "imbalance_revenue_gbp"]
+    rev_cols  = [c for c in monthly.columns if c.endswith("_rev") or c == "trading_revenue_gbp"]
     cost_cols = [c for c in ("cycling_cost_gbp", "delivery_cycling_cost_gbp") if c in monthly.columns]
 
     # Apply availability factor to every revenue stream and cycling cost proportionally.
@@ -548,9 +576,8 @@ class _Scheduler:
     for every period from the deadline to the end of the service day, solved
     together with the holdings (day_ahead.plan_day), and picks each pre-EAC
     block's one service jointly across the day. price_shrink pulls that plan's
-    forecast towards its mean, by price_shrink or, where price_shrink_by_date has
-    a weight for the service day, by that. With include_arbitrage=False there is
-    nothing to plan for, and both valuations hold the same.
+    forecast towards its mean. With include_arbitrage=False there is nothing to
+    plan for, and both valuations hold the same.
 
     offer_forecast_prices_by_date is the forecast of the service day as it stood
     at the bid deadline, for strategies whose day-ahead forecast needs all of D-1
@@ -560,9 +587,7 @@ class _Scheduler:
 
     def __init__(self, auctions, battery, forecast_prices_by_date=None, services=None, *,
                  include_arbitrage=True, pre_eac_rule="d1", expected_delivery=None, expected_prices=None,
-                 offer_valuation="formula", price_shrink=1.0, offer_forecast_prices_by_date=None,
-                 price_shrink_by_date=None, guard_low_by_date=None, guard_high_by_date=None,
-                 plan_smoothing=0):
+                 offer_valuation="formula", price_shrink=1.0, offer_forecast_prices_by_date=None):
         if pre_eac_rule not in PRE_EAC_RULES:
             raise ValueError(f"pre_eac_rule must be one of {PRE_EAC_RULES}, got {pre_eac_rule!r}")
         if offer_valuation not in OFFER_VALUATIONS:
@@ -580,19 +605,6 @@ class _Scheduler:
         self.pre_eac_rule = pre_eac_rule
         self.plan_trading = offer_valuation == "lp" and include_arbitrage
         self.price_shrink = float(price_shrink)
-        # How far to believe each day's forecast shape, when it is estimated per day
-        # (src/analysis/shrink.py) rather than held constant. The service day's weight
-        # applies to the whole plan, including the lead-in hours of D-1.
-        self.price_shrink_by_date = {pd.Timestamp(d).normalize(): float(w)
-                                     for d, w in (price_shrink_by_date or {}).items()}
-        # Conformal guard bands: how much worse than forecast each side plans to trade
-        # at, by settlement period (src/analysis/intervals.py). Empty plans on the
-        # forecast itself.
-        by_date = lambda table: {pd.Timestamp(d).normalize(): v for d, v in (table or {}).items()}
-        self.guard_low_by_date, self.guard_high_by_date = by_date(guard_low_by_date), by_date(guard_high_by_date)
-        # Half-hours the plan smooths the forecast over, so it spreads a trade across the
-        # hours the forecast cannot tell apart rather than committing to one.
-        self.plan_smoothing = int(plan_smoothing)
         self.rows = {}    # (service day, EFA) -> schedule row
         self.plans = {}   # service day -> [(SoE at block's first period, at its last)]
 
@@ -717,15 +729,11 @@ class _Scheduler:
                                     6 * _SETTLEMENT_PERIODS_PER_BLOCK)])
 
         prices = path(view)
-        guard_low = path(self.guard_low_by_date) if self.guard_low_by_date else None
-        guard_high = path(self.guard_high_by_date) if self.guard_high_by_date else None
 
         def plan(blocks, one_service=False):
             return plan_day(blocks, b.power_mw, b.energy_mwh, b.efficiency_rt, b.cycling_cost_per_mwh,
                             soc_now_mwh, prices, apply_reserve=apply_reserve, lead_in=lead_in,
-                            one_service=one_service, guard_low=guard_low, guard_high=guard_high,
-                            smooth_periods=self.plan_smoothing,
-                            price_shrink=self.price_shrink_by_date.get(service_date, self.price_shrink))
+                            one_service=one_service, price_shrink=self.price_shrink)
 
         offers = [self._offers((service_date, efa)) for efa in range(1, 7)]
         if splitting_allowed(service_date.date()):
@@ -940,10 +948,9 @@ def run_dispatch(
     price_seeking: bool = True,
     forecast_vintages: bool = False,
     early_forecast_prices_by_date: dict | None = None,
-    dispatch_smoothing: int = 0,
     credit_recovery: str | None = None,
     block_start_margin: bool = False,
-) -> tuple[list, list, dict]:
+) -> tuple[list, list, dict, int]:
     """
     Rolling MPC dispatch over every settlement period, around FR commitments.
 
@@ -970,24 +977,17 @@ def run_dispatch(
     previous day, which the operator has already seen. A settlement period that
     starts outside the requirement counts as unavailable (Service Terms 6.12).
 
-    dispatch_smoothing averages the forecast over neighbouring half-hours before
-    planning, so dispatch spreads a trade across the hours the forecast cannot tell
-    apart rather than committing to the one it happens to name. Settlement is
-    unaffected: trades still execute at actual prices.
-
     price_seeking=False is a site with no interest in wholesale arbitrage: its LP
     ignores prices and trades only to keep state of energy where its contracts
     need it, at a small cost per MWh so it moves no more energy than it must.
 
-    credit_recovery lets recovery through the Reserved Capacity earn at the price,
-    so it can wait for a good one (mpc.solve_mpc's recovery_allowance). What it
-    may move is kept in an account per side: energy delivery has put in play in
-    a period the reserve could serve, less what has since been recovered. Which
-    MWh left the store is unknowable, so the account comes in two readings that
-    bracket the answer. "reserve" spends it only on energy moved through the
-    reserve, so trading that sells absorbed energy leaves the allowance standing;
-    "any" treats delivered energy as leaving first by whatever route, so every
-    trade spends it. None, the default, leaves the reserve uncredited.
+    credit_recovery="any" lets recovery through the Reserved Capacity earn at the
+    price, so it can wait for a good one (mpc.solve_mpc's recovery_allowance). What
+    it may move is kept in an account per side: energy delivery has put in play in
+    a period the reserve could serve, less what has since been recovered. Which MWh
+    left the store is unknowable, so every trade spends the account, as if delivered
+    energy left first by whatever route. None, the default, leaves the reserve
+    uncredited.
 
     block_start_margin makes the plan meet each later block's start a margin
     inside the requirement that block restores (RECOVERY_BOUNDARY_MARGIN_PERIODS).
@@ -1012,14 +1012,15 @@ def run_dispatch(
 
     Returns
     -------
-    energy_rows : list of {date, imbalance_revenue_gbp, cycling_cost_gbp, mwh_cycled,
+    energy_rows : list of {date, trading_revenue_gbp, cycling_cost_gbp, mwh_cycled,
         delivery_mwh, delivery_cycling_cost_gbp}, one per period in which energy moved
     soc_trajectory : list of (date, sp, soc_frac, soc_min_frac, soc_max_frac) after
         each period, with the requirement state of energy must meet at the start of the next
     breaches : {(date, efa): settlement periods started outside the requirement}
+    solve_failures : settlement periods whose LP failed to solve, and which therefore
+        traded nothing and let delivery run unrecovered
     """
-    from src.optimisation.day_ahead import smooth_path
-    from src.optimisation.mpc import DT, solve_mpc
+    from src.optimisation.mpc import solve_mpc
 
     if (scheduler is None) == (schedule is None):
         raise ValueError("pass exactly one of scheduler or schedule")
@@ -1114,19 +1115,9 @@ def run_dispatch(
         need_hi[j] = min(rev_hi[j], need_hi[k] - delivered_in[k] + adjust_hi[k])
 
     def plan_prices(i, idx):
-        """
-        Today's periods on the day-ahead forecast; with vintages, tomorrow's on the early one.
-
-        dispatch_smoothing then averages the path over neighbouring half-hours. The
-        forecast gets the day's size roughly right and the hour wrong - it picks the peak
-        within one period 30-40% of the time - so a plan that trusts its timing sells
-        everything into a half-hour that may not be the dear one. Smoothing makes it
-        indifferent across the hours it cannot tell apart, and re-solving every period
-        lets it commit as the real shape arrives.
-        """
-        path = (predict[idx] if not forecast_vintages
+        """Today's periods on the day-ahead forecast; with vintages, tomorrow's on the early one."""
+        return (predict[idx] if not forecast_vintages
                 else np.where(day_of[idx] == day_of[i], predict[idx], predict_early[idx]))
-        return smooth_path(path, dispatch_smoothing) if dispatch_smoothing > 1 else path
 
     def planning_range(i, last):
         """
@@ -1163,6 +1154,7 @@ def run_dispatch(
     tol_mwh = 1e-3
     soc = initial_soc_frac * E
     energy_rows, soc_traj, breaches = [], [], {}
+    solve_failures = 0
     # Delivered energy not yet recovered, in MWh of store: absorbed by High products
     # (to take out) and given away by Low ones (to put back). See credit_recovery.
     credit = credit_recovery is not None and price_seeking
@@ -1220,7 +1212,7 @@ def run_dispatch(
                 hi = np.where(starts, hi - burst_in, hi)
             # Reserved Capacity is held for energy recovery (SOE guidance), so every
             # period of the plan may use it to keep a requirement reachable
-            e_dis, e_chg, res_dis, res_chg = solve_mpc(
+            e_dis, e_chg, res_dis, res_chg, solved = solve_mpc(
                 soc_current=soc,
                 price_forecast=(np.nan_to_num(plan_prices(i, idx), nan=0.0) if price_seeking
                                 else np.zeros(len(idx))),
@@ -1237,13 +1229,16 @@ def run_dispatch(
                 reserve_chg_mw=reserve_in[idx],
                 recovery_allowance=(allow_out, allow_in) if credit else None,
                 return_reserve=True,
+                return_status=True,
             )
+            if not solved:
+                solve_failures += 1
 
         out, into = delivered_out[i], delivered_in[i]
         if e_dis > 0 or e_chg > 0 or out > 0 or into > 0:
             energy_rows.append({
                 "date":                      d,
-                "imbalance_revenue_gbp":     actual[i] * (e_dis - e_chg) if (e_dis > 0 or e_chg > 0) else 0.0,
+                "trading_revenue_gbp":       actual[i] * (e_dis - e_chg) if (e_dis > 0 or e_chg > 0) else 0.0,
                 "cycling_cost_gbp":          wear * e_dis,
                 "mwh_cycled":                e_dis,
                 "delivery_mwh":              out,
@@ -1258,16 +1253,15 @@ def run_dispatch(
         soc = float(np.clip(soc - e_dis + eta * e_chg - out + eta * into, 0.0, E))
         if credit:
             # Only delivery the reserve could serve earns an allowance: none before EAC
-            spent_out, spent_in = (res_dis, res_chg) if credit_recovery == "reserve" else (e_dis, e_chg)
-            allow_out = min(E, max(0.0, allow_out + (eta * into if reserve_out[i] > 0 else 0.0) - spent_out))
-            allow_in = min(E, max(0.0, allow_in + (out if reserve_in[i] > 0 else 0.0) - eta * spent_in))
+            allow_out = min(E, max(0.0, allow_out + (eta * into if reserve_out[i] > 0 else 0.0) - e_dis))
+            allow_in = min(E, max(0.0, allow_in + (out if reserve_in[i] > 0 else 0.0) - eta * e_chg))
 
         nxt = min(i + 1, n - 1)
         if nxt != i:
             settle_requirement(nxt)
         soc_traj.append((d, sp, soc / E, need_lo[nxt] / E, (E - need_hi[nxt]) / E))
 
-    return energy_rows, soc_traj, breaches
+    return energy_rows, soc_traj, breaches, solve_failures
 
 
 # ---------------------------------------------------------------------------
@@ -1283,26 +1277,23 @@ def run_strategy(
     start_date=None,
     end_date=None,
     *,
-    initial_soc_frac: float = 0.5,
-    horizon: int = 96,
+    delivery: pd.DataFrame | None,
     include_arbitrage: bool = True,
-    pre_eac_rule: str = "d1",
-    delivery: pd.DataFrame | None = None,
-    offer_valuation: str = "formula",
-    price_shrink: float = 1.0,
+    price_shrink: float = PRICE_SHRINK["pf"],
     early_forecast_prices_by_date: dict | None = None,
-    offers_at_bid_time: bool = False,
-    forecast_vintages: bool = False,
-    price_shrink_by_date: dict | None = None,
-    guard_low_by_date: dict | None = None,
-    guard_high_by_date: dict | None = None,
-    plan_smoothing: int = 0,
-    dispatch_smoothing: int = 0,
-    credit_recovery: str | None = None,
-    block_start_margin: bool = False,
+    offers_at_bid_time: bool = PUBLISHED.offer_information == "bid_time",
+    initial_soc_frac: float = PUBLISHED.initial_soc_frac,
+    horizon: int = PUBLISHED.horizon,
+    pre_eac_rule: str = PUBLISHED.pre_eac_rule,
+    offer_valuation: str = PUBLISHED.offer_valuation,
+    forecast_vintages: bool = PUBLISHED.forecast_vintages,
+    credit_recovery: str | None = PUBLISHED.credit_recovery,
+    block_start_margin: bool = PUBLISHED.block_start_margin,
 ) -> dict:
     """
-    The shared engine behind every strategy: schedule, dispatch, settle.
+    The shared engine behind every strategy: schedule, dispatch, settle. Its
+    defaults are the published model (PUBLISHED); `delivery` has none, so every
+    caller says whether contracts are called on.
 
     Only the price signal differs between perfect foresight, naive and ML. It
     sets the arbitrage opportunity cost in the schedule and drives dispatch;
@@ -1314,8 +1305,8 @@ def run_strategy(
     same result.
 
     With a `delivery` table the contracts are called on as GB frequency actually
-    moved, and the expected cost of that energy is priced into each offer.
-    Without one they are never called on.
+    moved, and the expected cost of that energy is priced into each offer. With
+    None they are never called on.
 
     offer_valuation and price_shrink choose how offers price the trading they
     give up; see OFFER_VALUATIONS and _Scheduler.
@@ -1327,12 +1318,17 @@ def run_strategy(
     run_dispatch). Perfect foresight passes none: its prices are known either way,
     and vintages then only shorten the horizon, keeping the engine identical
     across strategies.
+
+    Recovery credit needs prices to trade against, so a run without arbitrage
+    holds the reserve uncredited whatever credit_recovery says.
     """
     services = ALL_SERVICES if services is None else list(services)
     apx_by_date = _apx_by_date(market_index)
     dates = [d for d in sorted(apx_by_date) if _in_range(d, start_date, end_date)]
     if not include_arbitrage:
         forecast_prices_by_date, early_forecast_prices_by_date = {}, None
+        credit_recovery = None
+    offers_at_bid_time = offers_at_bid_time and early_forecast_prices_by_date is not None
 
     has_delivery = delivery is not None and not delivery.empty
     scheduler = _Scheduler(
@@ -1342,25 +1338,20 @@ def run_strategy(
         expected_prices=_expected_block_prices(market_index) if has_delivery else None,
         offer_valuation=offer_valuation, price_shrink=price_shrink,
         offer_forecast_prices_by_date=early_forecast_prices_by_date if offers_at_bid_time else None,
-        price_shrink_by_date=price_shrink_by_date if include_arbitrage else None,
-        guard_low_by_date=guard_low_by_date if include_arbitrage else None,
-        guard_high_by_date=guard_high_by_date if include_arbitrage else None,
-        plan_smoothing=plan_smoothing,
     )
     if dates:
-        energy_rows, soc_traj, breaches = run_dispatch(
+        energy_rows, soc_traj, breaches, solve_failures = run_dispatch(
             apx_by_date, battery, dates, forecast_prices_by_date, scheduler=scheduler,
             initial_soc_frac=initial_soc_frac, horizon=horizon,
             delivery=delivery if has_delivery else None,
             price_seeking=include_arbitrage,
             forecast_vintages=forecast_vintages,
             early_forecast_prices_by_date=early_forecast_prices_by_date,
-            dispatch_smoothing=dispatch_smoothing,
             credit_recovery=credit_recovery,
             block_start_margin=block_start_margin,
         )
     else:
-        energy_rows, soc_traj, breaches = [], [], {}
+        energy_rows, soc_traj, breaches, solve_failures = [], [], {}, 0
     schedule = scheduler.schedule()
 
     availability = {k: 1.0 - v / _SETTLEMENT_PERIODS_PER_BLOCK for k, v in breaches.items()}
@@ -1376,10 +1367,10 @@ def run_strategy(
     if energy_rows:
         daily = pd.DataFrame(energy_rows)
         daily["month"] = pd.to_datetime(daily["date"]).dt.to_period("M")
-        imb_wide = daily.groupby("month")[["imbalance_revenue_gbp", "cycling_cost_gbp", "mwh_cycled",
+        trading_wide = daily.groupby("month")[["trading_revenue_gbp", "cycling_cost_gbp", "mwh_cycled",
                                           "delivery_mwh", "delivery_cycling_cost_gbp"]].sum()
     else:
-        imb_wide = pd.DataFrame()
+        trading_wide = pd.DataFrame()
 
     if not schedule.empty:
         low = schedule[[f"q_{p}" for p in PRODUCTS if is_low(p)]].sum(axis=1)
@@ -1397,21 +1388,19 @@ def run_strategy(
         "fr_blocks_committed": blocks_committed,
         "soe_breach_periods":  int(sum(breaches.values())),
         "soe_breach_blocks":   len(breaches),
+        "solve_failures":      solve_failures,
         "auction_share_cap":   AUCTION_SHARE_CAP,
         "delivery_modelled":   has_delivery,
-        "offer_valuation":     offer_valuation,
+        # Without arbitrage there is no trading to value: both valuations hold the same
+        "offer_valuation":     offer_valuation if include_arbitrage else None,
         "price_shrink":        price_shrink,
         "offers_at_bid_time":  offers_at_bid_time,
         "forecast_vintages":   forecast_vintages,
-        "dynamic_shrink":      bool(price_shrink_by_date) and include_arbitrage,
-        "guard_bands":         bool(guard_low_by_date) and include_arbitrage,
-        "plan_smoothing":      plan_smoothing,
-        "dispatch_smoothing":  dispatch_smoothing,
         "credit_recovery":     credit_recovery,
         "block_start_margin":  block_start_margin or (credit_recovery is not None and include_arbitrage),
         **_reserve_diagnostics(energy_rows, battery.efficiency_rt),
     }
-    result = _build_result(anc_wide, imb_wide, battery, avg_fr_mw, avg_arb_mw, soc_traj, extras,
+    result = _build_result(anc_wide, trading_wide, battery, avg_fr_mw, avg_arb_mw, soc_traj, extras,
                            days_covered=len(dates))
     result["schedule"] = schedule
     result["daily"] = daily_revenue
@@ -1425,20 +1414,21 @@ def run_backtest(
     services: list = None,
     start_date=None,
     end_date=None,
-    initial_soc_frac: float = 0.5,
-    horizon: int = 96,
     *,
+    delivery: pd.DataFrame | None,
     include_arbitrage: bool = True,
-    pre_eac_rule: str = "d1",
-    delivery: pd.DataFrame | None = None,
-    offer_valuation: str = "formula",
-    price_shrink: float = 1.0,
-    forecast_vintages: bool = False,
-    credit_recovery: str | None = None,
-    block_start_margin: bool = False,
+    price_shrink: float = PRICE_SHRINK["pf"],
+    initial_soc_frac: float = PUBLISHED.initial_soc_frac,
+    horizon: int = PUBLISHED.horizon,
+    pre_eac_rule: str = PUBLISHED.pre_eac_rule,
+    offer_valuation: str = PUBLISHED.offer_valuation,
+    forecast_vintages: bool = PUBLISHED.forecast_vintages,
+    credit_recovery: str | None = PUBLISHED.credit_recovery,
+    block_start_margin: bool = PUBLISHED.block_start_margin,
 ) -> dict:
     """
-    Perfect-foresight revenue backtest: actual day-D prices are the signal.
+    Perfect-foresight revenue backtest: actual day-D prices are the signal. The
+    defaults are the published model; see run_strategy.
 
     Parameters
     ----------
@@ -1448,13 +1438,13 @@ def run_backtest(
     services      : products the battery may offer (default: all six; [] for arbitrage only)
     start_date    : inclusive start date (str or datetime)
     end_date      : inclusive end date (str or datetime)
-    initial_soc_frac : starting state of energy as a fraction of battery.energy_mwh
-    horizon       : MPC planning horizon in settlement periods (default 96 = 48h)
+    delivery      : response delivery table (response_delivery.parquet), or None to
+                    leave contracts uncalled. Required: the published model calls them
     include_arbitrage : False is a site with no interest in arbitrage, trading only to
                     keep its contracts deliverable
+    initial_soc_frac : starting state of energy as a fraction of battery.energy_mwh
+    horizon       : MPC planning horizon in settlement periods (default 96 = 48h)
     pre_eac_rule  : "d1" — see compute_fr_schedule
-    delivery      : response delivery table (response_delivery.parquet), or None to
-                    leave contracts uncalled
     offer_valuation, price_shrink : how offers price trading; see run_strategy
     forecast_vintages : end each dispatch plan after tomorrow, as the forecast
                     strategies must; see run_strategy
@@ -1475,57 +1465,8 @@ def run_backtest(
     forecast = {d: s for d, s in apx_by_date.items() if _in_range(d, start_date, end_date)}
     return run_strategy(
         auctions, market_index, battery, forecast, services, start_date, end_date,
-        initial_soc_frac=initial_soc_frac, horizon=horizon,
-        include_arbitrage=include_arbitrage, pre_eac_rule=pre_eac_rule, delivery=delivery,
-        offer_valuation=offer_valuation, price_shrink=price_shrink,
-        forecast_vintages=forecast_vintages,
-        credit_recovery=credit_recovery,
-        block_start_margin=block_start_margin,
+        delivery=delivery, include_arbitrage=include_arbitrage, price_shrink=price_shrink,
+        initial_soc_frac=initial_soc_frac, horizon=horizon, pre_eac_rule=pre_eac_rule,
+        offer_valuation=offer_valuation, forecast_vintages=forecast_vintages,
+        credit_recovery=credit_recovery, block_start_margin=block_start_margin,
     )
-
-
-# ---------------------------------------------------------------------------
-# Sensitivity analysis
-# ---------------------------------------------------------------------------
-
-def sensitivity_table(
-    auctions: pd.DataFrame,
-    market_index: pd.DataFrame,
-    base_spec: BatterySpec,
-    power_range: list = None,
-    start_date=None,
-    end_date=None,
-) -> pd.DataFrame:
-    """
-    Run the backtest across a range of battery sizes, holding other parameters fixed.
-    Returns a DataFrame suitable for display as a summary table.
-
-    Each battery size is allocated and dispatched independently. Sizes above
-    100 MW run into the per-product Maximum Sell Size, and stop being plausible
-    as price-takers well before that.
-    """
-    if power_range is None:
-        power_range = [10, 25, 50, 100]
-
-    rows = []
-    for mw in power_range:
-        spec = BatterySpec(
-            power_mw=mw,
-            duration_h=base_spec.duration_h,
-            efficiency_rt=base_spec.efficiency_rt,
-            cycling_cost_per_mwh=base_spec.cycling_cost_per_mwh,
-        )
-        result = run_backtest(
-            auctions, market_index, spec,
-            start_date=start_date, end_date=end_date,
-        )
-        s = result["summary"]
-        rows.append({
-            "Power (MW)":              mw,
-            "Energy (MWh)":            round(mw * base_spec.duration_h, 0),
-            "Total Net Revenue (£k)":  round(s.get("total_net", 0) / 1_000, 1),
-            "Ann. Net Revenue (£k/yr)": round(s.get("annualised_net", 0) / 1_000, 1),
-            "Revenue / MW (£k/MW/yr)": round(s.get("annualised_per_mw", 0) / 1_000, 1),
-        })
-
-    return pd.DataFrame(rows)

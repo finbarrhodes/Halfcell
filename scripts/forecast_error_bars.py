@@ -51,13 +51,6 @@ def daily_revenue(strategy: str, fresh: bool = False) -> pd.DataFrame:
     """Per-day revenue for one strategy, at the settings the site publishes."""
     from scripts.build_forecast_walk_forward import backtest_window, load_or_build
     from scripts.check_cache_consistency import engine_fingerprint
-    from scripts.precompute_cache import (
-        CREDIT_RECOVERY,
-        FORECAST_VINTAGES,
-        OFFER_INFORMATION,
-        OFFER_VALUATION,
-        PRICE_SHRINK,
-    )
     from src.analysis.price_forecast import run_forecast_backtest
     from src.analysis.revenue_stack import ALL_SERVICES, REFERENCE_BATTERY
 
@@ -76,19 +69,20 @@ def daily_revenue(strategy: str, fresh: bool = False) -> pd.DataFrame:
     if strategy == "ml":
         predictions = load_or_build(model_type="rf", verbose=False)[0]
         early = load_or_build(model_type="rf", verbose=False, information_lag_days=2)[0]
-    result = run_forecast_backtest(
-        strategy=strategy, market_index=market_index, auctions=auctions,
-        battery=REFERENCE_BATTERY, services=ALL_SERVICES, start_date=start, end_date=end,
-        predictions=predictions, early_predictions=early, delivery=delivery,
-        offer_valuation=OFFER_VALUATION, price_shrink=PRICE_SHRINK[strategy],
-        offer_information=OFFER_INFORMATION, forecast_vintages=FORECAST_VINTAGES,
-        credit_recovery=CREDIT_RECOVERY,
-    )
+    # The engine's defaults are the published settings
+    result = run_forecast_backtest(strategy, market_index, auctions, REFERENCE_BATTERY, ALL_SERVICES,
+                                   start, end, predictions, early, delivery=delivery)
     BENCH.mkdir(parents=True, exist_ok=True)
     result["daily"].to_parquet(cached, index=False)
     print(f"  {strategy}: £{result['summary']['annualised_per_mw'] / 1e3:.1f}k/MW/yr "
           f"[{(time.time() - started) / 60:.1f} min]", flush=True)
     return result["daily"]
+
+
+def day_matrix(frame: pd.DataFrame, value: str, date: str = "settlementDate") -> pd.DataFrame:
+    """Long (date, settlementPeriod, value) to a day x period matrix."""
+    table = frame.assign(**{date: pd.to_datetime(frame[date]).dt.normalize()})
+    return table.pivot_table(index=date, columns="settlementPeriod", values=value)
 
 
 def forecast_losses(market_index: pd.DataFrame) -> dict:
@@ -101,7 +95,7 @@ def forecast_losses(market_index: pd.DataFrame) -> dict:
     resample; spread error is the day's predicted range against its realised one.
     """
     from scripts.build_forecast_walk_forward import load_or_build
-    from src.analysis.shrink import day_matrix, naive_predictions
+    from src.analysis.price_forecast import naive_predictions
 
     apx = market_index[(market_index["dataProvider"] == "APXMIDP")
                        & (market_index["settlementPeriod"] <= 48)]

@@ -46,6 +46,7 @@ from src.analysis.features import (
 # Re-export data-loading and feature-building functions so existing callers
 # that import them from this module continue to work unchanged.
 from src.analysis.features import load_bess_capacity, build_feature_matrix  # noqa: F401
+from src.analysis.revenue_stack import PRICE_SHRINK, PUBLISHED, _apx_by_date, _in_range, run_strategy
 
 
 # ---------------------------------------------------------------------------
@@ -346,6 +347,15 @@ def naive_day_prices(
 WALK_FORWARD_CADENCE_MONTHS = 3
 
 
+def naive_predictions(market_index: pd.DataFrame, days_back: int = 2) -> pd.DataFrame:
+    """The naive forecast for every day as a prediction table, as walk_forward_predictions gives."""
+    apx = market_index[(market_index["dataProvider"] == "APXMIDP")
+                       & (market_index["settlementPeriod"] <= 48)]
+    table = apx.assign(settlementDate=pd.to_datetime(apx["settlementDate"]).dt.normalize()
+                       + pd.Timedelta(days=days_back))
+    return table[["settlementDate", "settlementPeriod", "price"]].rename(columns={"price": "prediction"})
+
+
 def walk_forward_origins(start_date, end_date, cadence_months: int = WALK_FORWARD_CADENCE_MONTHS) -> list:
     """Retraining dates covering [start_date, end_date], each the first of a month."""
     start, end = pd.Timestamp(start_date).normalize(), pd.Timestamp(end_date).normalize()
@@ -447,8 +457,6 @@ def walk_forward_predictions(
 
 def forecast_series_by_date(predictions: pd.DataFrame, start_date=None, end_date=None) -> dict:
     """Prediction table as {date: Series indexed by settlementPeriod}, as dispatch wants it."""
-    from src.analysis.revenue_stack import _in_range
-
     table = predictions.assign(settlementDate=pd.to_datetime(predictions["settlementDate"]).dt.normalize())
     return {
         date: group.set_index("settlementPeriod")["prediction"].sort_index()
@@ -469,35 +477,24 @@ def run_forecast_backtest(
     services: list,
     start_date,
     end_date,
-    model=None,
-    feature_df: pd.DataFrame = None,
-    feature_cols: list = None,
     predictions: pd.DataFrame | None = None,
-    initial_soc_frac: float = 0.5,
-    horizon: int = 96,
-    *,
-    include_arbitrage: bool = True,
-    pre_eac_rule: str = "d1",
-    delivery: pd.DataFrame | None = None,
-    offer_valuation: str = "formula",
-    price_shrink: float = 1.0,
-    offer_information: str = "day_ahead",
-    forecast_vintages: bool = False,
     early_predictions: pd.DataFrame | None = None,
-    dynamic_shrink: str | bool = False,
-    shrink_risk_factor: float = 1.0,
-    shrink_tilt: float = 0.0,
-    guard_alpha: float | None = None,
-    guard_group: str = "period",
-    guard_window_days: int | None = None,
-    guard_bands: tuple | None = None,
-    plan_smoothing: int = 0,
-    dispatch_smoothing: int = 0,
-    credit_recovery: str | None = None,
-    block_start_margin: bool = False,
+    *,
+    delivery: pd.DataFrame | None,
+    include_arbitrage: bool = True,
+    price_shrink: float | None = None,
+    initial_soc_frac: float = PUBLISHED.initial_soc_frac,
+    horizon: int = PUBLISHED.horizon,
+    pre_eac_rule: str = PUBLISHED.pre_eac_rule,
+    offer_valuation: str = PUBLISHED.offer_valuation,
+    offer_information: str = PUBLISHED.offer_information,
+    forecast_vintages: bool = PUBLISHED.forecast_vintages,
+    credit_recovery: str | None = PUBLISHED.credit_recovery,
+    block_start_margin: bool = PUBLISHED.block_start_margin,
 ) -> dict:
     """
-    Forecast-driven revenue backtest for the 'naive' or 'ml' strategy.
+    Forecast-driven revenue backtest for the 'naive' or 'ml' strategy. The defaults
+    are the published model (revenue_stack.PUBLISHED).
 
     The forecast for day D, built only from information available by the end of
     D-1, does two jobs: it values each EFA block's arbitrage when the FR
@@ -514,77 +511,55 @@ def run_forecast_backtest(
     services         : products the battery may offer ([] for arbitrage only)
     start_date       : inclusive backtest start
     end_date         : inclusive backtest end
-    model            : fitted model object (required for strategy="ml")
-    feature_df       : feature matrix from build_feature_matrix() (required for strategy="ml")
-    feature_cols     : feature column list from train_forecast_model() (required for strategy="ml")
-    predictions      : walk-forward prediction table from walk_forward_predictions(). Given
-                       for strategy="ml", it replaces model/feature_df/feature_cols, and every
-                       day is forecast by a model that never saw it
-    initial_soc_frac : starting state of energy as a fraction of energy_mwh (default 0.5)
-    horizon          : MPC planning horizon in settlement periods (default 96 = 48h)
+    predictions      : for strategy="ml", the walk-forward prediction table
+                       (walk_forward_predictions), so every day is forecast by a model
+                       that never saw it
+    early_predictions: for strategy="ml" with bid-time offers or forecast vintages, the
+                       same built with information_lag_days=2. For naive the early
+                       forecast is D-2's prices
+    delivery         : response delivery table (response_delivery.parquet), or None to
+                       leave response undelivered. Required: the published model calls it
     include_arbitrage: False runs the FR-only scenario; no forecast is needed
-    pre_eac_rule     : "d1" — see revenue_stack.compute_fr_schedule
-    delivery         : response delivery table (response_delivery.parquet), or None to leave
-                       response undelivered
-    offer_valuation, price_shrink : how offers price trading; see revenue_stack.run_strategy
-    offer_information: "day_ahead" gives offers the same forecast of D that dispatch uses,
-                       which needs all of D-1 - ten hours past the 14:00 bid deadline.
-                       "bid_time" gives them the early forecast: only what existed at the
-                       deadline
+    price_shrink     : weight on the offer plan's forecast deviations from its daily
+                       mean; None takes the published one for the strategy (PRICE_SHRINK)
+    initial_soc_frac : starting state of energy as a fraction of energy_mwh
+    horizon          : MPC planning horizon in settlement periods (96 = 48h)
+    pre_eac_rule     : "d1" - see revenue_stack.compute_fr_schedule
+    offer_valuation  : how offers price trading; see revenue_stack.run_strategy
+    offer_information: "bid_time" gives offers the early forecast: only what existed at
+                       the 14:00 deadline. "day_ahead" gives them the same forecast of D
+                       that dispatch uses, which needs all of D-1 - ten hours past it
     forecast_vintages: dispatch plans tomorrow on the early forecast and stops after it,
                        rather than reading forecasts for tomorrow and the day after that
                        need data still to come; see revenue_stack.run_dispatch
-    early_predictions: for ml with either of the above, a walk-forward table built with
-                       information_lag_days=2. For naive the early forecast is D-2's prices
-    dynamic_shrink  : how to set the weight per day instead of holding price_shrink
-                       constant, walk-forward from the same early forecasts the offers see
-                       (src/analysis/shrink.py). "slope" fits the Mincer-Zarnowitz scaling;
-                       "tilt" leans the weight on how loud the day looks, by shrink_tilt
-                       per unit of amplitude percentile, around price_shrink. price_shrink
-                       is also the fallback until there is enough history
-    shrink_risk_factor: multiplies every fitted weight, for the caution an asymmetric
-                       decision cost calls for. Tune it on selection folds only
-    guard_alpha     : plan each side of a trade against a conformal band rather than the
-                       forecast itself - sell at the alpha quantile of past error, buy at
-                       1-alpha - so a trade must clear the forecast's own error to be worth
-                       capacity (src/analysis/intervals.py). None plans on the forecast
-    guard_group     : which calibration sets the bands come from: "period", "block" or "day"
-    guard_window_days: calibrate on a trailing window rather than all history
-    guard_bands     : bands built elsewhere, as (low_by_date, high_by_date) - quantile,
-                       CQR or SPCI bands (src/analysis/intervals.py, spci.py) - used in
-                       place of the split conformal ones guard_alpha would build
-    plan_smoothing  : half-hours to smooth the offer plan's forecast over
-    dispatch_smoothing: the same for dispatch's own rolling plan, where the trade is
-                       actually committed (revenue_stack.run_dispatch)
     credit_recovery  : let recovery through the Reserved Capacity earn at the price
                        (revenue_stack.run_dispatch)
-    block_start_margin: keep a margin inside each new block's requirement, without credit
+    block_start_margin: keep a margin inside each new block's requirement
                        (revenue_stack.run_dispatch)
 
     Returns
     -------
     dict with the same keys as revenue_stack.run_backtest()
     """
-    from src.analysis.revenue_stack import _apx_by_date, _in_range, run_strategy
-
     if strategy not in ("naive", "ml"):
         raise ValueError(f"Unknown strategy '{strategy}'")
+    if offer_information not in ("day_ahead", "bid_time"):
+        raise ValueError(f"Unknown offer_information '{offer_information}'")
+    if price_shrink is None:
+        price_shrink = PRICE_SHRINK[strategy]
 
     forecast_prices_by_date: dict = {}
-    if include_arbitrage and strategy == "ml" and predictions is not None:
+    if include_arbitrage and strategy == "ml":
+        if predictions is None:
+            raise ValueError("strategy='ml' needs a walk-forward prediction table")
         forecast_prices_by_date = forecast_series_by_date(predictions, start_date, end_date)
     elif include_arbitrage:
         apx_by_date = _apx_by_date(market_index)
         for date in sorted(d for d in apx_by_date if _in_range(d, start_date, end_date)):
-            if strategy == "naive":
-                fp = naive_day_prices(market_index, date)
-            else:
-                fp = predict_day_prices(model, feature_cols, feature_df, date)
+            fp = naive_day_prices(market_index, date)
             if not fp.empty:
                 forecast_prices_by_date[date] = fp
 
-    if offer_information not in ("day_ahead", "bid_time"):
-        raise ValueError(f"Unknown offer_information '{offer_information}'")
     early_forecast = None
     if include_arbitrage and (offer_information == "bid_time" or forecast_vintages):
         if strategy == "ml":
@@ -599,57 +574,12 @@ def run_forecast_backtest(
                 if not fp.empty:
                     early_forecast[date] = fp
 
-    from src.analysis.shrink import naive_predictions
-
-    shrink_by_date = None
-    if include_arbitrage and dynamic_shrink:
-        from src.analysis.shrink import tilted_weights, walk_forward_slopes
-
-        # Calibrate whichever forecast the offers actually see, so the weight measures
-        # the belief owed to that forecast rather than to a sharper one
-        mode = "slope" if dynamic_shrink is True else str(dynamic_shrink)
-        if mode not in ("slope", "tilt"):
-            raise ValueError(f"dynamic_shrink must be 'slope' or 'tilt', got {dynamic_shrink!r}")
-        bid_time = offer_information == "bid_time"
-        if strategy == "ml":
-            source = early_predictions if bid_time else predictions
-            if source is None:
-                raise ValueError("dynamic_shrink with strategy='ml' needs a prediction table")
-        else:
-            source = naive_predictions(market_index, days_back=2 if bid_time else 1)
-        if mode == "slope":
-            shrink_by_date = walk_forward_slopes(
-                source, market_index, risk_factor=shrink_risk_factor, fallback=price_shrink)[0]
-        else:
-            shrink_by_date = tilted_weights(source, market_index, intercept=price_shrink,
-                                            tilt=shrink_tilt)
-        shrink_by_date = {d: w for d, w in shrink_by_date.items() if _in_range(d, start_date, end_date)}
-
-    guard_low = guard_high = None
-    if include_arbitrage and guard_bands is not None:
-        guard_low, guard_high = guard_bands[0], guard_bands[1]
-    elif include_arbitrage and guard_alpha:
-        from src.analysis.intervals import walk_forward_bands
-
-        banded = (early_predictions if offer_information == "bid_time" else predictions)
-        if strategy != "ml":
-            banded = naive_predictions(market_index, days_back=2 if offer_information == "bid_time" else 1)
-        if banded is None:
-            raise ValueError("guard_alpha with strategy='ml' needs a prediction table")
-        guard_low, guard_high, _ = walk_forward_bands(
-            banded, market_index, alpha=guard_alpha, group=guard_group, window_days=guard_window_days)
-
     return run_strategy(
         auctions, market_index, battery, forecast_prices_by_date, services, start_date, end_date,
-        initial_soc_frac=initial_soc_frac, horizon=horizon,
-        include_arbitrage=include_arbitrage, pre_eac_rule=pre_eac_rule, delivery=delivery,
-        offer_valuation=offer_valuation, price_shrink=price_shrink,
+        delivery=delivery, include_arbitrage=include_arbitrage, price_shrink=price_shrink,
         early_forecast_prices_by_date=early_forecast,
         offers_at_bid_time=offer_information == "bid_time",
-        forecast_vintages=forecast_vintages,
-        price_shrink_by_date=shrink_by_date,
-        guard_low_by_date=guard_low, guard_high_by_date=guard_high,
-        plan_smoothing=plan_smoothing, dispatch_smoothing=dispatch_smoothing,
-        credit_recovery=credit_recovery,
-        block_start_margin=block_start_margin,
+        initial_soc_frac=initial_soc_frac, horizon=horizon, pre_eac_rule=pre_eac_rule,
+        offer_valuation=offer_valuation, forecast_vintages=forecast_vintages,
+        credit_recovery=credit_recovery, block_start_margin=block_start_margin,
     )

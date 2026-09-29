@@ -221,7 +221,7 @@ def test_an_unreachable_requirement_is_recorded_as_unavailability():
     day = pd.Timestamp("2026-03-02")
     sched = _manual_schedule(day, block_limits={4: (95.0, 40.0)}, default_charge=1.0)
     flat = {day: pd.Series(50.0, index=range(1, 49))}
-    _, _, breaches = run_dispatch(flat, BATTERY, [day], flat, schedule=sched, initial_soc_frac=0.0)
+    _, _, breaches, _ = run_dispatch(flat, BATTERY, [day], flat, schedule=sched, initial_soc_frac=0.0)
     assert breaches.get((day, 4)) == 8
 
 
@@ -235,7 +235,7 @@ def test_tomorrows_commitments_are_not_anticipated_before_the_bid_deadline():
     sched = pd.concat([_manual_schedule(day1, block_limits={}),
                        _manual_schedule(day2, block_limits={3: (90.0, 40.0)})])
     flat = {d: pd.Series(50.0, index=range(1, 49)) for d in (day1, day2)}
-    _, traj, breaches = run_dispatch(flat, BATTERY, [day1, day2], flat, schedule=sched,
+    _, traj, breaches, _ = run_dispatch(flat, BATTERY, [day1, day2], flat, schedule=sched,
                                      initial_soc_frac=0.0)
     soc = pd.DataFrame(traj, columns=TRAJECTORY_COLUMNS)
     before_deadline = soc[(soc.date == day1) & (soc.sp <= 28)]          # decisions up to 13:30
@@ -259,7 +259,7 @@ DAYS = [f"2026-01-0{i}" for i in range(1, 6)]
 
 
 def test_full_backtest_is_neso_feasible_and_never_out_of_position():
-    result = run_backtest(_auctions({d: EVERYTHING_PAYS for d in DAYS}), _market_index(DAYS), BATTERY)
+    result = run_backtest(_auctions({d: EVERYTHING_PAYS for d in DAYS}), _market_index(DAYS), BATTERY, delivery=None)
     s = result["summary"]
     assert not result["monthly"].empty
     assert {"soe_breach_periods", "pre_eac_rule", "fr_blocks_committed"} <= set(s)
@@ -275,14 +275,14 @@ def test_holdings_that_freeze_state_of_energy_do_not_strand_the_battery():
     store outside that combination's range with no way back, losing whole blocks.
     """
     auctions = _auctions({d: {"DCH": 20.0, "DRL": 30.0} for d in DAYS})
-    result = run_backtest(auctions, _market_index(DAYS, low=-20.0, high=300.0), BATTERY)
+    result = run_backtest(auctions, _market_index(DAYS, low=-20.0, high=300.0), BATTERY, delivery=None)
     assert result["summary"]["soe_breach_periods"] == 0
     assert result["schedule"]["q_DCH"].max() > 0
 
 
 def test_fr_revenue_never_exceeds_selling_the_same_mw_into_every_product():
     auctions = _auctions({d: EVERYTHING_PAYS for d in DAYS})
-    result = run_backtest(auctions, _market_index(DAYS), BATTERY, include_arbitrage=False)
+    result = run_backtest(auctions, _market_index(DAYS), BATTERY, include_arbitrage=False, delivery=None)
     fr = sum(v for k, v in result["summary"]["breakdown"].items() if k != "Arbitrage")
     old = sum(EVERYTHING_PAYS.values()) * EFA_HOURS * 6 * len(DAYS) * P
     assert 0 < fr < old
@@ -290,7 +290,7 @@ def test_fr_revenue_never_exceeds_selling_the_same_mw_into_every_product():
 
 def test_without_delivery_a_site_without_arbitrage_holds_still():
     result = run_backtest(_auctions({d: {"DRL": 30.0} for d in DAYS}), _market_index(DAYS),
-                          BATTERY, include_arbitrage=False)
+                          BATTERY, include_arbitrage=False, delivery=None)
     s = result["summary"]
     assert s["breakdown"]["Arbitrage"] == 0
     assert s["total_delivery_mwh"] == 0
@@ -300,7 +300,7 @@ def test_every_scenario_writes_the_same_columns():
     auctions = _auctions({d: EVERYTHING_PAYS for d in DAYS[:2]})
     market = _market_index(DAYS[:2])
     for kwargs in ({}, {"include_arbitrage": False}, {"services": []}):
-        monthly = run_backtest(auctions, market, BATTERY, **kwargs)["monthly"]
+        monthly = run_backtest(auctions, market, BATTERY, **kwargs, delivery=None)["monthly"]
         assert set(REVENUE_COLUMNS) <= set(monthly.columns), kwargs
 
 
@@ -354,7 +354,7 @@ def _holding(day, *, lo=0.0, trade_mw=0.0, apply_reserve=True, **mw):
 def test_low_delivery_empties_the_store_and_wears_the_battery():
     day = pd.Timestamp("2026-03-02")
     flat = {day: pd.Series(50.0, index=range(1, 49))}
-    rows, traj, _ = run_dispatch(flat, BATTERY, [day], flat, schedule=_holding(day, DRL=40.0),
+    rows, traj, _, _ = run_dispatch(flat, BATTERY, [day], flat, schedule=_holding(day, DRL=40.0),
                                  delivery=_delivery([day], dr_low=0.01), initial_soc_frac=0.5)
     soc = pd.DataFrame(traj, columns=TRAJECTORY_COLUMNS)
     assert soc.soc_frac.iloc[9] * P * D == pytest.approx(50.0 - 40.0 * 0.01 * 10)
@@ -367,7 +367,7 @@ def test_high_delivery_fills_the_store_less_round_trip_loss():
     """With no trading power or Reserved Capacity, nothing moves the delivered energy back out."""
     day = pd.Timestamp("2026-03-02")
     flat = {day: pd.Series(50.0, index=range(1, 49))}
-    _, traj, _ = run_dispatch(flat, BATTERY, [day], flat, schedule=_holding(day, apply_reserve=False, DRH=20.0),
+    _, traj, _, _ = run_dispatch(flat, BATTERY, [day], flat, schedule=_holding(day, apply_reserve=False, DRH=20.0),
                               delivery=_delivery([day], dr_high=0.1), initial_soc_frac=0.5)
     soc = pd.DataFrame(traj, columns=TRAJECTORY_COLUMNS)
     assert soc.soc_frac.iloc[4] * P * D == pytest.approx(50.0 + BATTERY.efficiency_rt * 20.0 * 0.1 * 5)
@@ -389,7 +389,7 @@ def test_delivery_lowers_the_requirement_so_it_is_not_unavailability_until_recov
     day = pd.Timestamp("2026-03-02")
     flat = {day: pd.Series(50.0, index=range(1, 49))}
     sched = _holding(day, lo=40.0, apply_reserve=False, DRL=40.0)
-    _, traj, breaches = run_dispatch(flat, BATTERY, [day], flat, schedule=sched,
+    _, traj, breaches, _ = run_dispatch(flat, BATTERY, [day], flat, schedule=sched,
                                      delivery=_two_periods_of_delivery(day), initial_soc_frac=0.4)
     assert breaches.get((day, 1)) == 1      # the sixth period only
     assert breaches.get((day, 2)) == 8
@@ -401,7 +401,7 @@ def test_power_left_for_trading_recovers_delivered_energy_in_time():
     day = pd.Timestamp("2026-03-02")
     flat = {day: pd.Series(50.0, index=range(1, 49))}
     sched = _holding(day, lo=40.0, trade_mw=10.0, apply_reserve=False, DRL=40.0)
-    _, _, breaches = run_dispatch(flat, BATTERY, [day], flat, schedule=sched,
+    _, _, breaches, _ = run_dispatch(flat, BATTERY, [day], flat, schedule=sched,
                                   delivery=_two_periods_of_delivery(day), initial_soc_frac=0.4)
     assert sum(breaches.values()) == 0
 
@@ -410,7 +410,7 @@ def test_reserved_capacity_recovers_delivered_energy_when_no_trading_power_is_le
     day = pd.Timestamp("2026-03-02")
     flat = {day: pd.Series(50.0, index=range(1, 49))}
     sched = _holding(day, lo=40.0, trade_mw=0.0, apply_reserve=True, DRL=40.0)
-    _, traj, breaches = run_dispatch(flat, BATTERY, [day], flat, schedule=sched,
+    _, traj, breaches, _ = run_dispatch(flat, BATTERY, [day], flat, schedule=sched,
                                      delivery=_two_periods_of_delivery(day), initial_soc_frac=0.4)
     assert sum(breaches.values()) == 0
     soc = pd.DataFrame(traj, columns=TRAJECTORY_COLUMNS).set_index("sp")["soc_frac"] * P * D
@@ -451,13 +451,13 @@ def test_a_site_without_arbitrage_trades_only_to_make_good_its_delivery():
 def test_an_unknown_offer_valuation_is_rejected():
     with pytest.raises(ValueError, match="offer_valuation"):
         run_backtest(_auctions({DAYS[0]: EVERYTHING_PAYS}), _market_index(DAYS[:1]), BATTERY,
-                     offer_valuation="hindsight")
+                     offer_valuation="hindsight", delivery=None)
 
 
 def test_lp_valued_offers_are_neso_feasible_and_never_out_of_position():
     for days in (DAYS, ["2023-06-01", "2023-06-02", "2023-06-03"]):
         result = run_backtest(_auctions({d: EVERYTHING_PAYS for d in days}), _market_index(days), BATTERY,
-                              offer_valuation="lp")
+                              offer_valuation="lp", delivery=None)
         assert result["summary"]["soe_breach_periods"] == 0
         assert result["summary"]["offer_valuation"] == "lp"
         for (date, _efa), row in result["schedule"].iterrows():
@@ -467,7 +467,7 @@ def test_lp_valued_offers_are_neso_feasible_and_never_out_of_position():
 
 def test_without_arbitrage_the_valuation_makes_no_difference():
     auctions = _auctions({d: EVERYTHING_PAYS for d in DAYS})
-    runs = [run_backtest(auctions, _market_index(DAYS), BATTERY, include_arbitrage=False, offer_valuation=v)
+    runs = [run_backtest(auctions, _market_index(DAYS), BATTERY, include_arbitrage=False, offer_valuation=v, delivery=None)
             for v in ("formula", "lp")]
     pd.testing.assert_frame_equal(runs[0]["schedule"], runs[1]["schedule"])
 
@@ -481,8 +481,9 @@ def test_lp_valued_offers_keep_free_the_side_trading_needs_at_each_hour():
     """
     dc = {"DCH": 10.0, "DCL": 10.0}
     auctions, market = _auctions({d: dc for d in DAYS}), _market_index(DAYS)
-    formula = run_backtest(auctions, market, BATTERY)["schedule"].loc[pd.Timestamp(DAYS[2])]
-    lp = run_backtest(auctions, market, BATTERY, offer_valuation="lp")["schedule"].loc[pd.Timestamp(DAYS[2])]
+    formula = run_backtest(auctions, market, BATTERY, offer_valuation="formula",
+                           delivery=None)["schedule"].loc[pd.Timestamp(DAYS[2])]
+    lp = run_backtest(auctions, market, BATTERY, offer_valuation="lp", delivery=None)["schedule"].loc[pd.Timestamp(DAYS[2])]
 
     morning, evening = [2, 3], [5, 6]
     assert formula.loc[morning, "q_DCH"].tolist() == pytest.approx(formula.loc[evening, "q_DCH"].tolist())
@@ -499,7 +500,7 @@ def test_annualisation_divides_by_days_backtested_not_months_touched():
     understating £/MW/yr by a factor of about 6.
     """
     auctions, market = _auctions({d: {"DCL": 10.0} for d in DAYS}), _market_index(DAYS)
-    summary = run_backtest(auctions, market, BATTERY)["summary"]
+    summary = run_backtest(auctions, market, BATTERY, delivery=None)["summary"]
 
     assert summary["days_covered"] == len(DAYS)
     assert summary["years_covered"] == pytest.approx(len(DAYS) / 365.25, abs=0.005)
@@ -518,7 +519,7 @@ def _dear_evening(day, cheap=40.0, dear=160.0):
 def _absorbing(day, credit_recovery, *, dr_high=0.05, trade_mw=0.0):
     """20 MW of DR High with its reserve, absorbing energy all day; no requirement presses."""
     prices = _dear_evening(day)
-    rows, _, breaches = run_dispatch(prices, BATTERY, [day], prices,
+    rows, _, breaches, _ = run_dispatch(prices, BATTERY, [day], prices,
                                      schedule=_holding(day, trade_mw=trade_mw, DRH=20.0),
                                      delivery=_delivery([day], dr_high=dr_high),
                                      initial_soc_frac=0.5, credit_recovery=credit_recovery)
@@ -531,7 +532,7 @@ def test_uncredited_recovery_leaves_absorbed_energy_unsold():
 
 
 def test_credited_recovery_sells_absorbed_energy_when_it_is_dear_and_no_more_than_was_absorbed():
-    rows, _ = _absorbing(pd.Timestamp("2026-03-02"), "reserve")
+    rows, _ = _absorbing(pd.Timestamp("2026-03-02"), "any")
     cheap = rows["price_gbp_per_mwh"] < 100
     assert rows.loc[cheap, "reserve_dis_mwh"].sum() == pytest.approx(0.0, abs=1e-4)
     assert rows.loc[~cheap, "reserve_dis_mwh"].sum() > 1.0
@@ -543,23 +544,16 @@ def test_with_nothing_delivered_crediting_recovery_changes_nothing():
     """No delivery, no allowance: the reserve cannot become trading capacity."""
     day = pd.Timestamp("2026-03-02")
     plain, _ = _absorbing(day, None, dr_high=0.0)
-    credited, _ = _absorbing(day, "reserve", dr_high=0.0)
+    credited, _ = _absorbing(day, "any", dr_high=0.0)
     assert credited["reserve_dis_mwh"].sum() == pytest.approx(0.0, abs=1e-5)
-    assert credited["imbalance_revenue_gbp"].sum() == pytest.approx(plain["imbalance_revenue_gbp"].sum(), abs=1.0)
-
-
-def test_strict_accounting_lets_trading_spend_the_allowance():
-    """With trading power, 'any' counts trades as recovery first, so the reserve moves less."""
-    day = pd.Timestamp("2026-03-02")
-    loose, _ = _absorbing(day, "reserve", trade_mw=2.0)
-    strict, _ = _absorbing(day, "any", trade_mw=2.0)
-    assert strict["reserve_dis_mwh"].sum() < loose["reserve_dis_mwh"].sum() - 1e-3
+    assert credited["trading_revenue_gbp"].sum() == pytest.approx(plain["trading_revenue_gbp"].sum(), abs=1.0)
 
 
 def test_an_unknown_recovery_credit_mode_is_refused():
     day = pd.Timestamp("2026-03-02")
-    with pytest.raises(ValueError, match="credit_recovery"):
-        _absorbing(day, "sometimes")
+    for mode in ("sometimes", "reserve"):     # the loose reading was set aside
+        with pytest.raises(ValueError, match="credit_recovery"):
+            _absorbing(day, mode)
 
 
 def test_the_block_start_margin_lowers_only_the_limit_at_each_later_block_start(monkeypatch):
@@ -588,3 +582,50 @@ def test_the_block_start_margin_lowers_only_the_limit_at_each_later_block_start(
     np.testing.assert_allclose(lowered[starts], BATTERY.efficiency_rt * 20.0 * 0.05, rtol=1e-9)
     # SP47 opens the next day's first block, which holds nothing, so it keeps no margin
     np.testing.assert_allclose(np.delete(lowered, starts), 0.0, atol=1e-12)
+
+
+# --- The published model and failed solves ---------------------------------------------------
+
+def test_a_call_that_sets_nothing_runs_the_published_model():
+    from src.analysis.revenue_stack import PUBLISHED
+
+    result = run_backtest(_auctions({d: EVERYTHING_PAYS for d in DAYS[:2]}), _market_index(DAYS[:2]),
+                          BATTERY, delivery=None)
+    s = result["summary"]
+    assert s["offer_valuation"] == PUBLISHED.offer_valuation == "lp"
+    assert s["credit_recovery"] == PUBLISHED.credit_recovery == "any"
+    assert s["forecast_vintages"] and s["block_start_margin"]
+
+
+def test_delivery_must_be_stated():
+    """None is a legitimate choice, but not one the engine makes silently."""
+    with pytest.raises(TypeError, match="delivery"):
+        run_backtest(_auctions({DAYS[0]: EVERYTHING_PAYS}), _market_index(DAYS[:1]), BATTERY)
+
+
+def test_a_run_without_arbitrage_holds_the_reserve_uncredited():
+    result = run_backtest(_auctions({d: {"DRL": 30.0} for d in DAYS[:2]}), _market_index(DAYS[:2]),
+                          BATTERY, include_arbitrage=False, delivery=None)
+    assert result["summary"]["credit_recovery"] is None
+    assert result["summary"]["offer_valuation"] is None
+
+
+def test_failed_solves_are_counted_and_trade_nothing(monkeypatch):
+    """A period whose LP fails idles, and says so, rather than passing for a choice to idle."""
+    import src.optimisation.mpc as mpc
+    real = mpc.solve_mpc
+    calls = []
+
+    def flaky(**kwargs):
+        calls.append(1)
+        if len(calls) % 4 == 0:
+            return (0.0, 0.0, 0.0, 0.0, False)
+        return real(**kwargs)
+
+    monkeypatch.setattr(mpc, "solve_mpc", flaky)
+    day = pd.Timestamp("2026-03-02")
+    prices = _dear_evening(day)
+    rows, _, _, failures = run_dispatch(prices, BATTERY, [day], prices, schedule=_holding(day))
+    assert failures == 48 // 4
+    assert len(calls) == 48
+

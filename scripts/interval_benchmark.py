@@ -4,8 +4,8 @@ Interval benchmark: every guard band scored as a forecast
 =========================================================
 Builds each way of banding the bid-time forecast and scores them on the same days,
 in the measures O'Connor et al. (2025) report - coverage, width, pinball loss and
-the Winkler interval score - before any of them is asked to earn money
-(scripts/compare_offer_valuation.py does that, reading its bands from here).
+the Winkler interval score. Asked to earn money in dispatch, none did
+(reports/offer_valuation_quantile.md), and the engine no longer takes bands.
 
   scp       split conformal per settlement period on a trailing year: the bands
             the engine already had (src/analysis/intervals.py)
@@ -39,7 +39,7 @@ uncertain: its band is twice as wide on the fifth of days with the biggest reali
 spreads (rank correlation with the spread +0.53). That is the trouble, because those
 are the days whose spread is real. So the better the band, the more of the best
 trading it declines - the same thing that sank the per-day shrink slope
-(src/analysis/shrink.py).
+(reports/offer_valuation_dynamic.md).
 
 Usage:
     python scripts/interval_benchmark.py
