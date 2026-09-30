@@ -1,6 +1,6 @@
-# What the data pipeline, the backtest and the tests need. Exact versions are
-# pinned in constraints.txt; install with
-#     pip install -r requirements.txt -c constraints.txt
+# What the data pipeline, the backtest and the tests need; pyproject.toml reads its
+# dependencies from here. Exact versions are pinned in constraints.txt; install with
+#     pip install -e . -c constraints.txt
 
 # Core data handling
 pandas>=2.0.0

@@ -6,7 +6,6 @@ midnight and truncates the last day of the window.
 """
 from datetime import date
 
-import pytest
 
 from src.data_collection.elexon_collector import _CHUNK_DAYS, _date_chunks, ElexonBMRSCollector
 

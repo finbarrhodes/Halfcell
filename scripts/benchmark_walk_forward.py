@@ -27,16 +27,13 @@ Usage:
 
 import argparse
 import json
-import sys
 import time
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from scripts.provenance import stamp, stamp_lines
 
 import pandas as pd
 
 from scripts.build_forecast_walk_forward import backtest_window, load_or_build, pooled_metrics
+from scripts.provenance import stamp, stamp_lines
 from src.analysis.price_forecast import (
     WALK_FORWARD_CADENCE_MONTHS,
     build_feature_matrix,
@@ -56,15 +53,20 @@ SELECT_BEFORE = "2025-01-01"
 BENCH = PROCESSED / "benchmarks"
 
 
-def predictions_for(model_type: str, features, window, cadence: int, train_years, verbose=True):
-    """Walk-forward predictions for one model, cached per configuration."""
+def predictions_for(model_type: str, features, window, cadence: int, train_years, verbose=True,
+                    information_lag_days: int = 1):
+    """
+    Walk-forward predictions for one model, cached per configuration. With
+    information_lag_days=2, `features` must be built with the same lag: that is the
+    early forecast bid-time offers and forecast vintages plan on.
+    """
     if model_type == "rf" and cadence == WALK_FORWARD_CADENCE_MONTHS and train_years is None:
         if verbose:
             print("  reused the cached shipped table", flush=True)
-        return load_or_build(model_type="rf", verbose=False)
+        return load_or_build(model_type="rf", verbose=False, information_lag_days=information_lag_days)
 
     BENCH.mkdir(parents=True, exist_ok=True)
-    suffix = f"_{train_years:g}y" if train_years else ""
+    suffix = (f"_{train_years:g}y" if train_years else "") + ("_early" if information_lag_days == 2 else "")
     table = BENCH / f"forecast_wf_{model_type}_{cadence}m{suffix}.parquet"
     folds_file = table.with_suffix(".folds.json")
     if table.exists() and folds_file.exists():
@@ -105,19 +107,20 @@ def baselines(auctions, market_index, delivery, window, full_window: bool) -> tu
     print("  baselines for this window…", flush=True)
     pf = run_backtest(auctions, market_index, REFERENCE_BATTERY, ALL_SERVICES,
                       window[0], window[1], delivery=delivery)
-    naive = run_forecast_backtest(
-        strategy="naive", market_index=market_index, auctions=auctions, battery=REFERENCE_BATTERY,
-        services=ALL_SERVICES, start_date=window[0], end_date=window[1], delivery=delivery)
+    naive = run_forecast_backtest("naive", market_index, auctions, REFERENCE_BATTERY, ALL_SERVICES,
+                                  window[0], window[1], delivery=delivery)
     return (pf["summary"]["annualised_per_mw"], naive["summary"]["annualised_per_mw"])
 
 
-def revenue_for(predictions, auctions, market_index, delivery, window, pf, naive) -> dict:
-    """Annualised revenue and foresight ratio for one model over this window."""
-    result = run_forecast_backtest(
-        strategy="ml", market_index=market_index, auctions=auctions, battery=REFERENCE_BATTERY,
-        services=ALL_SERVICES, start_date=window[0], end_date=window[1], predictions=predictions,
-        delivery=delivery,
-    )
+def revenue_for(predictions, early_predictions, auctions, market_index, delivery, window, pf, naive) -> dict:
+    """
+    Annualised revenue and foresight ratio for one model over this window, on the
+    published engine, as the baselines are. Its offers and tomorrow's dispatch plan on
+    early_predictions, the same model's forecast from data to D-2.
+    """
+    result = run_forecast_backtest("ml", market_index, auctions, REFERENCE_BATTERY, ALL_SERVICES,
+                                   window[0], window[1], predictions, early_predictions,
+                                   delivery=delivery)
     per_mw = result["summary"]["annualised_per_mw"]
     return {
         "annualised_per_mw": round(per_mw, 1),
@@ -182,7 +185,6 @@ def main() -> None:
     delivery = pd.read_parquet(PROCESSED / "response_delivery.parquet")
     features = build_feature_matrix(market_index, generation, load_bess_capacity())
     window = backtest_window(auctions, market_index)
-    default_setup = args.cadence == WALK_FORWARD_CADENCE_MONTHS and args.train_years is None
 
     revenue_window = window if args.revenue_from is None else (pd.Timestamp(args.revenue_from), window[1])
     full_window = args.revenue_from is None
@@ -196,6 +198,7 @@ def main() -> None:
     print("", flush=True)
 
     rows = []
+    early_features = None   # built once, and only for revenue runs
     for model_type in [m.strip() for m in args.models.split(",") if m.strip()]:
         print(f"── {model_type} " + "─" * 40, flush=True)
         started = time.time()
@@ -214,8 +217,14 @@ def main() -> None:
               f"ρ {confirmation['spearman']} ({fit_minutes:.1f} min)", flush=True)
 
         if args.revenue:
+            print("  early forecast, from data to D-2…", flush=True)
+            if early_features is None:
+                early_features = build_feature_matrix(market_index, generation, load_bess_capacity(),
+                                                      information_lag_days=2)
+            early_predictions, _ = predictions_for(model_type, early_features, window, args.cadence,
+                                                   args.train_years, information_lag_days=2)
             print("  dispatch backtest…", flush=True)
-            row["revenue"] = revenue_for(predictions, auctions, market_index, delivery,
+            row["revenue"] = revenue_for(predictions, early_predictions, auctions, market_index, delivery,
                                          revenue_window, pf_base, naive_base)
             row["revenue"]["window_from"] = str(pd.Timestamp(revenue_window[0]).date())
             print(f"  £{row['revenue']['annualised_per_mw'] / 1e3:.1f}k/MW/yr, "

@@ -3,13 +3,11 @@
 Unit tests here run without network access and, where practical, without the
 processed data files — so they stay runnable in CI on a bare checkout.
 """
-import sys
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
 
 PROCESSED = ROOT / "data" / "processed"
 

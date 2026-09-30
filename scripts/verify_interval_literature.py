@@ -48,16 +48,15 @@ Usage:
 import argparse
 import json
 import re
-import sys
 import urllib.request
 from pathlib import Path
 
-ROOT = Path(__file__).parent.parent
-sys.path.insert(0, str(ROOT))
-from scripts.provenance import stamp, stamp_lines
-
 import numpy as np
 import pandas as pd
+
+from scripts.provenance import stamp, stamp_lines
+
+ROOT = Path(__file__).parent.parent
 
 REPORTS = ROOT / "reports"
 PAPER_REPO = "https://anonymous.4open.science/api/repo/PEPF_Conformal-C0AF/file"
@@ -193,7 +192,7 @@ def main() -> None:
         f"- The paper calls the reference implementation with alpha = {', '.join(level['paper_calls_alpha'])}",
         "  (`EnbPI_SPCI_DAM.py`), having defined the interval as `[q_alpha, q_(1-alpha)]` with",
         "  confidence `1 - 2*alpha` — so alpha = 0.1 is labelled 80%.",
-        f"- The reference implementation builds the bounds at residual percentiles",
+        "- The reference implementation builds the bounds at residual percentiles",
         f"  `{level['reference_interval_bounds']}`, a probability width of `1 - alpha`.",
         "- So alpha is the total miscoverage: the bands are 90% and 70% intervals, compared",
         "  against quantile regression's genuine 80% and 40%.",

@@ -210,7 +210,7 @@ def settlement_periods_in_day(date) -> int:
     Returns:
         46, 48 or 50
     """
-    from datetime import date as _date, datetime as _datetime, timedelta
+    from datetime import date as _date, datetime as _datetime
     from zoneinfo import ZoneInfo
 
     tz = ZoneInfo("Europe/London")

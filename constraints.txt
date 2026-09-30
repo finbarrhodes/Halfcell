@@ -43,6 +43,7 @@ pyyaml==6.0.1
 qdldl==0.1.9.post1
 quantile-forest==1.4.2
 requests==2.33.1
+ruff==0.16.9
 scikit-learn==1.9.1
 scipy==1.17.1
 scs==3.3.1

@@ -134,7 +134,7 @@ npm --prefix site run dev       # local preview on :3000
 Re-run the model itself:
 
 ```bash
-pip install -r requirements.txt -c constraints.txt
+pip install -e . -c constraints.txt
 python scripts/prepare_data.py          # raw -> data/processed/
 python scripts/precompute_cache.py      # seven dispatch runs, ~80 min
 python scripts/check_cache_consistency.py
@@ -153,8 +153,9 @@ half-hourly delivery table is committed.
 ## Tests
 
 ```bash
-pip install -r requirements.txt -r requirements-dev.txt -c constraints.txt
-pytest -m "not integration"     # 370 tests, no network — what CI runs
+pip install -e . -r requirements-dev.txt -c constraints.txt
+ruff check .                    # lint, as CI runs it
+pytest -m "not integration"     # 353 tests, no network — what CI runs
 pytest -m integration           # live NESO + Elexon contract checks
 pytest --cov=src tests/         # with coverage
 ```
@@ -210,7 +211,7 @@ src/
   analysis/
     neso_rules.py         NESO's rules as constants and feasibility checks, cited inline
     fr_allocation.py      Stage 1: allocation across the six products and arbitrage
-    revenue_stack.py      The backtest engine: schedule, dispatch, settle
+    revenue_stack.py      The backtest engine: schedule, dispatch, settle; PUBLISHED holds the shipped settings
     response_delivery.py  Frequency -> energy delivered per MW contracted
     price_forecast.py     Feature matrix, model training, forecast backtests
     forecasting_models.py Random Forest, LEAR ensemble, DNN

@@ -29,16 +29,15 @@ see prepare_generation.
 
 import argparse
 import re
-import sys
 from pathlib import Path
 
 import pandas as pd
 
-ROOT      = Path(__file__).parent.parent
-sys.path.insert(0, str(ROOT))
 
 from src.analysis.response_delivery import build_delivery_table
 from src.analysis.wind_forecast import build_wind_forecast_table  # noqa: E402
+
+ROOT      = Path(__file__).parent.parent
 
 RAW       = ROOT / "data" / "raw"
 PROCESSED = ROOT / "data" / "processed"

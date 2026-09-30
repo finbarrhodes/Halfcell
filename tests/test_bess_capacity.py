@@ -8,7 +8,6 @@ before the fleet existed are genuinely zero.
 """
 import numpy as np
 import pandas as pd
-import pytest
 
 from src.analysis.features import build_feature_matrix
 

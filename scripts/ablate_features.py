@@ -24,17 +24,14 @@ Usage:
 
 import argparse
 import json
-import sys
 import time
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from scripts.provenance import stamp, stamp_lines
 
 import pandas as pd
 
 from scripts.benchmark_walk_forward import baselines, revenue_for, split_metrics
 from scripts.build_forecast_walk_forward import backtest_window
+from scripts.provenance import stamp, stamp_lines
 from src.analysis.price_forecast import (
     WALK_FORWARD_CADENCE_MONTHS,
     build_feature_matrix,
@@ -49,18 +46,20 @@ REPORTS = Path(__file__).parent.parent / "reports"
 SELECT_BEFORE = "2025-01-01"
 
 
-def variants(market_index, generation, capacity, wind) -> dict:
+def variants(market_index, generation, capacity, wind, information_lag_days: int = 1) -> dict:
     """The feature matrices to compare, keyed by the name used in the report."""
+    lag = dict(information_lag_days=information_lag_days)
     return {
-        "baseline": lambda: build_feature_matrix(market_index, generation, capacity),
-        "wind": lambda: build_feature_matrix(market_index, generation, capacity, wind_forecast=wind),
+        "baseline": lambda: build_feature_matrix(market_index, generation, capacity, **lag),
+        "wind": lambda: build_feature_matrix(market_index, generation, capacity, wind_forecast=wind, **lag),
     }
 
 
-def predictions_for(name: str, matrix, window, model_type: str, cadence: int, verbose=True):
-    """Walk-forward predictions for one variant, cached per variant and model."""
+def predictions_for(name: str, matrix, window, model_type: str, cadence: int, verbose=True,
+                    early: bool = False):
+    """Walk-forward predictions for one variant, cached per variant, model and information lag."""
     BENCH.mkdir(parents=True, exist_ok=True)
-    table = BENCH / f"ablation_{name}_{model_type}_{cadence}m.parquet"
+    table = BENCH / f"ablation_{name}_{model_type}_{cadence}m{'_early' if early else ''}.parquet"
     folds_file = table.with_suffix(".folds.json")
     if table.exists() and folds_file.exists():
         if verbose:
@@ -156,8 +155,12 @@ def main() -> None:
                   f"RMSE {confirmation['rmse']}, ρ {confirmation['spearman']}", flush=True)
 
             if args.revenue:
+                print("    early forecast, from data to D-2…", flush=True)
+                early_matrix = variants(market_index, generation, capacity, wind, information_lag_days=2)[name]()
+                early_predictions, _ = predictions_for(name, early_matrix, window, model_type, args.cadence,
+                                                       early=True)
                 print("    dispatch backtest…", flush=True)
-                row["revenue"] = revenue_for(predictions, auctions, market_index, delivery,
+                row["revenue"] = revenue_for(predictions, early_predictions, auctions, market_index, delivery,
                                              window, pf_base, naive_base)
                 print(f"    £{row['revenue']['annualised_per_mw'] / 1e3:.1f}k/MW/yr, "
                       f"foresight {row['revenue']['foresight_ratio'] * 100:.1f}%", flush=True)

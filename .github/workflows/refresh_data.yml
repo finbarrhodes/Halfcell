@@ -81,7 +81,7 @@ jobs:
           cache: 'pip'
 
       - name: Install dependencies
-        run: pip install -r requirements.txt -c constraints.txt
+        run: pip install -e . -c constraints.txt
 
       # A 60-day window rather than "everything after the parquet's last date"
       # because upstream revises: Elexon moves system prices through several

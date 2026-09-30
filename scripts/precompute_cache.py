@@ -24,7 +24,7 @@ Every run is capped at a fifth of each auction's cleared volume, calls contracts
 as GB frequency actually moved (data/processed/response_delivery.parquet), and
 prices that delivery into offers. Recovery of delivered energy through the Reserved
 Capacity earns at the price, within what delivery has put in play, and every plan
-meets each new block's start a margin inside its requirement (CREDIT_RECOVERY).
+meets each new block's start a margin inside its requirement.
 
 The manifest records a fingerprint of the code that made the cache, which
 check_cache_consistency.py compares with the code in the tree.
@@ -43,6 +43,10 @@ on a forecast shrunk towards its daily mean by PRICE_SHRINK, chosen per signal o
 the folds before 2025 (reports/offer_valuation_vintages.md). Perfect foresight
 uses the same engine and horizon with actual prices.
 
+Every setting above is the engine's own default (revenue_stack.PUBLISHED and
+PRICE_SHRINK), so the runs below pass only data and scenario; the manifest records
+the settings, and the versions of the packages that computed them.
+
 Strategies:
   1. Perfect Foresight + MPC  — revenue ceiling
   2. Naive (D-1 prices) + MPC — zero-skill floor
@@ -54,14 +58,13 @@ DEFAULT_TEST_START is fixed and new data accrues to the test period, so re-check
 it against the refresh workflow's timeout-minutes from time to time.
 """
 
+import importlib.metadata
 import json
 import subprocess
-import sys
+from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-# Allow running from the repo root or the scripts/ directory
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pandas as pd
 
@@ -79,6 +82,8 @@ from src.analysis.price_forecast import (
 from src.analysis.revenue_stack import (
     ALL_SERVICES,
     AUCTION_SHARE_CAP,
+    PRICE_SHRINK,
+    PUBLISHED,
     REFERENCE_BATTERY,
     run_backtest,
 )
@@ -95,30 +100,14 @@ CACHE     = Path(__file__).parent.parent / "data" / "cache"
 # ---------------------------------------------------------------------------
 
 BATTERY = REFERENCE_BATTERY
-INITIAL_SOC    = 0.5   # Neutral midpoint; SoC tracked continuously thereafter
 DISPATCH_METHOD = "mpc"   # recorded in the manifest; MPC is the only dispatch path
-PRE_EAC_RULE    = "d1"    # pre-EAC service chosen on D-1 clearing prices
-HORIZON         = 96    # 48h rolling LP horizon
 SERVICES        = ALL_SERVICES
-OFFER_VALUATION = "lp"        # offers priced by the day-ahead trading plan
-OFFER_INFORMATION = "bid_time"  # offers see only what existed at 14:00 on D-1
-FORECAST_VINTAGES = True      # dispatch plans tomorrow on the early forecast, and stops there
-# Weight on the plan's forecast deviations from its daily mean, per signal. Chosen on
-# the pre-2025 folds only (0.25 / 0.5 / 0.75 / 1 tried; reports/offer_valuation_vintages.md):
-# 0.5 for both, narrowly for ML, whose 0.5 and 0.75 are within £0.3k on either half.
-# Perfect foresight has nothing to hedge against, so it plans on actual prices as they are.
-PRICE_SHRINK = {"pf": 1.0, "naive": 0.5, "ml": 0.5}
-# Recovery through the Reserved Capacity earns at the price, within what delivery has
-# put in play, on the strict reading: every trade spends that allowance first, so the
-# reserve never earns on energy that trading could have brought in. Credit brings a
-# margin at each new block's start with it. Chosen 2026-09-24 over the loose reading
-# and over the margin alone (reports/offer_valuation_recovery.md, offer_valuation_margin.md).
-CREDIT_RECOVERY = "any"
-# FR-only has no prices to credit recovery against, but keeps the margin: it is there
-# for compliance, not for trading
-FR_ONLY_BLOCK_MARGIN = True
 ML_MODEL_TYPE   = "rf"  # Random Forest selected at precompute time (see methodology expander)
 N_IMPORTANCES   = 20    # Top-N feature importances stored in the manifest for display
+# Recorded in the manifest: a change in any of these can move results as much as a
+# change in the engine, and the pins in constraints.txt only bind installs that use them
+PACKAGES = ("numpy", "pandas", "scipy", "cvxpy", "clarabel", "highspy", "scikit-learn",
+            "quantile-forest", "pyarrow")
 
 
 # ---------------------------------------------------------------------------
@@ -134,6 +123,16 @@ def _git_sha() -> str:
         ).strip()
     except Exception:
         return "unknown"
+
+
+def _package_versions() -> dict:
+    versions = {}
+    for name in PACKAGES:
+        try:
+            versions[name] = importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            versions[name] = None
+    return versions
 
 
 def _data_mtimes() -> dict:
@@ -156,7 +155,8 @@ def _print_section(n: int, total: int, label: str) -> None:
 def _summary_line(label: str, summary: dict) -> None:
     print(f"  {label:<20}: £{summary.get('annualised_per_mw', 0):>10,.0f} / MW / yr"
           f"   delivered {summary.get('total_delivery_mwh', 0):>9,.0f} MWh"
-          f"   state-of-energy breaches: {summary.get('soe_breach_periods', 0):,} periods")
+          f"   state-of-energy breaches: {summary.get('soe_breach_periods', 0):,} periods"
+          f"   failed solves: {summary.get('solve_failures', 0):,}")
 
 
 def main() -> None:
@@ -184,25 +184,21 @@ def main() -> None:
     git_sha     = _git_sha()
     engine      = engine_fingerprint()
     data_mtimes = _data_mtimes()
+    packages    = _package_versions()
     manifest    = {}
 
+    config = asdict(PUBLISHED)
     base_params = dict(
         power_mw             = BATTERY.power_mw,
         duration_h           = BATTERY.duration_h,
         efficiency_rt        = BATTERY.efficiency_rt,
         cycling_cost_per_mwh = BATTERY.cycling_cost_per_mwh,
         availability_factor  = BATTERY.availability_factor,
-        initial_soc          = INITIAL_SOC,
+        initial_soc          = config.pop("initial_soc_frac"),
         dispatch_method      = DISPATCH_METHOD,
-        horizon              = HORIZON,
-        pre_eac_rule         = PRE_EAC_RULE,
         auction_share_cap    = AUCTION_SHARE_CAP,
         delivery_modelled    = True,
-        offer_valuation      = OFFER_VALUATION,
-        offer_information    = OFFER_INFORMATION,
-        forecast_vintages    = FORECAST_VINTAGES,
-        credit_recovery      = CREDIT_RECOVERY,
-        block_start_margin   = True,
+        **config,
         start_date           = str(start_date),
         end_date             = str(end_date),
     )
@@ -212,6 +208,7 @@ def main() -> None:
             computed_at = datetime.now(timezone.utc).isoformat(),
             git_sha     = git_sha,
             engine      = engine,
+            packages    = packages,
             data_mtimes = data_mtimes,
             params      = params,
             summary     = result["summary"],
@@ -223,9 +220,10 @@ def main() -> None:
     # 1. FR availability only — no price forecast, so shared by all three
     # ------------------------------------------------------------------
     _print_section(1, 4, "FR availability only (scenario shared by all strategies)")
+    # No prices to credit recovery against, so the engine holds the reserve uncredited;
+    # the block-start margin stays, since it is there for compliance, not for trading
     fr_only = run_backtest(auctions, mkt_index, BATTERY, SERVICES, start_date, end_date,
-                           include_arbitrage=False, pre_eac_rule=PRE_EAC_RULE, delivery=delivery,
-                           forecast_vintages=FORECAST_VINTAGES, block_start_margin=FR_ONLY_BLOCK_MARGIN)
+                           delivery=delivery, include_arbitrage=False)
     fr_only["monthly"].to_parquet(CACHE / "fr_only.parquet", index=False)
     _summary_line("FR only", fr_only["summary"])
     fr_scenarios = {"fr_only": fr_only["summary"]}
@@ -247,11 +245,7 @@ def main() -> None:
     # ------------------------------------------------------------------
     _print_section(2, 4, "Perfect Foresight + MPC")
     pf, pf_scenarios = run_pair("pf_mpc", lambda svc: run_backtest(
-        auctions, mkt_index, BATTERY, svc, start_date, end_date,
-        initial_soc_frac=INITIAL_SOC, horizon=HORIZON, pre_eac_rule=PRE_EAC_RULE, delivery=delivery,
-        offer_valuation=OFFER_VALUATION, price_shrink=PRICE_SHRINK["pf"],
-        forecast_vintages=FORECAST_VINTAGES, credit_recovery=CREDIT_RECOVERY,
-    ))
+        auctions, mkt_index, BATTERY, svc, start_date, end_date, delivery=delivery))
     manifest["pf_mpc"] = entry(pf, pf_scenarios, params={**base_params, "price_shrink": PRICE_SHRINK["pf"]})
 
     # ------------------------------------------------------------------
@@ -259,13 +253,7 @@ def main() -> None:
     # ------------------------------------------------------------------
     _print_section(3, 4, "Naive (D-1 prices) + MPC")
     naive, naive_scenarios = run_pair("naive_mpc", lambda svc: run_forecast_backtest(
-        strategy="naive", market_index=mkt_index, auctions=auctions, battery=BATTERY,
-        services=svc, start_date=start_date, end_date=end_date,
-        initial_soc_frac=INITIAL_SOC, horizon=HORIZON, pre_eac_rule=PRE_EAC_RULE, delivery=delivery,
-        offer_valuation=OFFER_VALUATION, price_shrink=PRICE_SHRINK["naive"],
-        offer_information=OFFER_INFORMATION, forecast_vintages=FORECAST_VINTAGES,
-        credit_recovery=CREDIT_RECOVERY,
-    ))
+        "naive", mkt_index, auctions, BATTERY, svc, start_date, end_date, delivery=delivery))
     manifest["naive_mpc"] = entry(naive, naive_scenarios,
                                   params={**base_params, "price_shrink": PRICE_SHRINK["naive"]})
 
@@ -287,13 +275,8 @@ def main() -> None:
           f"Spearman ρ: {early_metrics['spearman']:.3f}")
 
     ml, ml_scenarios = run_pair("ml_mpc", lambda svc: run_forecast_backtest(
-        strategy="ml", market_index=mkt_index, auctions=auctions, battery=BATTERY,
-        services=svc, start_date=start_date, end_date=end_date, predictions=predictions,
-        initial_soc_frac=INITIAL_SOC, horizon=HORIZON, pre_eac_rule=PRE_EAC_RULE, delivery=delivery,
-        offer_valuation=OFFER_VALUATION, price_shrink=PRICE_SHRINK["ml"],
-        offer_information=OFFER_INFORMATION, forecast_vintages=FORECAST_VINTAGES,
-        early_predictions=early_predictions, credit_recovery=CREDIT_RECOVERY,
-    ))
+        "ml", mkt_index, auctions, BATTERY, svc, start_date, end_date,
+        predictions, early_predictions, delivery=delivery))
 
     # Feature importances describe the data, not any one forecast, so they come from a
     # single fit over all history — never used to predict anything. The same fit yields

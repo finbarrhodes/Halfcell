@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 
 from src.analysis.features import build_feature_matrix
-from src.analysis.price_forecast import naive_day_prices, run_forecast_backtest
+from src.analysis.price_forecast import naive_day_prices, naive_predictions, run_forecast_backtest
 from src.analysis.revenue_stack import REFERENCE_BATTERY, _Scheduler
 
 
@@ -51,20 +51,27 @@ def test_the_bid_time_naive_forecast_is_the_last_complete_day():
     assert naive_day_prices(prices, pd.Timestamp("2025-01-30"), days_back=2).iloc[0] == 27.0
 
 
+def test_the_naive_prediction_table_matches_the_day_by_day_forecast():
+    prices = _prices()
+    table = naive_predictions(prices, days_back=2)
+    day = table[table["settlementDate"] == pd.Timestamp("2025-01-30")]
+    assert len(day) == 48 and (day["prediction"] == 27.0).all()
+
+
 def test_ml_offers_at_bid_time_need_their_own_forecast_table():
     with pytest.raises(ValueError, match="early_predictions"):
         run_forecast_backtest(strategy="ml", market_index=_prices(), auctions=pd.DataFrame(),
                               battery=REFERENCE_BATTERY, services=[], start_date=None, end_date=None,
                               predictions=pd.DataFrame({"settlementDate": [], "settlementPeriod": [],
                                                         "prediction": []}),
-                              offer_information="bid_time")
+                              offer_information="bid_time", delivery=None)
 
 
 def test_an_unknown_information_set_is_rejected():
     with pytest.raises(ValueError, match="offer_information"):
         run_forecast_backtest(strategy="naive", market_index=_prices(), auctions=pd.DataFrame(),
                               battery=REFERENCE_BATTERY, services=[], start_date=None, end_date=None,
-                              offer_information="hindsight")
+                              offer_information="hindsight", delivery=None)
 
 
 def test_offers_see_the_bid_time_forecast_of_d_and_yesterdays_forecast_of_d_minus_1():
@@ -93,9 +100,11 @@ def _record_plans(monkeypatch):
 
     def fake_solve(**kwargs):
         plans.append(np.asarray(kwargs["price_forecast"], dtype=float))
-        # As solve_mpc does: the reserve's MWh too when the caller keeps an account of them
+        # As solve_mpc does: the reserve's MWh too when the caller keeps an account of them,
+        # and whether it solved when the caller counts failures
         reporting = kwargs.get("return_reserve") or kwargs.get("recovery_allowance") is not None
-        return (0.0, 0.0, 0.0, 0.0) if reporting else (0.0, 0.0)
+        result = (0.0, 0.0, 0.0, 0.0) if reporting else (0.0, 0.0)
+        return (*result, True) if kwargs.get("return_status") else result
 
     monkeypatch.setattr(mpc, "solve_mpc", fake_solve)
     return plans

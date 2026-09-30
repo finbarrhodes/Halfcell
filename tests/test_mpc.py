@@ -206,3 +206,14 @@ def test_reserve_flows_can_be_reported_without_crediting_them():
                                                reserve_chg_mw=np.array([40.0]), return_reserve=True)
     assert (e_dis, e_chg) == pytest.approx(plain)
     assert res_chg == pytest.approx(e_chg) and res_dis == pytest.approx(0.0, abs=1e-6)
+
+
+def test_the_status_says_whether_the_lp_solved():
+    ok = solve_mpc(50.0, np.array([10.0, 200.0]), np.array([50.0, 50.0]), 0.0, E, E, ETA, WEAR,
+                   horizon=2, return_status=True)
+    assert len(ok) == 3 and ok[2] is True
+    # No periods to plan: nothing solved, and the caller is told so
+    empty = solve_mpc(50.0, np.array([]), np.array([]), 0.0, E, E, ETA, WEAR, horizon=0,
+                      return_reserve=True, return_status=True)
+    assert empty == (0.0, 0.0, 0.0, 0.0, False)
+

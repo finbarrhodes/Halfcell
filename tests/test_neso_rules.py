@@ -4,20 +4,26 @@ NESO Dynamic Services rules, checked against NESO's own published examples.
 Where a test reproduces a figure or worked example from a NESO document, the
 docstring names it, so a failure points straight at the source to re-read.
 """
+from datetime import date
+
 import pytest
 
 from src.analysis.neso_rules import (
     minimum_soe_requirement,
     DELIVERY_DURATION_H,
+    EAC_GO_LIVE,
     ENERGY_RECOVERY_SHARE,
     FAMILIES,
     MAX_SELL_SIZE_MW,
+    RESERVE_RULE_EFFECTIVE,
     RESERVED_CAPACITY_SHARE,
     arbitrage_power_limits_mw,
     capacity_use_mw,
     is_feasible,
+    reserve_rule_applies,
     response_energy_mwh,
     soc_bounds_mwh,
+    splitting_allowed,
 )
 
 
@@ -139,16 +145,6 @@ def test_arbitrage_limits_exclude_commitments_and_reserve():
 
 
 # --- Rule changes over the backtest window ------------------------------------
-
-from datetime import date
-
-from src.analysis.neso_rules import (
-    EAC_GO_LIVE,
-    RESERVE_RULE_EFFECTIVE,
-    reserve_rule_applies,
-    splitting_allowed,
-)
-
 
 def test_splitting_starts_at_eac_go_live():
     assert not splitting_allowed(date(2023, 11, 1))

@@ -30,13 +30,8 @@ each product along its marginal cost of supply - fr_allocation's argument, with
 the linear cost generalised to the falling, stepped one that the plan implies.
 
 The plan is priced on a forecast and is only as good as the forecast's shape
-across the day. Two devices make it sceptical. `price_shrink` pulls the forecast
-towards its mean before planning: 1 takes it as given, 0 gives trading no value.
-`guard_low`/`guard_high` instead move the two sides apart by what the forecast's
-error has been at that time of day - conformal bands from
-src/analysis/intervals.py - so the plan sells at a pessimistic price and buys at
-a pessimistic one, and keeps capacity only for trades that survive its own
-uncertainty.
+across the day, so `price_shrink` pulls the forecast towards its mean before
+planning: 1 takes it as given, 0 gives trading no value.
 
 Leftover energy
 ---------------
@@ -65,7 +60,6 @@ from typing import Mapping, Sequence
 
 import cvxpy as cp
 import numpy as np
-import pandas as pd
 
 from src.analysis.fr_allocation import (
     EFA_HOURS,
@@ -173,32 +167,16 @@ def _compiled(n_lead: int, n_blocks: int, power_mw: float, energy_mwh: float, ef
                        apply_reserve, one_service)
 
 
-def smooth_path(path: np.ndarray, periods: int) -> np.ndarray:
-    """
-    A centred rolling mean over `periods` settlement periods, shrinking at the edges.
-
-    What it expresses is timing uncertainty rather than size uncertainty. The forecast
-    gets the day's magnitude roughly right and the hour wrong: it picks the peak
-    half-hour within one period only 30-40% of the time, and a plan that trusts its
-    timing captures about half the spread that was actually there (2026-09-21).
-    Smoothing turns a sharp peak into a plateau, so the plan spreads a sale across the
-    hours it cannot tell apart instead of committing to one.
-    """
-    if periods <= 1:
-        return path
-    return (pd.Series(path).rolling(periods, center=True, min_periods=1).mean().to_numpy())
-
-
 def planning_prices(prices: Sequence[float], n_service: int, cycling_cost_per_mwh: float,
-                    price_shrink=1.0, smooth_periods: int = 0) -> tuple[np.ndarray, float]:
+                    price_shrink: float = 1.0) -> tuple[np.ndarray, float]:
     """
     The price path the plan trades against, and the value of energy left at its end.
 
     Missing periods take the mean of the rest, so a gap neither invents nor
     removes a spread; with no prices at all, trading has no value. The path is
-    then smoothed over `smooth_periods` and pulled towards its mean by `price_shrink`,
-    a constant or one weight per period. Leftover energy is worth the mean over the last `n_service` periods
-    (the service day) less wear, and never less than nothing.
+    then pulled towards its mean by `price_shrink`. Leftover energy is worth the
+    mean over the last `n_service` periods (the service day) less wear, and never
+    less than nothing.
     """
     path = np.asarray(prices, dtype=float)
     known = np.isfinite(path)
@@ -206,9 +184,8 @@ def planning_prices(prices: Sequence[float], n_service: int, cycling_cost_per_mw
         return np.zeros(len(path)), 0.0
     mean = float(path[known].mean())
     path = np.where(known, path, mean)
-    path = smooth_path(path, smooth_periods)
     mean = float(path.mean())
-    path = mean + np.asarray(price_shrink, dtype=float) * (path - mean)
+    path = mean + float(price_shrink) * (path - mean)
     terminal = max(0.0, float(path[-n_service:].mean()) - cycling_cost_per_mwh)
     return path, terminal
 
@@ -225,10 +202,7 @@ def plan_day(
     apply_reserve: bool,
     lead_in: Sequence[Mapping] = (),
     one_service: bool = False,
-    price_shrink=1.0,
-    smooth_periods: int = 0,
-    guard_low: Sequence[float] | None = None,
-    guard_high: Sequence[float] | None = None,
+    price_shrink: float = 1.0,
     terminal_value_per_mwh: float | None = None,
     fixed: Sequence[Mapping[str, float]] | None = None,
 ) -> dict:
@@ -256,18 +230,8 @@ def plan_day(
         fr_allocation.allocate_day.
     one_service : bool
         Offer at most one of DC, DM or DR per block (before EAC), chosen jointly.
-    price_shrink : float or sequence
-        Weight on the forecast's deviations from its mean, one value or one per
-        period; see planning_prices.
-    smooth_periods : int
-        Width of a centred rolling mean over the forecast before planning, so the plan
-        spreads a trade over the hours it cannot tell apart; see smooth_path.
-    guard_low, guard_high : sequence of £/MWh, optional
-        Per-period offsets making the plan sceptical: `guard_low` (at most zero) is
-        added to the price a sale is planned against and `guard_high` (at least
-        zero) to the price a purchase is planned against, so a trade has to clear
-        the forecast's own error to be worth capacity. Conformal bands from
-        src/analysis/intervals.py; None plans both sides on the forecast itself.
+    price_shrink : float
+        Weight on the forecast's deviations from its mean; see planning_prices.
     terminal_value_per_mwh : float, optional
         Value of energy left at the end. Default: the service day's mean
         forecast price less wear.
@@ -297,11 +261,7 @@ def plan_day(
     soc_now = min(max(float(soc_now_mwh), 0.0), E)
 
     path, terminal = planning_prices(prices, n_blocks * EFA_SETTLEMENT_PERIODS,
-                                     cycling_cost_per_mwh, price_shrink, smooth_periods)
-    band = lambda values, cap: (np.zeros(T) if values is None
-                                else cap(np.nan_to_num(np.asarray(values, dtype=float)[:T], nan=0.0)))
-    low = band(guard_low, lambda v: np.minimum(v, 0.0))
-    high = band(guard_high, lambda v: np.maximum(v, 0.0))
+                                     cycling_cost_per_mwh, price_shrink)
     if terminal_value_per_mwh is not None:
         terminal = max(0.0, float(terminal_value_per_mwh))
 
@@ -323,7 +283,7 @@ def plan_day(
     lp = _compiled(n_lead, n_blocks, P, E, float(efficiency_rt), float(cycling_cost_per_mwh),
                    bool(apply_reserve), bool(one_service))
     lp.value.value, lp.lower.value, lp.upper.value = value, lower, upper
-    lp.price_dis.value, lp.price_chg.value = path + low, path + high
+    lp.price_dis.value, lp.price_chg.value = path, path
     lp.soc0.value, lp.terminal.value = soc_now, terminal
     if n_lead:
         def per_period(key, floor=0.0):

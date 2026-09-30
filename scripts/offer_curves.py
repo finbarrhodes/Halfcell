@@ -23,16 +23,12 @@ Usage:
 
 import argparse
 import json
-import sys
 from pathlib import Path
-
-ROOT = Path(__file__).parent.parent
-sys.path.insert(0, str(ROOT))
-from scripts.provenance import stamp, stamp_lines
 
 import numpy as np
 import pandas as pd
 
+from scripts.provenance import stamp, stamp_lines
 from src.analysis.revenue_stack import (
     EFA_HOURS,
     REFERENCE_BATTERY,
@@ -41,6 +37,8 @@ from src.analysis.revenue_stack import (
     _shadow_arb_value_per_mw,
 )
 from src.optimisation.day_ahead import plan_day
+
+ROOT = Path(__file__).parent.parent
 
 PROCESSED = ROOT / "data" / "processed"
 REPORTS = ROOT / "reports"

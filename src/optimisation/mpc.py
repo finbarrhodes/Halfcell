@@ -188,6 +188,7 @@ def solve_mpc(
     reserve_chg_mw: np.ndarray | None = None,
     recovery_allowance: tuple[float, float] | None = None,
     return_reserve: bool = False,
+    return_status: bool = False,
 ):
     """
     Solve the rolling MPC LP for the current settlement period.
@@ -230,6 +231,9 @@ def solve_mpc(
     return_reserve : bool
         Also return the period-0 MWh through the reserve, as with a
         recovery_allowance, without crediting it.
+    return_status : bool
+        Append whether the LP solved to the returned tuple, so a caller can count
+        the periods it failed rather than mistake them for a choice to idle.
 
     Returns
     -------
@@ -244,6 +248,8 @@ def solve_mpc(
     charge_schedule = arb_mw_schedule if charge_mw_schedule is None else charge_mw_schedule
     accounting = return_reserve or recovery_allowance is not None
     failed = None if return_plan else ((0.0, 0.0, 0.0, 0.0) if accounting else (0.0, 0.0))
+    if return_status and not return_plan:
+        failed = (*failed, False)
     H = min(horizon, len(price_forecast), len(arb_mw_schedule), len(charge_schedule))
     if H == 0:
         return failed
@@ -303,4 +309,5 @@ def solve_mpc(
     reserve_chg = (r_chg[0] + c_chg[0]) * DT
     e_dis = max(0.0, float(lp.p_dis.value[0])) * DT + reserve_dis
     e_chg = max(0.0, float(lp.p_chg.value[0])) * DT + reserve_chg
-    return (e_dis, e_chg, reserve_dis, reserve_chg) if accounting else (e_dis, e_chg)
+    result = (e_dis, e_chg, reserve_dis, reserve_chg) if accounting else (e_dis, e_chg)
+    return (*result, True) if return_status else result
