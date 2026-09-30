@@ -11,7 +11,6 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-import pytest
 
 from scripts.check_cache_consistency import ENGINE_SOURCES, engine_fingerprint
 

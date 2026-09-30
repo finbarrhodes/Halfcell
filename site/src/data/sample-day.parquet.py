@@ -11,6 +11,7 @@ periods, which is what the dispatch LP actually decides. soc_min_frac and
 soc_max_frac are the range that day's FR contracts required.
 """
 import io
+import json
 import sys
 from pathlib import Path
 
@@ -43,7 +44,6 @@ prices = (
     .reset_index(drop=True)
 )
 
-import json
 manifest = json.loads((ROOT / "data/cache/manifest.json").read_text())
 params = manifest["ml_mpc"]["params"]
 energy_mwh = params["power_mw"] * params["duration_h"]

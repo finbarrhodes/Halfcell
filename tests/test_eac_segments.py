@@ -9,7 +9,6 @@ collection would have silently lost roughly two years.
 from datetime import date
 
 import pandas as pd
-import pytest
 
 from src.data_collection.neso_collector import _EAC_ARCHIVE_START, _EAC_SEGMENTS
 

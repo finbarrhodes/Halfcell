@@ -30,13 +30,18 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
-      # Installed from requirements.txt rather than a hand-picked subset: the
-      # tests import collectors and analysis modules that pull in loguru, pyyaml
+      # The package with its full requirements rather than a hand-picked subset:
+      # the tests import collectors and analysis modules that pull in loguru, pyyaml
       # and requests transitively, and a curated list drifts out of date the
       # moment a module gains an import. constraints.txt pins the versions the
       # published cache was built with.
       - name: Install dependencies
-        run: pip install -r requirements.txt -r requirements-dev.txt -c constraints.txt
+        run: pip install -e . -r requirements-dev.txt -c constraints.txt
+
+      # pyflakes and pycodestyle's errors (pyproject.toml): unused imports, names used
+      # before they exist, imports stranded below code
+      - name: Lint
+        run: ruff check .
 
       - name: Run unit tests
         run: pytest -m "not integration" -q
@@ -62,7 +67,7 @@ jobs:
           cache: 'pip'
 
       - name: Install dependencies
-        run: pip install -r requirements.txt -r requirements-dev.txt -c constraints.txt
+        run: pip install -e . -r requirements-dev.txt -c constraints.txt
 
       - name: Run integration tests
         id: contracts

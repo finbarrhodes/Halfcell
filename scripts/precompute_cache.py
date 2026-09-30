@@ -61,13 +61,10 @@ it against the refresh workflow's timeout-minutes from time to time.
 import importlib.metadata
 import json
 import subprocess
-import sys
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-# Allow running from the repo root or the scripts/ directory
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pandas as pd
 

@@ -27,16 +27,13 @@ Usage:
 
 import argparse
 import json
-import sys
 import time
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from scripts.provenance import stamp, stamp_lines
 
 import pandas as pd
 
 from scripts.build_forecast_walk_forward import backtest_window, load_or_build, pooled_metrics
+from scripts.provenance import stamp, stamp_lines
 from src.analysis.price_forecast import (
     WALK_FORWARD_CADENCE_MONTHS,
     build_feature_matrix,
@@ -188,7 +185,6 @@ def main() -> None:
     delivery = pd.read_parquet(PROCESSED / "response_delivery.parquet")
     features = build_feature_matrix(market_index, generation, load_bess_capacity())
     window = backtest_window(auctions, market_index)
-    default_setup = args.cadence == WALK_FORWARD_CADENCE_MONTHS and args.train_years is None
 
     revenue_window = window if args.revenue_from is None else (pd.Timestamp(args.revenue_from), window[1])
     full_window = args.revenue_from is None

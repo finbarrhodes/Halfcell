@@ -2,7 +2,6 @@
 Day-ahead wind forecast: parsing, and the rule that a forecast is only usable if
 it existed when the bid was made.
 """
-from datetime import date
 
 import pandas as pd
 import pytest

@@ -49,16 +49,14 @@ Usage:
 import argparse
 import hashlib
 import json
-import sys
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).parent.parent
-sys.path.insert(0, str(ROOT))
+import pandas as pd
+
 from scripts.provenance import stamp, stamp_lines
 
-import numpy as np
-import pandas as pd
+ROOT = Path(__file__).parent.parent
 
 PROCESSED = ROOT / "data" / "processed"
 BENCH = PROCESSED / "benchmarks"

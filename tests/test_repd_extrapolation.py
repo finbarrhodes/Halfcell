@@ -6,10 +6,10 @@ line directly could place the first projected month *below* the last measured
 one, which is meaningless for a cumulative capacity series — the projection is
 anchored at the last measured value instead.
 """
-import numpy as np
 import pandas as pd
 import pytest
 
+from scripts.check_repd_freshness import trailing_extrapolated_months
 from src.data_collection.repd_collector import EXTRAP_FIT_MONTHS, REPDCollector
 
 
@@ -80,8 +80,6 @@ def test_capacity_never_negative():
 # ---------------------------------------------------------------------------
 # Projected-tail freshness check (scripts/check_repd_freshness.py)
 # ---------------------------------------------------------------------------
-
-from scripts.check_repd_freshness import trailing_extrapolated_months
 
 
 def _flagged(flags):

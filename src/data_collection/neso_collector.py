@@ -31,7 +31,7 @@ import re
 import requests
 import pandas as pd
 import time
-from datetime import date, timedelta
+from datetime import timedelta
 from typing import Optional, Dict, List
 from loguru import logger
 

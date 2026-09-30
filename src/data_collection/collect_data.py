@@ -10,12 +10,8 @@ Usage:
 """
 
 import argparse
-from datetime import datetime, timedelta
-from pathlib import Path
-import sys
+from datetime import datetime
 
-# Add parent directory to path
-sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from src.data_collection import NESOCollector, ElexonBMRSCollector
 from src.utils import load_config, setup_logging
@@ -182,7 +178,7 @@ def main():
     logger.info(f"\nTotal records collected: {total_records:,}")
     
     if save_data:
-        logger.info(f"\nData saved to: data/raw/")
+        logger.info("\nData saved to: data/raw/")
     
     return all_data
 

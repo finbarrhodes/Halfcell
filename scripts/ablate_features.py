@@ -24,17 +24,14 @@ Usage:
 
 import argparse
 import json
-import sys
 import time
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from scripts.provenance import stamp, stamp_lines
 
 import pandas as pd
 
 from scripts.benchmark_walk_forward import baselines, revenue_for, split_metrics
 from scripts.build_forecast_walk_forward import backtest_window
+from scripts.provenance import stamp, stamp_lines
 from src.analysis.price_forecast import (
     WALK_FORWARD_CADENCE_MONTHS,
     build_feature_matrix,

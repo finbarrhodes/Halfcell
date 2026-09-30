@@ -41,17 +41,16 @@ Usage:
 
 import argparse
 import json
-import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
-ROOT = Path(__file__).parent.parent
-sys.path.insert(0, str(ROOT))
 from scripts.check_cache_consistency import engine_fingerprint
 from scripts.provenance import stamp, stamp_lines
 
 import pandas as pd
+
+ROOT = Path(__file__).parent.parent
 
 PROCESSED = ROOT / "data" / "processed"
 BENCH = PROCESSED / "benchmarks"

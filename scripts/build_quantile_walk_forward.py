@@ -20,12 +20,9 @@ Usage:
 
 import argparse
 import json
-import sys
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).parent.parent
-sys.path.insert(0, str(ROOT))
 
 import pandas as pd
 
@@ -36,6 +33,8 @@ from src.analysis.price_forecast import (
     resolve_feature_cols,
 )
 from src.analysis.quantile_forecast import FOREST_PARAMS, QUANTILES, walk_forward_quantiles
+
+ROOT = Path(__file__).parent.parent
 
 PROCESSED = ROOT / "data" / "processed"
 BENCH = PROCESSED / "benchmarks"
