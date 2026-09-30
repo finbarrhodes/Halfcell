@@ -1,8 +1,8 @@
 {
   "pf_mpc": {
-    "computed_at": "2026-09-29T09:32:04.447667+00:00",
-    "git_sha": "2d1e9323c60cc28bb40e2bd7aad22a415a948d94",
-    "engine": "b1e13428e9ad",
+    "computed_at": "2026-09-30T11:29:19.179964+00:00",
+    "git_sha": "d894c05a92da0c5ff33bde30abef3ea31f358eb3",
+    "engine": "00584c9010f0",
     "packages": {
       "numpy": "2.4.6",
       "pandas": "3.0.6",
@@ -179,9 +179,9 @@
     }
   },
   "naive_mpc": {
-    "computed_at": "2026-09-29T09:52:46.184433+00:00",
-    "git_sha": "2d1e9323c60cc28bb40e2bd7aad22a415a948d94",
-    "engine": "b1e13428e9ad",
+    "computed_at": "2026-09-30T11:56:28.067343+00:00",
+    "git_sha": "d894c05a92da0c5ff33bde30abef3ea31f358eb3",
+    "engine": "00584c9010f0",
     "packages": {
       "numpy": "2.4.6",
       "pandas": "3.0.6",
@@ -358,9 +358,9 @@
     }
   },
   "ml_mpc": {
-    "computed_at": "2026-09-29T10:13:55.456746+00:00",
-    "git_sha": "2d1e9323c60cc28bb40e2bd7aad22a415a948d94",
-    "engine": "b1e13428e9ad",
+    "computed_at": "2026-09-30T12:23:33.927865+00:00",
+    "git_sha": "d894c05a92da0c5ff33bde30abef3ea31f358eb3",
+    "engine": "00584c9010f0",
     "packages": {
       "numpy": "2.4.6",
       "pandas": "3.0.6",
