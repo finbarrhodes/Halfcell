@@ -298,5 +298,20 @@
       "spread_bias": -19.07,
       "spread_mae": 39.34
     }
+  },
+  {
+    "origin": "2026-09-01",
+    "predicts_until": "2026-10-12",
+    "train_start": "2019-01-20",
+    "train_rows": 130915,
+    "metrics": {
+      "rmse": 63.33,
+      "mae": 50.48,
+      "spearman": 0.326,
+      "n_samples": 2016,
+      "spike_rmse": 93.92,
+      "spread_bias": -54.45,
+      "spread_mae": 65.27
+    }
   }
 ]

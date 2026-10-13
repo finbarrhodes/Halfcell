@@ -1,12 +1,12 @@
 {
-  "spread_30d_avg": 97.82,
-  "spread_30d_avg_year_earlier": 56.86,
-  "spread_window_end": "2026-08-17",
+  "spread_30d_avg": 132.49,
+  "spread_30d_avg_year_earlier": 71.59,
+  "spread_window_end": "2026-10-12",
   "spread_window_days": 30,
   "fleet_mw": 4974.0,
   "fleet_month": "2026-03",
   "fleet_mw_year_earlier": 3902.0,
   "data_start": "2021-09-16",
-  "data_end": "2026-08-17",
-  "computed_at": "2026-09-24T13:32:51Z"
+  "data_end": "2026-10-12",
+  "computed_at": "2026-10-13T11:29:08Z"
 }
