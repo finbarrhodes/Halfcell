@@ -10,6 +10,12 @@ name: Monthly Data Refresh
 # there can ever be committed), merge it with `prepare_data.py --append`, then
 # rebuild the cache from the extended parquets.
 #
+# main is protected by a ruleset (PR required, "Unit tests" must pass), so the bot
+# cannot push to it. The commit goes to a data-refresh/* branch instead, a PR is
+# opened, tests.yml is dispatched on the branch (a GITHUB_TOKEN-opened PR raises no
+# pull_request event, so CI would otherwise never run and the required check would
+# never report), and the PR is merged once that run passes.
+#
 # Redeploying the site needs two things, and only one of them is obvious:
 #
 #   1. No [skip ci] on the commit. The old refresh_kpis.yml used it; copying that
@@ -47,6 +53,8 @@ permissions:
   # Needed for the final `gh workflow run` — dispatching deploy_site.yml is the
   # only way this commit reaches the site, see the note above.
   actions: write
+  # Needed to open the refresh PR — main's ruleset rejects direct pushes.
+  pull-requests: write
 
 # Never let two refreshes interleave — they would race on the same commit. Unlike
 # the deploy workflow this does not cancel in flight: a run killed midway through
@@ -181,7 +189,7 @@ jobs:
       - name: Guard against a torn cache
         run: python scripts/check_cache_consistency.py
 
-      - name: Commit and push
+      - name: Commit and push to a refresh branch
         id: commit
         run: |
           git config user.name  "github-actions[bot]"
@@ -191,13 +199,39 @@ jobs:
             echo "Nothing changed — skipping commit."
             exit 0
           fi
-          # No [skip ci] — it would suppress CI on the commit, and the dispatch
-          # below is what actually reaches the site.
+          BRANCH="data-refresh/${{ steps.window.outputs.end }}-${{ github.run_id }}"
+          git checkout -b "$BRANCH"
+          # No [skip ci] — it would suppress CI on the commit.
           git commit -m "chore: monthly data refresh through ${{ steps.window.outputs.end }}"
-          git push
+          git push -u origin "$BRANCH"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
           echo "pushed=true" >> "$GITHUB_OUTPUT"
 
-      # A GITHUB_TOKEN push raises no push event, so deploy_site.yml has to be asked
+      # Merge only after the required check passes. The PR is opened first so the
+      # check attaches to it; tests.yml is dispatched explicitly (see header note).
+      - name: Open PR, run tests, merge
+        if: steps.commit.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ steps.commit.outputs.branch }}
+        run: |
+          gh pr create --base main --head "$BRANCH" \
+            --title "chore: monthly data refresh through ${{ steps.window.outputs.end }}" \
+            --body "Automated monthly refresh from run ${{ github.run_id }}. Merges itself once Unit tests pass."
+          gh workflow run tests.yml --ref "$BRANCH"
+          # The dispatch returns no run id; look it up, allowing a few seconds to appear.
+          RUN_ID=""
+          for _ in $(seq 1 12); do
+            RUN_ID=$(gh run list --workflow=tests.yml --branch "$BRANCH" \
+              --event workflow_dispatch --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+            [ -n "$RUN_ID" ] && break
+            sleep 5
+          done
+          [ -n "$RUN_ID" ] || { echo "::error::tests.yml run never appeared"; exit 1; }
+          gh run watch "$RUN_ID" --exit-status
+          gh pr merge "$BRANCH" --squash --delete-branch
+
+      # A GITHUB_TOKEN merge raises no push event, so deploy_site.yml has to be asked
       # directly. Skipped when nothing was committed — there would be nothing to publish.
       - name: Trigger the site deploy
         if: steps.commit.outputs.pushed == 'true'

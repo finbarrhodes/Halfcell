@@ -92,7 +92,7 @@ Raise `timeout-minutes`, or reconsider keeping the cache in git.
 staged, so a half-written cache is discarded with the runner. Nothing was committed;
 just re-dispatch.
 
-**`Commit and push`** — see *Known unknowns* below. Most likely the token permissions.
+**`Commit and push to a refresh branch` / `Open PR, run tests, merge`** — a failure here leaves the data on a `data-refresh/*` branch (if the push succeeded). Check the PR and ruleset; merge by hand if the tests passed, then dispatch `deploy_site.yml`.
 
 **`Trigger the site deploy`** — the data landed but the site was not rebuilt. Recover by
 dispatching the deploy by hand: `gh workflow run deploy_site.yml --ref main`.
@@ -137,8 +137,12 @@ likelihood:
 4. **GNU `date -u -d "N days ago"`** — correct on `ubuntu-latest`, would fail on macOS.
    Never runs locally.
 
-Branch protection on `main` was checked and is absent, so the bot push is not blocked by
-a required-PR rule.
+**Update 2026-10-13:** the first run (2026-10-02) failed at the push: a ruleset on `main`
+now requires a PR and a passing "Unit tests" check (GH013). The refresh therefore pushes
+a `data-refresh/*` branch, opens a PR, dispatches `tests.yml` on the branch, and merges
+when it passes. Requires Settings → Actions → "Allow GitHub Actions to create and approve
+pull requests". If the PR step fails, the branch is left on origin with the data — merge it
+by hand rather than re-running the 70-minute job.
 
 ## Recovery: a bad refresh reached the site
 
