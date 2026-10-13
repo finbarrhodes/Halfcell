@@ -258,5 +258,20 @@
       "n_samples": 3744,
       "spike_rmse": 62.66
     }
+  },
+  {
+    "origin": "2026-09-01",
+    "predicts_until": "2026-10-12",
+    "train_start": "2019-01-19",
+    "train_rows": 130982,
+    "metrics": {
+      "rmse": 53.68,
+      "mae": 41.02,
+      "spearman": 0.549,
+      "n_samples": 2016,
+      "spike_rmse": 79.64,
+      "spread_bias": -30.33,
+      "spread_mae": 57.2
+    }
   }
 ]

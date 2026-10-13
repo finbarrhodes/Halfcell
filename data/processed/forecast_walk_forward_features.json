@@ -37,5 +37,5 @@
   "model_type": "rf",
   "cadence_months": 3,
   "train_years": null,
-  "note": "no feature fingerprint recorded for the cached table; assuming it was built from the current feature set"
+  "information_lag_days": 1
 }

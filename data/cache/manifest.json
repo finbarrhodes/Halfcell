@@ -1,7 +1,7 @@
 {
   "pf_mpc": {
-    "computed_at": "2026-09-30T11:29:19.179964+00:00",
-    "git_sha": "d894c05a92da0c5ff33bde30abef3ea31f358eb3",
+    "computed_at": "2026-10-13T10:46:35.451916+00:00",
+    "git_sha": "a537cd5494406bd38fc59991d86bab88e8833ebf",
     "engine": "00584c9010f0",
     "packages": {
       "numpy": "2.4.6",
@@ -15,15 +15,15 @@
       "pyarrow": "25.0.1"
     },
     "data_mtimes": {
-      "auctions.parquet": 1789637260.552456,
-      "bess_fleet_capacity.parquet": 1789637260.552456,
-      "forecast_walk_forward.parquet": 1790000501.0174294,
-      "forecast_walk_forward_early.parquet": 1790000501.0334294,
-      "generation_daily.parquet": 1789637260.5564559,
-      "market_index.parquet": 1789637260.580456,
-      "response_delivery.parquet": 1789637260.608456,
-      "system_prices.parquet": 1789637260.6124558,
-      "wind_forecast.parquet": 1790000501.0374293
+      "auctions.parquet": 1791886744.4721172,
+      "bess_fleet_capacity.parquet": 1791886556.4334526,
+      "forecast_walk_forward.parquet": 1791886556.4374526,
+      "forecast_walk_forward_early.parquet": 1791886556.4414525,
+      "generation_daily.parquet": 1791886745.659115,
+      "market_index.parquet": 1791886745.4511154,
+      "response_delivery.parquet": 1791886750.4671059,
+      "system_prices.parquet": 1791886745.4991152,
+      "wind_forecast.parquet": 1791886556.4894526
     },
     "params": {
       "power_mw": 50.0,
@@ -43,36 +43,36 @@
       "horizon": 96,
       "pre_eac_rule": "d1",
       "start_date": "2021-09-16",
-      "end_date": "2026-08-17",
+      "end_date": "2026-10-12",
       "price_shrink": 1.0
     },
     "summary": {
-      "total_gross": 29973630.0,
-      "total_cycling_cost": 810890.0,
-      "total_net": 29162740.0,
-      "years_covered": 4.92,
-      "days_covered": 1797,
-      "annualised_net": 5927485.0,
-      "annualised_per_mw": 118550.0,
+      "total_gross": 31041378.0,
+      "total_cycling_cost": 836001.0,
+      "total_net": 30205377.0,
+      "years_covered": 5.07,
+      "days_covered": 1853,
+      "annualised_net": 5953866.0,
+      "annualised_per_mw": 119077.0,
       "breakdown": {
-        "DCH": 1743455.0,
-        "DCL": 7832848.0,
-        "DMH": 288191.0,
-        "DML": 1114308.0,
-        "DRH": -542503.0,
-        "DRL": 2273932.0,
-        "Arbitrage": 17263399.0
+        "DCH": 1779668.0,
+        "DCL": 7892026.0,
+        "DMH": 306735.0,
+        "DML": 1231734.0,
+        "DRH": -621602.0,
+        "DRL": 2557142.0,
+        "Arbitrage": 17895674.0
       },
       "top_service": "Arbitrage",
-      "fr_mw": 38.00830739247621,
-      "arb_mw": 10.505900202395873,
-      "total_mwh_cycled": 245467.4,
-      "total_delivery_mwh": 24829.2,
+      "fr_mw": 38.08269175636189,
+      "arb_mw": 10.416151323847355,
+      "total_mwh_cycled": 252928.9,
+      "total_delivery_mwh": 25738.0,
       "pre_eac_rule": "d1",
       "include_arbitrage": true,
-      "fr_blocks_committed": 10008,
-      "soe_breach_periods": 71,
-      "soe_breach_blocks": 63,
+      "fr_blocks_committed": 10329,
+      "soe_breach_periods": 73,
+      "soe_breach_blocks": 65,
       "solve_failures": 0,
       "auction_share_cap": 0.2,
       "delivery_modelled": true,
@@ -82,24 +82,24 @@
       "forecast_vintages": true,
       "credit_recovery": "any",
       "block_start_margin": true,
-      "reserve_discharge_share": 0.0852,
-      "reserve_to_absorbed": 0.2399,
-      "reserve_sell_price": 88.89,
-      "reserve_buy_price": 75.07,
-      "trading_sell_price": 148.19,
-      "trading_buy_price": 89.01
+      "reserve_discharge_share": 0.0844,
+      "reserve_to_absorbed": 0.2375,
+      "reserve_sell_price": 89.75,
+      "reserve_buy_price": 76.91,
+      "trading_sell_price": 148.77,
+      "trading_buy_price": 89.1
     },
     "scenarios": {
       "arb_only": {
-        "total_gross": 16640070.0,
-        "total_cycling_cost": 1007677.0,
-        "total_net": 15632393.0,
-        "years_covered": 4.92,
-        "days_covered": 1797,
-        "annualised_net": 3177369.0,
-        "annualised_per_mw": 63547.0,
+        "total_gross": 17279408.0,
+        "total_cycling_cost": 1036284.0,
+        "total_net": 16243125.0,
+        "years_covered": 5.07,
+        "days_covered": 1853,
+        "annualised_net": 3201728.0,
+        "annualised_per_mw": 64035.0,
         "breakdown": {
-          "Arbitrage": 16640070.0,
+          "Arbitrage": 17279408.0,
           "DCH": 0.0,
           "DCL": 0.0,
           "DMH": 0.0,
@@ -110,7 +110,7 @@
         "top_service": "Arbitrage",
         "fr_mw": 0.0,
         "arb_mw": 50.0,
-        "total_mwh_cycled": 335892.3,
+        "total_mwh_cycled": 345427.9,
         "total_delivery_mwh": 0.0,
         "pre_eac_rule": "d1",
         "include_arbitrage": true,
@@ -130,36 +130,36 @@
         "reserve_to_absorbed": null,
         "reserve_sell_price": null,
         "reserve_buy_price": null,
-        "trading_sell_price": 142.65,
-        "trading_buy_price": 83.81
+        "trading_sell_price": 143.54,
+        "trading_buy_price": 84.18
       },
       "fr_only": {
-        "total_gross": 20892392.0,
-        "total_cycling_cost": 355016.0,
-        "total_net": 20537376.0,
-        "years_covered": 4.92,
-        "days_covered": 1797,
-        "annualised_net": 4174333.0,
-        "annualised_per_mw": 83487.0,
+        "total_gross": 21621250.0,
+        "total_cycling_cost": 365720.0,
+        "total_net": 21255529.0,
+        "years_covered": 5.07,
+        "days_covered": 1853,
+        "annualised_net": 4189737.0,
+        "annualised_per_mw": 83795.0,
         "breakdown": {
-          "DCH": 2292439.0,
-          "DCL": 9556736.0,
-          "DMH": 292929.0,
-          "DML": 1537744.0,
-          "DRH": -1116800.0,
-          "DRL": 3415269.0,
-          "Arbitrage": 4914074.0
+          "DCH": 2334544.0,
+          "DCL": 9630808.0,
+          "DMH": 311837.0,
+          "DML": 1714262.0,
+          "DRH": -1212452.0,
+          "DRL": 3767503.0,
+          "Arbitrage": 5074748.0
         },
         "top_service": "DCL",
-        "fr_mw": 43.56033429276273,
-        "arb_mw": 4.060921212068722,
-        "total_mwh_cycled": 80238.9,
-        "total_delivery_mwh": 38099.7,
+        "fr_mw": 43.643065646508404,
+        "arb_mw": 3.9393193477504758,
+        "total_mwh_cycled": 82454.4,
+        "total_delivery_mwh": 39452.4,
         "pre_eac_rule": "d1",
         "include_arbitrage": false,
-        "fr_blocks_committed": 10721,
-        "soe_breach_periods": 155,
-        "soe_breach_blocks": 89,
+        "fr_blocks_committed": 11057,
+        "soe_breach_periods": 162,
+        "soe_breach_blocks": 93,
         "solve_failures": 0,
         "auction_share_cap": 0.2,
         "delivery_modelled": true,
@@ -169,18 +169,18 @@
         "forecast_vintages": true,
         "credit_recovery": null,
         "block_start_margin": true,
-        "reserve_discharge_share": 0.6747,
-        "reserve_to_absorbed": 0.5144,
-        "reserve_sell_price": 70.82,
-        "reserve_buy_price": 92.81,
-        "trading_sell_price": 94.67,
-        "trading_buy_price": 111.96
+        "reserve_discharge_share": 0.6784,
+        "reserve_to_absorbed": 0.5158,
+        "reserve_sell_price": 71.93,
+        "reserve_buy_price": 94.7,
+        "trading_sell_price": 94.65,
+        "trading_buy_price": 113.25
       }
     }
   },
   "naive_mpc": {
-    "computed_at": "2026-09-30T11:56:28.067343+00:00",
-    "git_sha": "d894c05a92da0c5ff33bde30abef3ea31f358eb3",
+    "computed_at": "2026-10-13T11:05:43.475461+00:00",
+    "git_sha": "a537cd5494406bd38fc59991d86bab88e8833ebf",
     "engine": "00584c9010f0",
     "packages": {
       "numpy": "2.4.6",
@@ -194,15 +194,15 @@
       "pyarrow": "25.0.1"
     },
     "data_mtimes": {
-      "auctions.parquet": 1789637260.552456,
-      "bess_fleet_capacity.parquet": 1789637260.552456,
-      "forecast_walk_forward.parquet": 1790000501.0174294,
-      "forecast_walk_forward_early.parquet": 1790000501.0334294,
-      "generation_daily.parquet": 1789637260.5564559,
-      "market_index.parquet": 1789637260.580456,
-      "response_delivery.parquet": 1789637260.608456,
-      "system_prices.parquet": 1789637260.6124558,
-      "wind_forecast.parquet": 1790000501.0374293
+      "auctions.parquet": 1791886744.4721172,
+      "bess_fleet_capacity.parquet": 1791886556.4334526,
+      "forecast_walk_forward.parquet": 1791886556.4374526,
+      "forecast_walk_forward_early.parquet": 1791886556.4414525,
+      "generation_daily.parquet": 1791886745.659115,
+      "market_index.parquet": 1791886745.4511154,
+      "response_delivery.parquet": 1791886750.4671059,
+      "system_prices.parquet": 1791886745.4991152,
+      "wind_forecast.parquet": 1791886556.4894526
     },
     "params": {
       "power_mw": 50.0,
@@ -222,36 +222,36 @@
       "horizon": 96,
       "pre_eac_rule": "d1",
       "start_date": "2021-09-16",
-      "end_date": "2026-08-17",
+      "end_date": "2026-10-12",
       "price_shrink": 0.5
     },
     "summary": {
-      "total_gross": 23437072.0,
-      "total_cycling_cost": 645475.0,
-      "total_net": 22791596.0,
-      "years_covered": 4.92,
-      "days_covered": 1797,
-      "annualised_net": 4632516.0,
-      "annualised_per_mw": 92650.0,
+      "total_gross": 24258050.0,
+      "total_cycling_cost": 664124.0,
+      "total_net": 23593926.0,
+      "years_covered": 5.07,
+      "days_covered": 1853,
+      "annualised_net": 4650665.0,
+      "annualised_per_mw": 93013.0,
       "breakdown": {
-        "DCH": 2010164.0,
-        "DCL": 8762623.0,
-        "DMH": 281873.0,
-        "DML": 1364398.0,
-        "DRH": -853088.0,
-        "DRL": 2841112.0,
-        "Arbitrage": 9029991.0
+        "DCH": 2046780.0,
+        "DCL": 8827467.0,
+        "DMH": 301017.0,
+        "DML": 1515462.0,
+        "DRH": -945846.0,
+        "DRL": 3160988.0,
+        "Arbitrage": 9352182.0
       },
       "top_service": "Arbitrage",
-      "fr_mw": 41.70101681050922,
-      "arb_mw": 6.358502093995699,
-      "total_mwh_cycled": 184335.9,
-      "total_delivery_mwh": 30822.6,
+      "fr_mw": 41.77821019920236,
+      "arb_mw": 6.250549247796348,
+      "total_mwh_cycled": 189451.5,
+      "total_delivery_mwh": 31923.1,
       "pre_eac_rule": "d1",
       "include_arbitrage": true,
-      "fr_blocks_committed": 10544,
-      "soe_breach_periods": 163,
-      "soe_breach_blocks": 124,
+      "fr_blocks_committed": 10875,
+      "soe_breach_periods": 168,
+      "soe_breach_blocks": 127,
       "solve_failures": 0,
       "auction_share_cap": 0.2,
       "delivery_modelled": true,
@@ -261,24 +261,24 @@
       "forecast_vintages": true,
       "credit_recovery": "any",
       "block_start_margin": true,
-      "reserve_discharge_share": 0.2113,
-      "reserve_to_absorbed": 0.3889,
-      "reserve_sell_price": 81.92,
-      "reserve_buy_price": 79.46,
-      "trading_sell_price": 140.83,
-      "trading_buy_price": 122.61
+      "reserve_discharge_share": 0.2107,
+      "reserve_to_absorbed": 0.387,
+      "reserve_sell_price": 82.93,
+      "reserve_buy_price": 81.93,
+      "trading_sell_price": 141.26,
+      "trading_buy_price": 122.64
     },
     "scenarios": {
       "arb_only": {
-        "total_gross": 6963001.0,
-        "total_cycling_cost": 1035442.0,
-        "total_net": 5927559.0,
-        "years_covered": 4.92,
-        "days_covered": 1797,
-        "annualised_net": 1204809.0,
-        "annualised_per_mw": 24096.0,
+        "total_gross": 7334573.0,
+        "total_cycling_cost": 1064868.0,
+        "total_net": 6269705.0,
+        "years_covered": 5.07,
+        "days_covered": 1853,
+        "annualised_net": 1235839.0,
+        "annualised_per_mw": 24717.0,
         "breakdown": {
-          "Arbitrage": 6963001.0,
+          "Arbitrage": 7334573.0,
           "DCH": 0.0,
           "DCL": 0.0,
           "DMH": 0.0,
@@ -289,7 +289,7 @@
         "top_service": "Arbitrage",
         "fr_mw": 0.0,
         "arb_mw": 50.0,
-        "total_mwh_cycled": 345147.4,
+        "total_mwh_cycled": 354956.1,
         "total_delivery_mwh": 0.0,
         "pre_eac_rule": "d1",
         "include_arbitrage": true,
@@ -309,36 +309,36 @@
         "reserve_to_absorbed": null,
         "reserve_sell_price": null,
         "reserve_buy_price": null,
-        "trading_sell_price": 130.53,
-        "trading_buy_price": 99.33
+        "trading_sell_price": 131.42,
+        "trading_buy_price": 99.7
       },
       "fr_only": {
-        "total_gross": 20892392.0,
-        "total_cycling_cost": 355016.0,
-        "total_net": 20537376.0,
-        "years_covered": 4.92,
-        "days_covered": 1797,
-        "annualised_net": 4174333.0,
-        "annualised_per_mw": 83487.0,
+        "total_gross": 21621250.0,
+        "total_cycling_cost": 365720.0,
+        "total_net": 21255529.0,
+        "years_covered": 5.07,
+        "days_covered": 1853,
+        "annualised_net": 4189737.0,
+        "annualised_per_mw": 83795.0,
         "breakdown": {
-          "DCH": 2292439.0,
-          "DCL": 9556736.0,
-          "DMH": 292929.0,
-          "DML": 1537744.0,
-          "DRH": -1116800.0,
-          "DRL": 3415269.0,
-          "Arbitrage": 4914074.0
+          "DCH": 2334544.0,
+          "DCL": 9630808.0,
+          "DMH": 311837.0,
+          "DML": 1714262.0,
+          "DRH": -1212452.0,
+          "DRL": 3767503.0,
+          "Arbitrage": 5074748.0
         },
         "top_service": "DCL",
-        "fr_mw": 43.56033429276273,
-        "arb_mw": 4.060921212068722,
-        "total_mwh_cycled": 80238.9,
-        "total_delivery_mwh": 38099.7,
+        "fr_mw": 43.643065646508404,
+        "arb_mw": 3.9393193477504758,
+        "total_mwh_cycled": 82454.4,
+        "total_delivery_mwh": 39452.4,
         "pre_eac_rule": "d1",
         "include_arbitrage": false,
-        "fr_blocks_committed": 10721,
-        "soe_breach_periods": 155,
-        "soe_breach_blocks": 89,
+        "fr_blocks_committed": 11057,
+        "soe_breach_periods": 162,
+        "soe_breach_blocks": 93,
         "solve_failures": 0,
         "auction_share_cap": 0.2,
         "delivery_modelled": true,
@@ -348,18 +348,18 @@
         "forecast_vintages": true,
         "credit_recovery": null,
         "block_start_margin": true,
-        "reserve_discharge_share": 0.6747,
-        "reserve_to_absorbed": 0.5144,
-        "reserve_sell_price": 70.82,
-        "reserve_buy_price": 92.81,
-        "trading_sell_price": 94.67,
-        "trading_buy_price": 111.96
+        "reserve_discharge_share": 0.6784,
+        "reserve_to_absorbed": 0.5158,
+        "reserve_sell_price": 71.93,
+        "reserve_buy_price": 94.7,
+        "trading_sell_price": 94.65,
+        "trading_buy_price": 113.25
       }
     }
   },
   "ml_mpc": {
-    "computed_at": "2026-09-30T12:23:33.927865+00:00",
-    "git_sha": "d894c05a92da0c5ff33bde30abef3ea31f358eb3",
+    "computed_at": "2026-10-13T11:29:07.482535+00:00",
+    "git_sha": "a537cd5494406bd38fc59991d86bab88e8833ebf",
     "engine": "00584c9010f0",
     "packages": {
       "numpy": "2.4.6",
@@ -373,15 +373,15 @@
       "pyarrow": "25.0.1"
     },
     "data_mtimes": {
-      "auctions.parquet": 1789637260.552456,
-      "bess_fleet_capacity.parquet": 1789637260.552456,
-      "forecast_walk_forward.parquet": 1790000501.0174294,
-      "forecast_walk_forward_early.parquet": 1790000501.0334294,
-      "generation_daily.parquet": 1789637260.5564559,
-      "market_index.parquet": 1789637260.580456,
-      "response_delivery.parquet": 1789637260.608456,
-      "system_prices.parquet": 1789637260.6124558,
-      "wind_forecast.parquet": 1790000501.0374293
+      "auctions.parquet": 1791886744.4721172,
+      "bess_fleet_capacity.parquet": 1791886556.4334526,
+      "forecast_walk_forward.parquet": 1791886556.4374526,
+      "forecast_walk_forward_early.parquet": 1791886556.4414525,
+      "generation_daily.parquet": 1791886745.659115,
+      "market_index.parquet": 1791886745.4511154,
+      "response_delivery.parquet": 1791886750.4671059,
+      "system_prices.parquet": 1791886745.4991152,
+      "wind_forecast.parquet": 1791886556.4894526
     },
     "params": {
       "power_mw": 50.0,
@@ -401,7 +401,7 @@
       "horizon": 96,
       "pre_eac_rule": "d1",
       "start_date": "2021-09-16",
-      "end_date": "2026-08-17",
+      "end_date": "2026-10-12",
       "price_shrink": 0.5,
       "ml_model_type": "rf",
       "forecast_validation": "walk-forward",
@@ -409,32 +409,32 @@
       "test_start": "2025-03-01"
     },
     "summary": {
-      "total_gross": 24174133.0,
-      "total_cycling_cost": 579405.0,
-      "total_net": 23594727.0,
-      "years_covered": 4.92,
-      "days_covered": 1797,
-      "annualised_net": 4795756.0,
-      "annualised_per_mw": 95915.0,
+      "total_gross": 25009033.0,
+      "total_cycling_cost": 595235.0,
+      "total_net": 24413799.0,
+      "years_covered": 5.07,
+      "days_covered": 1853,
+      "annualised_net": 4812272.0,
+      "annualised_per_mw": 96245.0,
       "breakdown": {
-        "DCH": 2086448.0,
-        "DCL": 9064502.0,
-        "DMH": 298786.0,
-        "DML": 1353790.0,
-        "DRH": -829544.0,
-        "DRL": 2944778.0,
-        "Arbitrage": 9255373.0
+        "DCH": 2124555.0,
+        "DCL": 9135652.0,
+        "DMH": 317713.0,
+        "DML": 1511970.0,
+        "DRH": -925669.0,
+        "DRL": 3287012.0,
+        "Arbitrage": 9557800.0
       },
       "top_service": "Arbitrage",
-      "fr_mw": 42.37321813183,
-      "arb_mw": 5.617452303585715,
-      "total_mwh_cycled": 161074.1,
-      "total_delivery_mwh": 32061.0,
+      "fr_mw": 42.44950427314411,
+      "arb_mw": 5.501155695579515,
+      "total_mwh_cycled": 165132.5,
+      "total_delivery_mwh": 33279.1,
       "pre_eac_rule": "d1",
       "include_arbitrage": true,
-      "fr_blocks_committed": 10635,
-      "soe_breach_periods": 227,
-      "soe_breach_blocks": 139,
+      "fr_blocks_committed": 10966,
+      "soe_breach_periods": 235,
+      "soe_breach_blocks": 146,
       "solve_failures": 0,
       "auction_share_cap": 0.2,
       "delivery_modelled": true,
@@ -444,24 +444,24 @@
       "forecast_vintages": true,
       "credit_recovery": "any",
       "block_start_margin": true,
-      "reserve_discharge_share": 0.2236,
-      "reserve_to_absorbed": 0.357,
-      "reserve_sell_price": 82.23,
-      "reserve_buy_price": 78.64,
-      "trading_sell_price": 133.97,
-      "trading_buy_price": 109.51
+      "reserve_discharge_share": 0.2254,
+      "reserve_to_absorbed": 0.3577,
+      "reserve_sell_price": 83.48,
+      "reserve_buy_price": 80.62,
+      "trading_sell_price": 134.44,
+      "trading_buy_price": 109.65
     },
     "scenarios": {
       "arb_only": {
-        "total_gross": 8663678.0,
-        "total_cycling_cost": 836675.0,
-        "total_net": 7827003.0,
-        "years_covered": 4.92,
-        "days_covered": 1797,
-        "annualised_net": 1590881.0,
-        "annualised_per_mw": 31818.0,
+        "total_gross": 9030258.0,
+        "total_cycling_cost": 859133.0,
+        "total_net": 8171126.0,
+        "years_covered": 5.07,
+        "days_covered": 1853,
+        "annualised_net": 1610633.0,
+        "annualised_per_mw": 32213.0,
         "breakdown": {
-          "Arbitrage": 8663678.0,
+          "Arbitrage": 9030258.0,
           "DCH": 0.0,
           "DCL": 0.0,
           "DMH": 0.0,
@@ -472,7 +472,7 @@
         "top_service": "Arbitrage",
         "fr_mw": 0.0,
         "arb_mw": 50.0,
-        "total_mwh_cycled": 278891.5,
+        "total_mwh_cycled": 286377.5,
         "total_delivery_mwh": 0.0,
         "pre_eac_rule": "d1",
         "include_arbitrage": true,
@@ -492,36 +492,36 @@
         "reserve_to_absorbed": null,
         "reserve_sell_price": null,
         "reserve_buy_price": null,
-        "trading_sell_price": 131.24,
-        "trading_buy_price": 90.17
+        "trading_sell_price": 132.18,
+        "trading_buy_price": 90.6
       },
       "fr_only": {
-        "total_gross": 20892392.0,
-        "total_cycling_cost": 355016.0,
-        "total_net": 20537376.0,
-        "years_covered": 4.92,
-        "days_covered": 1797,
-        "annualised_net": 4174333.0,
-        "annualised_per_mw": 83487.0,
+        "total_gross": 21621250.0,
+        "total_cycling_cost": 365720.0,
+        "total_net": 21255529.0,
+        "years_covered": 5.07,
+        "days_covered": 1853,
+        "annualised_net": 4189737.0,
+        "annualised_per_mw": 83795.0,
         "breakdown": {
-          "DCH": 2292439.0,
-          "DCL": 9556736.0,
-          "DMH": 292929.0,
-          "DML": 1537744.0,
-          "DRH": -1116800.0,
-          "DRL": 3415269.0,
-          "Arbitrage": 4914074.0
+          "DCH": 2334544.0,
+          "DCL": 9630808.0,
+          "DMH": 311837.0,
+          "DML": 1714262.0,
+          "DRH": -1212452.0,
+          "DRL": 3767503.0,
+          "Arbitrage": 5074748.0
         },
         "top_service": "DCL",
-        "fr_mw": 43.56033429276273,
-        "arb_mw": 4.060921212068722,
-        "total_mwh_cycled": 80238.9,
-        "total_delivery_mwh": 38099.7,
+        "fr_mw": 43.643065646508404,
+        "arb_mw": 3.9393193477504758,
+        "total_mwh_cycled": 82454.4,
+        "total_delivery_mwh": 39452.4,
         "pre_eac_rule": "d1",
         "include_arbitrage": false,
-        "fr_blocks_committed": 10721,
-        "soe_breach_periods": 155,
-        "soe_breach_blocks": 89,
+        "fr_blocks_committed": 11057,
+        "soe_breach_periods": 162,
+        "soe_breach_blocks": 93,
         "solve_failures": 0,
         "auction_share_cap": 0.2,
         "delivery_modelled": true,
@@ -531,32 +531,32 @@
         "forecast_vintages": true,
         "credit_recovery": null,
         "block_start_margin": true,
-        "reserve_discharge_share": 0.6747,
-        "reserve_to_absorbed": 0.5144,
-        "reserve_sell_price": 70.82,
-        "reserve_buy_price": 92.81,
-        "trading_sell_price": 94.67,
-        "trading_buy_price": 111.96
+        "reserve_discharge_share": 0.6784,
+        "reserve_to_absorbed": 0.5158,
+        "reserve_sell_price": 71.93,
+        "reserve_buy_price": 94.7,
+        "trading_sell_price": 94.65,
+        "trading_buy_price": 113.25
       }
     },
     "model_metrics": {
       "walk_forward": {
-        "rmse": 48.46,
-        "mae": 31.21,
-        "spearman": 0.793,
-        "spike_rmse": 110.83,
-        "n_samples": 86233,
-        "spread_bias": -31.52,
-        "spread_mae": 45.09
+        "rmse": 48.59,
+        "mae": 31.43,
+        "spearman": 0.792,
+        "spike_rmse": 110.06,
+        "n_samples": 88249,
+        "spread_bias": -31.49,
+        "spread_mae": 45.36
       },
       "early": {
-        "rmse": 57.7,
-        "mae": 37.91,
-        "spearman": 0.736,
-        "spike_rmse": 133.76,
-        "n_samples": 86233,
-        "spread_bias": -28.19,
-        "spread_mae": 48.09
+        "rmse": 57.83,
+        "mae": 38.19,
+        "spearman": 0.732,
+        "spike_rmse": 132.83,
+        "n_samples": 88249,
+        "spread_bias": -28.79,
+        "spread_mae": 48.48
       },
       "folds": [
         {
@@ -818,109 +818,122 @@
           "n_samples": 3744,
           "spread_bias": -20.23,
           "spread_mae": 39.77
+        },
+        {
+          "origin": "2026-09-01",
+          "train_start": "2019-01-19",
+          "predicts_until": "2026-10-12",
+          "train_rows": 130982,
+          "rmse": 53.68,
+          "mae": 41.02,
+          "spearman": 0.549,
+          "spike_rmse": 79.64,
+          "n_samples": 2016,
+          "spread_bias": -30.33,
+          "spread_mae": 57.2
         }
       ],
       "fixed_split": {
         "train": {
-          "rmse": 18.67,
-          "mae": 7.3,
+          "rmse": 18.68,
+          "mae": 7.29,
           "spearman": 0.984,
           "n_samples": 104634,
-          "spike_rmse": 51.32,
-          "spread_bias": -26.09,
-          "spread_mae": 26.32
+          "spike_rmse": 51.33,
+          "spread_bias": -26.05,
+          "spread_mae": 26.28
         },
         "test": {
-          "rmse": 34.1,
-          "mae": 25.32,
-          "spearman": 0.606,
-          "n_samples": 25678,
-          "spike_rmse": 51.07,
-          "spread_bias": -17.2,
-          "spread_mae": 29.05
+          "rmse": 36.48,
+          "mae": 27.05,
+          "spearman": 0.629,
+          "n_samples": 28366,
+          "spike_rmse": 58.84,
+          "spread_bias": -18.0,
+          "spread_mae": 31.47
         }
       }
     },
     "feature_importances": [
       {
         "feature": "apx_lag_1d",
-        "importance": 0.2490675428699832
+        "importance": 0.25084114697729426
       },
       {
         "feature": "prev_day_mean",
-        "importance": 0.1457411083165694
+        "importance": 0.14608214820299947
       },
       {
         "feature": "prev_day_max",
-        "importance": 0.06357638504196048
+        "importance": 0.06361307942565901
       },
       {
         "feature": "apx_lag_2d",
-        "importance": 0.060950266074205735
+        "importance": 0.059464385533719535
       },
       {
         "feature": "apx_lag_7d",
-        "importance": 0.04498868558906634
+        "importance": 0.044469497379083636
       },
       {
         "feature": "sp_sin",
-        "importance": 0.04105911536480392
+        "importance": 0.04108053450128574
       },
       {
         "feature": "sp_cos",
-        "importance": 0.03683935744518981
+        "importance": 0.0366956345037414
       },
       {
         "feature": "apx_lag_14d",
-        "importance": 0.0350073259897148
+        "importance": 0.03530970857566077
       },
       {
         "feature": "prev_day_min",
-        "importance": 0.034819258873143695
+        "importance": 0.035284221557517606
       },
       {
         "feature": "rolling_7d_mean",
-        "importance": 0.02647250818494204
-      },
-      {
-        "feature": "gen_fossil_frac",
-        "importance": 0.01994725311273615
-      },
-      {
-        "feature": "gen_gas",
-        "importance": 0.019879813980546883
+        "importance": 0.026955021946237882
       },
       {
         "feature": "doy_cos",
-        "importance": 0.019805129568622612
+        "importance": 0.019954585006268982
+      },
+      {
+        "feature": "gen_fossil_frac",
+        "importance": 0.01980515717596551
+      },
+      {
+        "feature": "gen_gas",
+        "importance": 0.019508579679420542
       },
       {
         "feature": "gen_pumped_storage",
-        "importance": 0.018361049352568052
+        "importance": 0.018603815730670943
       },
       {
         "feature": "gen_renewable_frac",
-        "importance": 0.018029578104464837
+        "importance": 0.018340721091176536
       },
       {
         "feature": "prev_day_std",
-        "importance": 0.01716963293843899
+        "importance": 0.016868645240189304
       },
       {
         "feature": "gen_nuclear",
-        "importance": 0.015421300824783336
-      },
-      {
-        "feature": "gen_solar",
-        "importance": 0.013595416994452904
+        "importance": 0.015178131832087991
       },
       {
         "feature": "doy_sin",
-        "importance": 0.013440917862348304
+        "importance": 0.01363566330653838
+      },
+      {
+        "feature": "gen_solar",
+        "importance": 0.012998183666353228
       },
       {
         "feature": "gen_other",
-        "importance": 0.012818215531678672
+        "importance": 0.012563011051967363
       }
     ]
   }
