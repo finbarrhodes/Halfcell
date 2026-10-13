@@ -1,8 +1,9 @@
 # Market Overview
 
 The energy transition in Great Britain is well under way. Fossil fuels are on the out, 
-and each year renewables make up a larger proportion of the power mix; in 2025, 44% of 
-Great Britain's electricity was generated using renewables. Renewables are of course
+and each year renewables make up a larger proportion of the power mix; in 2025, renewables
+(wind, solar, hydro and biomass) produced a record 44% of Great Britain's electricity, up from
+42% in 2024 ([NESO](https://www.neso.energy/news/britains-energy-explained-2025-review)). Renewables are of course
 cheap and clean, but one consequence of a more renewables-focused power mix is that 
 there is less system **inertia**, the physical flywheel effect that is used to resist 
 sudden changes in frequency.
