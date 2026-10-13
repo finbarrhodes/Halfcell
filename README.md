@@ -14,6 +14,9 @@ runtime compute.
 
 ## Results
 
+*As of September 2026. The backtest window and every figure in this section move with each
+monthly data refresh; [halfcell.uk](https://halfcell.uk) always shows the current ones.*
+
 50 MW / 2-hour battery, 90% round-trip efficiency, 16 September 2021 – 17 August 2026.
 Annualised net revenue per MW:
 
