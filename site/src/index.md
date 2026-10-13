@@ -11,9 +11,10 @@ impacting BESS' role in the grid.
 // Framework cell declares resolves together, so bundling these 6 KB of JSON with
 // the parquet made the Market snapshot cards wait on parquet-wasm — a 6 MB WASM
 // module they do not need. Split, the cards paint as soon as the JSON lands.
-const [kpis, manifest] = await Promise.all([
+const [kpis, manifest, trailing] = await Promise.all([
   FileAttachment("data/kpis.json").json(),
   FileAttachment("data/manifest.json").json(),
+  FileAttachment("data/revenue-trailing.json").json(),
 ]);
 ```
 
@@ -154,9 +155,9 @@ year earlier. The figures update with each monthly refresh.
     <div class="muted">average daily peak-to-trough · £${kpis.spread_30d_avg_year_earlier.toFixed(0)} a year earlier (${fmtChange(kpis.spread_30d_avg, kpis.spread_30d_avg_year_earlier)})</div>
   </div>
   <div class="card kpi">
-    <h2>Modelled revenue — ML strategy</h2>
-    <span class="big">£${(ml.summary.annualised_per_mw / 1e3).toFixed(0)}k</span>
-    <div class="muted">per MW per year · ${ml.params.power_mw} MW / ${ml.params.duration_h}h reference asset</div>
+    <h2>Modelled revenue, last 12 months</h2>
+    <span class="big">£${(trailing.ml_mpc.recent / 1e3).toFixed(0)}k</span>
+    <div class="muted">per MW per year, ML strategy · ${fmtMonth(trailing.recent.from)} – ${fmtMonth(trailing.recent.to)} · £${(trailing.ml_mpc.earlier / 1e3).toFixed(0)}k a year earlier (${fmtChange(trailing.ml_mpc.recent, trailing.ml_mpc.earlier)})</div>
   </div>
   <div class="card kpi">
     <h2>Data through</h2>
