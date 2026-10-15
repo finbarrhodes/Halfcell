@@ -629,3 +629,121 @@ def test_failed_solves_are_counted_and_trade_nothing(monkeypatch):
     assert failures == 48 // 4
     assert len(calls) == 48
 
+
+
+# --- day-ahead auction prices at the offer stage -------------------------
+
+def _day_ahead(days, price_by_sp=None, *, delivery_offset_days=0) -> pd.DataFrame:
+    """
+    A day-ahead price table in the shape day_ahead_prices.build_day_ahead_price_table
+    returns. delivery_offset_days backdates or postdates the delivery date, which is
+    what decides whether a row was public when the offers reading it closed.
+    """
+    rows = []
+    for day in days:
+        for sp in range(1, 49):
+            date = pd.Timestamp(day)
+            price = (price_by_sp(sp) if price_by_sp else (40.0 if sp <= 24 else 160.0))
+            rows.append({"settlementDate": date, "settlementPeriod": sp,
+                         "deliveryDate": date + pd.Timedelta(days=delivery_offset_days),
+                         "day_ahead_price": price})
+    return pd.DataFrame(rows)
+
+
+def test_a_day_ahead_mode_without_a_price_table_is_refused():
+    with pytest.raises(ValueError, match="needs a day_ahead price table"):
+        run_backtest(_auctions({d: EVERYTHING_PAYS for d in DAYS}), _market_index(DAYS), BATTERY,
+                     delivery=None, day_ahead_offers="costs")
+
+
+def test_an_unknown_day_ahead_mode_is_refused():
+    with pytest.raises(ValueError, match="day_ahead_offers must be one of"):
+        run_backtest(_auctions({d: EVERYTHING_PAYS for d in DAYS}), _market_index(DAYS), BATTERY,
+                     delivery=None, day_ahead=_day_ahead(DAYS), day_ahead_offers="tomorrow")
+
+
+def test_prices_published_after_the_offers_that_would_read_them_are_refused():
+    """
+    The guard the whole information set rests on. Postdating the delivery dates makes
+    each price publish a day too late to have been seen, which must fail loudly rather
+    than quietly improving the numbers.
+    """
+    with pytest.raises(ValueError, match="would leak into the offer stage"):
+        run_backtest(_auctions({d: EVERYTHING_PAYS for d in DAYS}), _market_index(DAYS), BATTERY,
+                     delivery=None, day_ahead=_day_ahead(DAYS, delivery_offset_days=2),
+                     day_ahead_offers="plan")
+
+
+def test_the_real_timing_passes_the_same_guard():
+    """Delivery on the settlement date itself publishes at 10:00 the day before: in time."""
+    result = run_backtest(_auctions({d: EVERYTHING_PAYS for d in DAYS}), _market_index(DAYS),
+                          BATTERY, delivery=None, day_ahead=_day_ahead(DAYS),
+                          day_ahead_offers="plan")
+    assert result["summary"]["day_ahead_offers"] == "plan"
+
+
+def test_the_auction_prices_the_blocks_it_covers_and_the_trailing_mean_covers_the_rest():
+    from src.analysis.revenue_stack import _day_ahead_block_prices, _expected_block_prices
+
+    days = pd.date_range("2026-01-01", periods=10)
+    blocks = _day_ahead_block_prices(_day_ahead(days, price_by_sp=lambda sp: 100.0))
+    # EFA 2-6 of each day sit wholly inside it; EFA 1 borrows SP 47-48 from the day before
+    assert blocks[(days[5], 3)] == pytest.approx(100.0)
+    # The trailing mean needs days of history before it reports; the auction never does,
+    # so it prices blocks near the start of the window that the trailing mean leaves out
+    trailing = _expected_block_prices(_market_index([str(d.date()) for d in days]))
+    assert (days[1], 3) in blocks and (days[1], 3) not in trailing
+
+
+def test_dispatch_never_sees_the_auction_whatever_the_offer_mode(monkeypatch):
+    """
+    The offer stage may read the auction; dispatch may not, because by then the model
+    is meant to be running on a forecast. run_dispatch is never passed the table, so
+    its keyword arguments must stay free of it in every mode.
+    """
+    import src.analysis.revenue_stack as rs
+    real, seen = rs.run_dispatch, []
+
+    def spy(*args, **kwargs):
+        seen.append(set(kwargs))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(rs, "run_dispatch", spy)
+    for mode in ("costs", "plan", "both"):
+        run_backtest(_auctions({d: EVERYTHING_PAYS for d in DAYS}), _market_index(DAYS), BATTERY,
+                     delivery=_delivery(DAYS, dr_low=0.02), day_ahead=_day_ahead(DAYS),
+                     day_ahead_offers=mode)
+    assert seen and all(not {k for k in kw if "day_ahead" in k} for kw in seen)
+
+
+def test_the_auction_replaces_the_forecast_in_the_offer_view_period_by_period():
+    """
+    "plan" gives the offer plan the auction's price for every period it covers and
+    leaves the forecast in place for the rest, so a half-covered day degrades rather
+    than losing its prices.
+    """
+    from src.analysis.revenue_stack import _Scheduler
+
+    day = pd.Timestamp("2026-01-02")
+    forecast = {d: pd.Series({sp: 70.0 for sp in range(1, 49)})
+                for d in (day - pd.Timedelta(days=1), day)}
+    auction = {day: pd.Series({sp: 123.0 for sp in range(1, 25)})}       # first half only
+    scheduler = _Scheduler(_auctions({str(day.date()): EVERYTHING_PAYS}), BATTERY, forecast,
+                           ALL_SERVICES, day_ahead_prices_by_date=auction,
+                           day_ahead_offers="plan")
+    view = scheduler._offer_view(day)
+    assert view[day][12] == 123.0                                        # auction wins
+    assert view[day][40] == 70.0                                         # forecast fills the gap
+    assert view[day - pd.Timedelta(days=1)][40] == 70.0                  # untouched day
+
+
+def test_without_a_day_ahead_mode_the_offer_view_is_exactly_the_forecast():
+    from src.analysis.revenue_stack import _Scheduler
+
+    day = pd.Timestamp("2026-01-02")
+    forecast = {d: pd.Series({sp: 70.0 for sp in range(1, 49)})
+                for d in (day - pd.Timedelta(days=1), day)}
+    auction = {day: pd.Series({sp: 123.0 for sp in range(1, 49)})}
+    scheduler = _Scheduler(_auctions({str(day.date()): EVERYTHING_PAYS}), BATTERY, forecast,
+                           ALL_SERVICES, day_ahead_prices_by_date=auction, day_ahead_offers=None)
+    assert scheduler._offer_view(day)[day].eq(70.0).all()

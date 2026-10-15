@@ -18,6 +18,7 @@ SPECS = {
     "system_prices": ("system_prices.parquet", "settlementDate"),
     "generation":  ("generation_daily.parquet", "settlementDate"),
     "bess_fleet":  ("bess_fleet_capacity.parquet", "month"),
+    "day_ahead_prices": ("day_ahead_prices.parquet", "settlementDate"),
 }
 
 out = {}

@@ -491,6 +491,8 @@ def run_forecast_backtest(
     forecast_vintages: bool = PUBLISHED.forecast_vintages,
     credit_recovery: str | None = PUBLISHED.credit_recovery,
     block_start_margin: bool = PUBLISHED.block_start_margin,
+    day_ahead: pd.DataFrame | None = None,
+    day_ahead_offers: str | None = PUBLISHED.day_ahead_offers,
 ) -> dict:
     """
     Forecast-driven revenue backtest for the 'naive' or 'ml' strategy. The defaults
@@ -536,6 +538,12 @@ def run_forecast_backtest(
                        (revenue_stack.run_dispatch)
     block_start_margin: keep a margin inside each new block's requirement
                        (revenue_stack.run_dispatch)
+    day_ahead        : day-ahead auction prices (day_ahead_prices.parquet), needed only
+                       when day_ahead_offers is set
+    day_ahead_offers : what the offer stage reads from the day-ahead auction, whose
+                       prices for D are public by 10:00 on D-1 and so beat the 14:00
+                       deadline; see revenue_stack.DAY_AHEAD_OFFER_MODES. Dispatch is
+                       untouched, and still runs on the forecast
 
     Returns
     -------
@@ -582,4 +590,5 @@ def run_forecast_backtest(
         initial_soc_frac=initial_soc_frac, horizon=horizon, pre_eac_rule=pre_eac_rule,
         offer_valuation=offer_valuation, forecast_vintages=forecast_vintages,
         credit_recovery=credit_recovery, block_start_margin=block_start_margin,
+        day_ahead=day_ahead, day_ahead_offers=day_ahead_offers,
     )

@@ -55,7 +55,10 @@ plan. Three things follow that one price per block cannot capture:
   dear: the stepped price-quantity shape EAC orders are built for.
 
 Each offer also carries the expected cost of the energy the product will deliver (see
-[response delivery](#response-delivery)). NESO accepts an order when the clearing price covers
+[response delivery](#response-delivery)), priced at the average market index price of that block
+over the previous week. Tomorrow's hourly day-ahead auction prices are public before the deadline
+and can price it instead — see
+[day-ahead prices in the offer](./research#day-ahead-prices-in-the-offer). NESO accepts an order when the clearing price covers
 its offer, so a battery bidding at cost ends up holding whichever permitted combination earns
 most at the clearing prices. Solving the plan against them reproduces cost-reflective bidding
 without assuming foresight, for a price-taker whose offers do not move clearing prices. The plan
@@ -351,9 +354,26 @@ walk-forward table whose features all sit one day further back. The same early f
 tomorrow's periods in each dispatch plan, and the plan stops there, because no honest forecast yet
 exists for the day after. Perfect foresight runs the same engine and horizon on actual prices.
 
-The rule is stricter than reality. At 14:00 on D-1 a real operator has also seen D-1's morning,
-and the hourly day-ahead auctions for D have already cleared (results by 10:00). The model uses
-neither, so its offer-stage information is conservative.
+One thing the deadline does permit is tomorrow's energy price. GB's hourly day-ahead auctions for
+D clear on the morning of D-1 — EPEX at 09:20, N2EX at 09:50, results published by 10:00 — four
+hours before offers close, so an operator pricing a response offer knows what each hour of
+tomorrow's energy is worth rather than having to forecast it. The engine can read those prices at
+the offer stage, in either of two places: the energy a contract will deliver can be priced at the
+auction instead of at a trailing mean, and the offer plan can run on the auction's prices instead
+of the forecast. Both are off in the published model, because neither paid — see
+[day-ahead prices in the offer](./research#day-ahead-prices-in-the-offer). Dispatch never sees
+them: once the day starts, the model is back on the forecast.
+
+A price is admissible only where the auction had published it. The auction for delivery date X
+publishes at 10:00 on X-1, so the delivery date is itself the publication date offset by a day,
+and the engine checks every row against the offer deadline of the service day that reads it
+rather than assuming the timing works out. It does work out, for a reason worth stating: a
+settlement period's hour never falls on a later date than the period's own, because London is
+never behind UTC, so every price a service day's blocks touch was public hours before that day's
+offers closed.
+
+Even with them, the rule stays stricter than reality: at 14:00 on D-1 a real operator has also
+seen D-1's morning, which the model still does not use.
 
 ### Walk-forward validation
 
@@ -415,6 +435,7 @@ months forecast by a model fitted on those very days; it survives only as a diag
 const rows = [
   ["Frequency response auction results (DC/DR/DM)", "NESO Data Portal", coverage.auctions],
   ["APXMIDP market index price", "Elexon Insights Solution API", coverage.market_index],
+  ["N2EX GB day-ahead auction price (hourly)", "NESO Data Portal", coverage.day_ahead_prices],
   ["System buy/sell prices (SBP/SSP)", "Elexon Insights Solution API", coverage.system_prices],
   ["Generation by fuel type (daily)", "Elexon Insights Solution API", coverage.generation],
   ["GB BESS fleet capacity (monthly)", "DESNZ REPD", coverage.bess_fleet],
@@ -424,7 +445,7 @@ const rows = [
   Records: d3.format(",")(c.rows),
 }));
 
-display(Inputs.table(rows, {rows: 6, width: {Dataset: 300, Source: 210}}));
+display(Inputs.table(rows, {rows: 7, width: {Dataset: 300, Source: 210}}));
 ```
 
 Coverage is read from the processed datasets at build time, so this table cannot drift out of date
@@ -433,6 +454,16 @@ when the pipeline is re-run. Both NESO and Elexon APIs are public and need no ke
 [Elexon Insights](https://developer.data.elexon.co.uk/) ·
 [DESNZ REPD](https://www.gov.uk/government/publications/renewable-energy-planning-database-monthly-extract)
 
+- **Day-ahead prices are hourly and stamped in UTC.** The N2EX GB day-ahead price comes from the
+  NESO Data Portal's [Day-Ahead Power Exchange prices (Nord Pool)](https://www.neso.energy/data-portal/day-ahead-power-exchange-prices-nordpool)
+  dataset, under the [NESO Open Data Licence](https://www.neso.energy/data-portal/ngeso-open-licence).
+  Each hour covers the two settlement periods inside it. The hour labels are UTC, not local time:
+  every date in the resource carries exactly 24 rows, with none of the 23- and 25-hour days a
+  local-time series would have, and correlating it against the half-hourly market index confirms it
+  (0.842 against 0.828 for a local reading; 0.897 against 0.863 in BST months, where the two differ
+  by exactly one hour). Coverage starts four days into the backtest window, and the auction has not
+  yet published the last hours of the final day, so the offer stage falls back to the forecast at
+  both edges.
 - **Auction results span two feeds.** Legacy DC/DR/DM auctions run from September 2021 to November
   2023 and EAC results from then on. NESO publishes EAC results as one resource per fiscal year plus
   a live feed it rotates into a new archive each April; collection stitches the segments together

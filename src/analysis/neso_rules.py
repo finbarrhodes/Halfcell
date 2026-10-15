@@ -38,7 +38,7 @@ Sources
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, time, timedelta
 from typing import Mapping
 
 PRODUCTS = ("DCH", "DCL", "DMH", "DML", "DRH", "DRL")
@@ -88,6 +88,20 @@ RESERVE_RULE_EFFECTIVE = date(2024, 11, 15)
 # that. Pre-EAC times are from [DCG]; EAC times from [PR] Schedule 1.
 PRE_EAC_BID_CLOSE, PRE_EAC_RESULTS = (14, 30), (15, 0)
 EAC_BID_CLOSE, EAC_RESULTS = (14, 0), (16, 0)
+
+
+def bid_deadline(service_day: date) -> datetime:
+    """
+    When offers for this service day close: 14:00 on D-1 under EAC, 14:30 before it.
+
+    The cutoff every piece of offer-stage information is checked against — the wind
+    forecast's publication stamps (analysis.wind_forecast) and the day-ahead
+    auction's publication times (analysis.day_ahead_prices) alike. Returned as a
+    plain datetime to keep this module free of pandas; both callers compare it
+    against pandas timestamps, which works either way.
+    """
+    hour, minute = EAC_BID_CLOSE if service_day >= EAC_GO_LIVE else PRE_EAC_BID_CLOSE
+    return datetime.combine(service_day - timedelta(days=1), time(hour, minute))
 
 
 def splitting_allowed(service_day: date) -> bool:
