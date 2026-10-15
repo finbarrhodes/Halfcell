@@ -125,6 +125,14 @@ jobs:
           END="${{ steps.window.outputs.end }}"
           python -m src.data_collection.frequency_collector --start "${START:0:7}" --end "${END:0:7}"
 
+      # The N2EX day-ahead price history is one CSV the portal rewrites daily, so it
+      # is fetched whole rather than windowed like the sources above. The offer stage
+      # falls back to the price forecast for hours it does not cover, so a failure
+      # here degrades the offer plan's information rather than breaking the run —
+      # which is also why it must not pass silently: || exit 1 keeps it loud.
+      - name: Collect N2EX day-ahead auction prices
+        run: python -m src.data_collection.day_ahead_price_collector || exit 1
+
       - name: Merge into the committed parquets
         run: python scripts/prepare_data.py --append
 
@@ -150,6 +158,10 @@ jobs:
               ("market_index.parquet", "settlementDate"),
               ("system_prices.parquet", "settlementDate"),
               ("generation_daily.parquet", "settlementDate"),
+              # The day-ahead auction publishes tomorrow's prices this morning, so this
+              # frontier normally sits *ahead* of the window's end; the same tolerance
+              # catches a collection that silently stopped advancing.
+              ("day_ahead_prices.parquet", "settlementDate"),
           ]:
               hi = pd.read_parquet(Path("data/processed") / name)[col].max()
               lag = (END - pd.Timestamp(hi).date()).days

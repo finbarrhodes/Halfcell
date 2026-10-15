@@ -134,6 +134,84 @@ because the gain accrues to the floor, and the floor is more useful left plain.
 **Revisit if** the offer stops treating the forecast as certain. A plan that optimises over
 scenarios could shrink hard on some days and barely on others, which one constant cannot.
 
+## Day-ahead prices in the offer
+
+<p class="muted">Measured, not adopted · the largest offer-stage gain so far, and none of it is the forecast's · 15 Oct 2026</p>
+
+GB's hourly day-ahead auctions for delivery day D clear on the morning of D-1 — EPEX at 09:20,
+N2EX at 09:50, results published by 10:00 — four hours before response offers close at 14:00. So an
+operator pricing an offer already knows what each hour of tomorrow's energy is worth. This model
+did not use that: it priced the energy a contract would deliver at the average market index price
+of the block over the previous week, and planned the offer on its own forecast. The methodology
+page used to say in as many words that the rule was "stricter than reality". This closes half of
+that gap, with dispatch left alone.
+
+The prices come from the NESO Data Portal's
+[Day-Ahead Power Exchange prices (Nord Pool)](https://www.neso.energy/data-portal/day-ahead-power-exchange-prices-nordpool)
+resource, free and keyless like the other NESO feeds here. Elexon's market index is not an
+alternative: it is half-hourly, within-day, and the price this model already trades at, so reading
+it as day-ahead information would be circular.
+
+**The information is much better.** Against the price each EFA block's energy actually settled at,
+on the 11,006 blocks where all three estimates exist:
+
+| Block delivery price | RMSE | MAE | Bias | Correlation |
+|---|---|---|---|---|
+| Trailing seven-day mean (shipped) | 46.8 | 28.7 | +0.1 | 0.797 |
+| Day-ahead auction | 28.5 | 15.5 | +2.6 | 0.934 |
+| The model's own bid-time forecast | 55.1 | 36.7 | −19.7 | 0.747 |
+
+**And it is worth real money.** £k/MW/yr net, at the shipped `price_shrink` of 0.5, selection folds
+before 2025 and confirmation from 2025 ([full report](https://github.com/finbarrhodes/Halfcell/blob/main/reports/offer_valuation_auction_prices.md)):
+
+| What the offer reads | ML (sel) | ML (conf) | Naive (sel) | Naive (conf) |
+|---|---|---|---|---|
+| Shipped | 106.5 | 72.7 | 102.8 | 70.5 |
+| Auction prices the delivered energy | +1.0 | +3.4 | +1.2 | +3.7 |
+| Auction replaces the forecast in the plan | +2.9 | +1.8 | +4.1 | +2.4 |
+| Both | **+4.5** | **+5.5** | **+5.5** | **+6.2** |
+
+Positive on both halves, for both signals, for all three variants — which three previous
+offer-stage refinements were not. The two halves of it do different work: pricing delivered energy
+at the auction reallocates hard, cutting response revenue and raising trading by more (confirmation
+FR 46.2 → 30.4, trading 29.1 → 48.2) because delivery-heavy response now looks as dear as it is,
+while giving the plan the auction's prices leaves holdings almost untouched and simply plans them
+better.
+
+**None of the gain belongs to the forecast.** Naive gains as much as the model, or more, so the
+model's lead over persistence *narrows* on both halves: £3.69k → £2.70k on selection, £2.18k →
+£1.50k on confirmation, and £3.16k → £2.28k over the full window. With a matched floor and ceiling
+the foresight ratio is flat or slightly worse where the auction prices delivery — 12.1% / 13.0%
+shipped against 11.5% / 11.7%. Doing both lifts it to 13.5% / 16.1%, but that rise is partly an
+artefact of a lowered ceiling: hourly auction prices are *worse* information for perfect foresight
+than the actual half-hourly prices it would otherwise plan on, so its run drops from 133.3 / 87.2
+to 128.3 / 86.0. The honest reading is that the auction substitutes for what the forecast was
+supplying. It is the same pattern as
+[discounting the forecast at the offer](#discounting-the-forecast-at-the-offer): the offer plan is
+where the money is, and improving what it knows helps every signal alike.
+
+**The control matters here, and it is decisive.** A trailing mean is both stale and shape-blind, so
+a gain from replacing it need not mean the auction knows anything the model does not — the model
+already produces a day-ahead forecast. Pricing delivery from that forecast instead, with no new
+data, *loses* £2.9k/£4.2k for the model and £1.2k/£1.3k for naive. The forecast is biased £19.7/MWh
+low on block means, which makes delivering Low response look cheap: the run holds 75.5 of response
+revenue in the confirmation half and trades at a **loss** of £4.4k buying the energy back. The
+trailing mean survives that comparison because it is nearly unbiased even though it is imprecise.
+So the auction is carrying information the model genuinely does not have, and the external
+dependency earns its place.
+
+**Why it is not switched on.** Two reasons, neither of them the measurement. It would move every
+headline figure on the site at once, and it makes the published model depend on a NESO resource
+that was added to the portal only in September 2026. Both are the repository owner's call rather
+than an experiment's, so the capability ships off by default (`day_ahead_offers` in
+`revenue_stack.py`) with the numbers above. **Adopt if** that dependency is acceptable: on this
+evidence it is the single largest improvement available to the offer stage, and it also removes a
+conservatism the methodology page already admitted to.
+
+**Separately worth chasing:** the −£19.7/MWh block-mean bias the control exposed is a property of
+the forecast, not of this experiment, and nothing in the current benchmark would have caught it —
+accuracy there is scored on RMSE and rank correlation, which a level bias barely touches.
+
 ## Interval forecasts as guard bands
 
 <p class="muted">Not adopted ·

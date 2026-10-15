@@ -15,6 +15,7 @@ import pytest
 
 from scripts.prepare_data import (
     _pull_order,
+    prepare_day_ahead_prices,
     prepare_generation,
     prepare_system_prices,
 )
@@ -199,3 +200,62 @@ def test_generation_append_replaces_whole_days(tmp_path):
 
     prepare_generation(delta, processed, append=True)
     pd.testing.assert_frame_equal(out, _read(processed, "generation_daily.parquet"))
+
+
+# ---------------------------------------------------------------------------
+# Day-ahead prices — one CSV carrying the whole history, rewritten daily
+# ---------------------------------------------------------------------------
+
+def _write_day_ahead(raw, dates, price=50.0):
+    directory = raw / "day_ahead_prices"
+    directory.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [[d, f"{h:02d}:00 - {(h + 1) % 24:02d}:00", price + h] for d in dates for h in range(24)],
+        columns=["Date", "Delivery Period", "Price"],
+    ).to_csv(directory / "n2ex_day_ahead_prices.csv", index=False)
+
+
+def test_day_ahead_append_extends_the_committed_table(tmp_path):
+    raw, delta, processed = tmp_path / "raw", tmp_path / "delta", tmp_path / "processed"
+    processed.mkdir()
+    _write_day_ahead(raw, ["2026-01-05", "2026-01-06"])
+    _write_day_ahead(delta, ["2026-01-06", "2026-01-07"])
+
+    prepare_day_ahead_prices(raw, processed, append=False)
+    prepare_day_ahead_prices(delta, processed, append=True)
+    table = _read(processed, "day_ahead_prices.parquet")
+
+    # Three distinct delivery days, the overlapping one folded in rather than doubled.
+    # January is GMT, so UTC hours and local settlement periods line up exactly.
+    assert table.settlementDate.min() == pd.Timestamp("2026-01-05")
+    assert table.settlementDate.max() == pd.Timestamp("2026-01-07")
+    assert len(table) == 3 * 48
+    assert not table.duplicated(["settlementDate", "settlementPeriod"]).any()
+
+
+def test_day_ahead_append_is_idempotent(tmp_path):
+    """The portal rewrites the whole file daily, so a re-run must settle, not grow."""
+    raw, processed = tmp_path / "raw", tmp_path / "processed"
+    processed.mkdir()
+    _write_day_ahead(raw, ["2026-01-05", "2026-01-06"])
+
+    prepare_day_ahead_prices(raw, processed, append=False)
+    prepare_day_ahead_prices(raw, processed, append=True)
+    first = _read(processed, "day_ahead_prices.parquet")
+    prepare_day_ahead_prices(raw, processed, append=True)
+
+    pd.testing.assert_frame_equal(first, _read(processed, "day_ahead_prices.parquet"))
+
+
+def test_day_ahead_append_with_no_csv_leaves_the_parquet_alone(tmp_path):
+    """A slice-only collection must not blank the committed history."""
+    raw, empty, processed = tmp_path / "raw", tmp_path / "empty", tmp_path / "processed"
+    empty.mkdir()
+    processed.mkdir()
+    _write_day_ahead(raw, ["2026-01-05"])
+
+    prepare_day_ahead_prices(raw, processed, append=False)
+    before = _read(processed, "day_ahead_prices.parquet")
+    prepare_day_ahead_prices(empty, processed, append=True)
+
+    pd.testing.assert_frame_equal(before, _read(processed, "day_ahead_prices.parquet"))

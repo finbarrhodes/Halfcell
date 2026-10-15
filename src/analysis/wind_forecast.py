@@ -38,12 +38,11 @@ Forecast_Timestamp is read as GMT, consistent with the resource's own
 Datetime_GMT column.
 """
 
-from datetime import time
 from pathlib import Path
 
 import pandas as pd
 
-from src.analysis.neso_rules import EAC_BID_CLOSE, EAC_GO_LIVE, PRE_EAC_BID_CLOSE
+from src.analysis.neso_rules import bid_deadline as neso_bid_deadline
 
 COLUMNS = ["settlementDate", "settlementPeriod", "wind_forecast_mw", "capacity_mw",
            "forecast_made_at", "published_before_deadline"]
@@ -58,10 +57,13 @@ _RENAMES = {
 
 
 def bid_deadline(service_date) -> pd.Timestamp:
-    """When offers for this service day close: 14:00 on D-1 under EAC, 14:30 before it."""
-    day = pd.Timestamp(service_date).normalize()
-    hour, minute = EAC_BID_CLOSE if day.date() >= EAC_GO_LIVE else PRE_EAC_BID_CLOSE
-    return pd.Timestamp.combine(day - pd.Timedelta(days=1), time(hour, minute))
+    """
+    When offers for this service day close: 14:00 on D-1 under EAC, 14:30 before it.
+
+    The rule itself lives in neso_rules, which the day-ahead auction's publication
+    check also reads; this keeps the pandas-typed form the feature matrix wants.
+    """
+    return pd.Timestamp(neso_bid_deadline(pd.Timestamp(service_date).normalize().date()))
 
 
 def read_forecast_file(path) -> pd.DataFrame:

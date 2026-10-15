@@ -161,3 +161,66 @@ def test_elexon_full_day_has_all_settlement_periods():
     periods = {x["settlementPeriod"] for x in r.json()["data"]
                if x["dataProvider"] == "APXMIDP"}
     assert len(periods) == 48
+
+
+# --- N2EX day-ahead prices -----------------------------------------------
+
+def test_day_ahead_price_resource_is_still_named_and_shaped_as_pinned():
+    """
+    The premise behind the day-ahead collector: one resource on
+    day-ahead-power-exchange-prices-nordpool, found by name, with Date /
+    Delivery Period / Price columns.
+
+    A rename or a reshape upstream would otherwise be silent — the collector falls
+    back to the pinned UUID, and a changed column set would surface much later as an
+    empty offer-stage price table. This turns both into an actionable failure.
+    """
+    from src.data_collection.day_ahead_price_collector import (
+        DAY_AHEAD_RESOURCE_ID,
+        DAY_AHEAD_RESOURCE_NAME,
+    )
+
+    r = requests.get("https://api.neso.energy/api/3/action/package_show",
+                     params={"id": "day-ahead-power-exchange-prices-nordpool"}, timeout=60)
+    r.raise_for_status()
+    body = r.json()
+    assert body.get("success"), f"package_show failed: {body.get('error')}"
+
+    names = [(res.get("name") or "").strip() for res in body["result"]["resources"]]
+    assert DAY_AHEAD_RESOURCE_NAME in names, (
+        f"no resource named {DAY_AHEAD_RESOURCE_NAME!r} — NESO has renamed it. "
+        f"Resources now: {names}. Update DAY_AHEAD_RESOURCE_NAME.")
+    match = next(res for res in body["result"]["resources"]
+                 if (res.get("name") or "").strip() == DAY_AHEAD_RESOURCE_NAME)
+    assert match["id"] == DAY_AHEAD_RESOURCE_ID, (
+        f"{DAY_AHEAD_RESOURCE_NAME} has a new resource id {match['id']} "
+        f"(pinned {DAY_AHEAD_RESOURCE_ID}) — update the constant")
+
+    fields = requests.get(
+        "https://api.neso.energy/api/3/action/datastore_search",
+        params={"resource_id": DAY_AHEAD_RESOURCE_ID, "limit": 1}, timeout=60,
+    ).json()["result"]["fields"]
+    assert {"Date", "Delivery Period", "Price"} <= {f["id"] for f in fields}, (
+        f"the resource has been reshaped; columns are now {[f['id'] for f in fields]}")
+
+
+def test_day_ahead_prices_publish_before_the_offer_deadline_they_are_read_at():
+    """
+    The timing the whole information set rests on, checked against the live portal:
+    tomorrow's prices are already published today, so they beat the 14:00 D-1
+    response deadline. If this ever fails, the auction is publishing later than
+    assumed and the offer stage is reading prices it could not have had.
+    """
+    from src.data_collection.day_ahead_price_collector import DAY_AHEAD_RESOURCE_ID
+
+    sql = f'SELECT MAX("Date") AS hi FROM "{DAY_AHEAD_RESOURCE_ID}"'
+    r = requests.get(NESO_SQL, params={"sql": sql}, timeout=60)
+    r.raise_for_status()
+    latest = pd.Timestamp(r.json()["result"]["records"][0]["hi"]).date()
+    today = pd.Timestamp.utcnow().date()
+
+    # Published by 10:00 UTC on D-1; before that the frontier is still today.
+    expected = today + pd.Timedelta(days=1) if pd.Timestamp.utcnow().hour >= 10 else today
+    assert latest >= expected, (
+        f"day-ahead prices only reach {latest}, but by now the auction for "
+        f"{expected} should have published")

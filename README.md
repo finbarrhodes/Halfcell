@@ -145,6 +145,7 @@ Collect fresh data (both APIs are public, no key or registration):
 ```bash
 python src/data_collection/collect_data.py --start 2026-01-01 --end 2026-01-31
 python -m src.data_collection.frequency_collector --start 2026-01 --end 2026-01
+python -m src.data_collection.day_ahead_price_collector
 ```
 
 One-second frequency is roughly 75 MB per month and stays out of the repo; only the derived
@@ -235,7 +236,9 @@ data/
 ## Data sources
 
 - **NESO Data Portal** (CKAN, no key) — DC/DR/DM auction clearing prices and volumes, EAC
-  results from September 2021, and System Frequency at one-second resolution. 2 requests/min.
+  results from September 2021, System Frequency at one-second resolution, and the hourly N2EX GB
+  day-ahead auction price, which the offer stage may read because it clears before the response
+  deadline. 2 requests/min.
 - **Elexon Insights** (no key) — Market Index Price (APXMIDP) as the wholesale reference,
   System Sell/Buy prices, and half-hourly generation by fuel type. 60 requests/min.
 - **DESNZ Renewable Energy Planning Database** — operational GB battery capacity, used for the
@@ -246,8 +249,8 @@ data/
 The code is under the [MIT Licence](LICENSE). The data is not mine to license, and each
 source carries its own terms:
 
-- **NESO** — DC/DR/DM auction results and System Frequency, under the
-  [NESO Open Licence](https://www.neso.energy/data-portal/neso-open-licence), applied per
+- **NESO** — DC/DR/DM auction results, System Frequency and the N2EX GB day-ahead price, under
+  the [NESO Open Licence](https://www.neso.energy/data-portal/neso-open-licence), applied per
   dataset.
 - **Elexon** — Market Index, system prices and generation by fuel, under Elexon's
   [licence for BMRS open data](https://www.elexon.co.uk/bsc/data/balancing-mechanism-reporting-agent/copyright-licence-bmrs-data/).

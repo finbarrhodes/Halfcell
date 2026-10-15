@@ -126,3 +126,6 @@ data/raw/frequency/
 
 # NESO day-ahead wind forecast history (~9 MB CSV); the tidied table is committed
 data/raw/wind_forecast/
+
+# N2EX GB day-ahead price history (~1.6 MB CSV); the tidied table is committed
+data/raw/day_ahead_prices/

@@ -66,6 +66,7 @@ from src.analysis.neso_rules import (
     PRODUCTS,
     RESERVED_CAPACITY_SHARE,
     arbitrage_power_limits_mw,
+    bid_deadline,
     energy_recovery_adjustment,
     family,
     is_low,
@@ -157,6 +158,20 @@ RECOVERY_BOUNDARY_QUANTILE = 0.9
 DELIVERY_TRAILING_DAYS = 28
 PRICE_TRAILING_DAYS = 7
 
+# What the offer stage may read from the day-ahead auction, whose hourly prices for
+# delivery day D are published by 10:00 on D-1, four hours before the response
+# deadline. "costs" prices the energy a contract will deliver at the auction instead
+# of at a trailing mean; "plan" gives the offer plan the auction's prices in place of
+# the forecast; "both" does each. None is the trailing mean and the forecast alone.
+# Dispatch is untouched in every mode: see run_dispatch, which never sees this table.
+DAY_AHEAD_OFFER_MODES = (None, "costs", "plan", "both")
+
+# Results of the day-ahead auctions for delivery day X publish by this hour on X-1
+# (N2EX clears at 09:50), four hours before the 14:00 response deadline. Kept here
+# as well as in analysis.day_ahead_prices because _day_ahead_admissible is what
+# enforces it, and that check is part of the engine.
+DAY_AHEAD_PUBLISH_HOUR = 10
+
 # Frequency cannot be forecast, but an operator sees it live. Where a new block will
 # restore the full requirement, dispatch plans on delivery carrying on at its average
 # over this many preceding settlement periods (one day).
@@ -221,6 +236,7 @@ class EngineConfig:
     forecast_vintages: bool = True        # dispatch plans tomorrow on the early forecast, and stops there
     credit_recovery: str | None = "any"   # recovery through the reserve earns at the price
     block_start_margin: bool = True       # plans meet each new block a margin inside its requirement
+    day_ahead_offers: str | None = None   # what offers read from the day-ahead auction
     horizon: int = 96                     # periods in each dispatch plan, before vintages end it
     initial_soc_frac: float = 0.5
     pre_eac_rule: str = "d1"
@@ -418,6 +434,77 @@ def _expected_block_prices(market_index: pd.DataFrame) -> dict:
     return _trailing_by_block(per_block, PRICE_TRAILING_DAYS, min_periods=3)
 
 
+def _day_ahead_admissible(day_ahead: pd.DataFrame) -> pd.DataFrame:
+    """
+    `day_ahead` unchanged, having checked every row was public before it is read.
+
+    The one property this whole information set rests on. A settlement period on
+    settlement date S is read by the offers for service day S or S+1 (_service_block),
+    which closed at 14:00 the day before that. Its price came from the auction for its
+    own delivery date, published at 10:00 the day before *that*. London is never
+    behind UTC, so a period's delivery date never runs past its settlement date, and
+    the price is therefore always public hours before the offer closes.
+
+    That is an argument; this is the check. A table that broke it — a mislabelled
+    delivery date, a timezone read the other way, a future row — would put prices
+    into an offer that did not exist when it was made, which is the one thing the
+    bid-time discipline exists to prevent. So this raises rather than filtering
+    quietly, and says which day was wrong.
+    """
+    if day_ahead.empty:
+        return day_ahead
+    service_day, _ = _service_block(day_ahead["settlementDate"], day_ahead["settlementPeriod"])
+    published = (pd.to_datetime(day_ahead["deliveryDate"]).dt.normalize()
+                 - pd.Timedelta(days=1) + pd.Timedelta(hours=DAY_AHEAD_PUBLISH_HOUR))
+    # The deadline turns only on the service day, of which there are a few thousand
+    # against ~90k rows, so the rule is read once per day rather than once per period.
+    service_day = pd.Series(service_day, index=day_ahead.index)
+    deadlines = {day: bid_deadline(day.date()) for day in service_day.unique()}
+    late = published > service_day.map(deadlines)
+    if late.any():
+        worst = day_ahead.loc[late.to_numpy()].iloc[0]
+        raise ValueError(
+            f"day-ahead prices would leak into the offer stage: delivery date "
+            f"{pd.Timestamp(worst['deliveryDate']).date()} publishes at 10:00 the day before, "
+            f"after the offers reading settlement date {pd.Timestamp(worst['settlementDate']).date()} "
+            f"period {int(worst['settlementPeriod'])} had closed ({int(late.sum())} rows)")
+    return day_ahead
+
+
+def _day_ahead_by_date(day_ahead: pd.DataFrame | None) -> dict:
+    """
+    {date: Series(index=settlementPeriod, values=£/MWh)} of day-ahead auction prices.
+
+    The same shape as _apx_by_date and the forecast tables, so it can stand in for
+    the forecast in the offer view (_offer_view) without any other change.
+    """
+    if day_ahead is None or day_ahead.empty:
+        return {}
+    da = day_ahead.copy()
+    da["settlementDate"] = pd.to_datetime(da["settlementDate"]).dt.normalize()
+    da = da[da["settlementPeriod"] <= 48]   # drop DST extra periods, as _apx_by_date does
+    return {
+        date: grp.set_index("settlementPeriod")["day_ahead_price"]
+        for date, grp in da.groupby("settlementDate")
+    }
+
+
+def _day_ahead_block_prices(day_ahead: pd.DataFrame | None) -> dict:
+    """
+    {(service day, EFA): £/MWh} the day-ahead auction cleared each block's hours at.
+
+    Priced on the block itself rather than on a trailing window, because the auction
+    has already settled every hour of it by the time offers are made. Blocked by the
+    same _service_block the trailing mean uses, so the two are interchangeable.
+    """
+    if day_ahead is None or day_ahead.empty:
+        return {}
+    da = day_ahead[day_ahead["settlementPeriod"] <= 48]
+    day, efa = _service_block(da["settlementDate"], da["settlementPeriod"])
+    per_block = da["day_ahead_price"].groupby([day.to_numpy(), efa]).mean()
+    return {(pd.Timestamp(d), int(e)): float(v) for (d, e), v in per_block.items()}
+
+
 def _delivery_offer_costs(expected: dict | None, price: float | None, battery: "BatterySpec") -> dict:
     """
     £ per MW held for a block that making good its expected delivery costs.
@@ -583,20 +670,38 @@ class _Scheduler:
     at the bid deadline, for strategies whose day-ahead forecast needs all of D-1
     (see price_forecast.run_forecast_backtest's offer_information). The periods of
     D-1 itself still come from forecast_prices_by_date, which was complete by then.
+
+    day_ahead_offers says what the offer stage reads from the day-ahead auction,
+    whose prices for delivery day D are public by 10:00 on D-1 (see
+    DAY_AHEAD_OFFER_MODES and analysis.day_ahead_prices). Where the auction does not
+    cover a block or a period, that one falls back to the trailing mean or the
+    forecast, so the opening days of the window and the trailing edge behave as
+    before rather than losing their prices.
     """
 
     def __init__(self, auctions, battery, forecast_prices_by_date=None, services=None, *,
                  include_arbitrage=True, pre_eac_rule="d1", expected_delivery=None, expected_prices=None,
-                 offer_valuation="formula", price_shrink=1.0, offer_forecast_prices_by_date=None):
+                 offer_valuation="formula", price_shrink=1.0, offer_forecast_prices_by_date=None,
+                 day_ahead_prices_by_date=None, day_ahead_block_prices=None, day_ahead_offers=None):
         if pre_eac_rule not in PRE_EAC_RULES:
             raise ValueError(f"pre_eac_rule must be one of {PRE_EAC_RULES}, got {pre_eac_rule!r}")
         if offer_valuation not in OFFER_VALUATIONS:
             raise ValueError(f"offer_valuation must be one of {OFFER_VALUATIONS}, got {offer_valuation!r}")
+        if day_ahead_offers not in DAY_AHEAD_OFFER_MODES:
+            raise ValueError(f"day_ahead_offers must be one of {DAY_AHEAD_OFFER_MODES}, "
+                             f"got {day_ahead_offers!r}")
         services = ALL_SERVICES if services is None else list(services)
         self.table = _clearing_prices(auctions, services)
         self.volumes = _cleared_volumes(auctions, services)
         self.expected_delivery = expected_delivery or {}
         self.expected_prices = expected_prices or {}
+        self.day_ahead_offers = day_ahead_offers
+        self.day_ahead = ({pd.Timestamp(d).normalize(): s
+                           for d, s in (day_ahead_prices_by_date or {}).items()}
+                          if day_ahead_offers in ("plan", "both") else {})
+        if day_ahead_offers in ("costs", "both"):
+            # The auction price where there is one, the trailing mean elsewhere
+            self.expected_prices = {**self.expected_prices, **(day_ahead_block_prices or {})}
         self.forecast = {pd.Timestamp(d).normalize(): s for d, s in (forecast_prices_by_date or {}).items()}
         self.offer_forecast = (self.forecast if offer_forecast_prices_by_date is None else
                                {pd.Timestamp(d).normalize(): s for d, s in offer_forecast_prices_by_date.items()})
@@ -668,11 +773,26 @@ class _Scheduler:
         }
 
     def _offer_view(self, service_date: pd.Timestamp) -> dict:
-        """The forecasts an offer can see: D-1 as forecast the day before, D as at the deadline."""
+        """
+        The prices an offer can see: D-1 as forecast the day before, D as at the deadline.
+
+        Under day_ahead_offers="plan"/"both" the auction's own prices replace the
+        forecast period by period, for both dates: a block of service day D draws on
+        D-1 only through periods 47-48, whose hours the auction for delivery day D-1
+        settled at 10:00 on D-2, so both dates are public well before the 14:00 D-1
+        deadline. _day_ahead_admissible asserts that rather than assuming it. Periods
+        the auction does not cover keep the forecast, through combine_first.
+        """
         previous = service_date - pd.Timedelta(days=1)
-        return {day: series for day, series in ((previous, self.forecast.get(previous)),
-                                                (service_date, self.offer_forecast.get(service_date)))
-                if series is not None}
+        view = {}
+        for day, series in ((previous, self.forecast.get(previous)),
+                            (service_date, self.offer_forecast.get(service_date))):
+            auction = self.day_ahead.get(day)
+            if auction is not None:
+                series = auction if series is None else auction.combine_first(series)
+            if series is not None:
+                view[day] = series
+        return view
 
     def _allocate_with_formula(self, service_date, soc_now_mwh, apply_reserve, lead_in):
         b, day = self.battery, service_date.date()
@@ -1289,6 +1409,8 @@ def run_strategy(
     forecast_vintages: bool = PUBLISHED.forecast_vintages,
     credit_recovery: str | None = PUBLISHED.credit_recovery,
     block_start_margin: bool = PUBLISHED.block_start_margin,
+    day_ahead: pd.DataFrame | None = None,
+    day_ahead_offers: str | None = PUBLISHED.day_ahead_offers,
 ) -> dict:
     """
     The shared engine behind every strategy: schedule, dispatch, settle. Its
@@ -1331,6 +1453,11 @@ def run_strategy(
     offers_at_bid_time = offers_at_bid_time and early_forecast_prices_by_date is not None
 
     has_delivery = delivery is not None and not delivery.empty
+    # The offer stage may read the day-ahead auction; dispatch below never does, and
+    # run_dispatch is not passed it. Checked for leaks before anything reads it.
+    if day_ahead_offers is not None and (day_ahead is None or day_ahead.empty):
+        raise ValueError(f"day_ahead_offers={day_ahead_offers!r} needs a day_ahead price table")
+    day_ahead = _day_ahead_admissible(day_ahead) if day_ahead_offers is not None else None
     scheduler = _Scheduler(
         auctions, battery, forecast_prices_by_date, services,
         include_arbitrage=include_arbitrage, pre_eac_rule=pre_eac_rule,
@@ -1338,6 +1465,9 @@ def run_strategy(
         expected_prices=_expected_block_prices(market_index) if has_delivery else None,
         offer_valuation=offer_valuation, price_shrink=price_shrink,
         offer_forecast_prices_by_date=early_forecast_prices_by_date if offers_at_bid_time else None,
+        day_ahead_prices_by_date=_day_ahead_by_date(day_ahead),
+        day_ahead_block_prices=_day_ahead_block_prices(day_ahead),
+        day_ahead_offers=day_ahead_offers,
     )
     if dates:
         energy_rows, soc_traj, breaches, solve_failures = run_dispatch(
@@ -1398,6 +1528,7 @@ def run_strategy(
         "forecast_vintages":   forecast_vintages,
         "credit_recovery":     credit_recovery,
         "block_start_margin":  block_start_margin or (credit_recovery is not None and include_arbitrage),
+        "day_ahead_offers":    day_ahead_offers,
         **_reserve_diagnostics(energy_rows, battery.efficiency_rt),
     }
     result = _build_result(anc_wide, trading_wide, battery, avg_fr_mw, avg_arb_mw, soc_traj, extras,
@@ -1425,6 +1556,8 @@ def run_backtest(
     forecast_vintages: bool = PUBLISHED.forecast_vintages,
     credit_recovery: str | None = PUBLISHED.credit_recovery,
     block_start_margin: bool = PUBLISHED.block_start_margin,
+    day_ahead: pd.DataFrame | None = None,
+    day_ahead_offers: str | None = PUBLISHED.day_ahead_offers,
 ) -> dict:
     """
     Perfect-foresight revenue backtest: actual day-D prices are the signal. The
@@ -1452,6 +1585,12 @@ def run_backtest(
                     within what delivery has put in play; see run_dispatch
     block_start_margin : meet each new block a margin inside its requirement, without
                     credit; see run_dispatch
+    day_ahead     : day-ahead auction prices (day_ahead_prices.parquet), needed only
+                    when day_ahead_offers is set
+    day_ahead_offers : what the offer stage reads from the auction; see run_strategy.
+                    Perfect foresight already plans on actual prices, so "plan" only
+                    coarsens its own signal to the auction's hourly resolution — it is
+                    the forecast strategies this is for
 
     Returns
     -------
@@ -1469,4 +1608,5 @@ def run_backtest(
         initial_soc_frac=initial_soc_frac, horizon=horizon, pre_eac_rule=pre_eac_rule,
         offer_valuation=offer_valuation, forecast_vintages=forecast_vintages,
         credit_recovery=credit_recovery, block_start_margin=block_start_margin,
+        day_ahead=day_ahead, day_ahead_offers=day_ahead_offers,
     )

@@ -34,6 +34,7 @@ from pathlib import Path
 import pandas as pd
 
 
+from src.analysis.day_ahead_prices import build_day_ahead_price_table
 from src.analysis.response_delivery import build_delivery_table
 from src.analysis.wind_forecast import build_wind_forecast_table  # noqa: E402
 
@@ -348,6 +349,28 @@ def prepare_wind_forecast(raw: Path, processed: Path, append: bool) -> None:
     _write(table, processed, "wind_forecast.parquet", unit="settlement periods")
 
 
+def prepare_day_ahead_prices(raw: Path, processed: Path, append: bool) -> None:
+    print("Processing N2EX GB day-ahead auction prices (NESO)...")
+    files = sorted((raw / "day_ahead_prices").glob("n2ex_day_ahead_prices*.csv"))
+
+    # One CSV carries the whole history, so a slice-only collection leaves the
+    # committed table alone rather than rebuilding it from nothing.
+    if not files:
+        if (processed / "day_ahead_prices.parquet").exists():
+            print("  no day-ahead price CSV in this slice — existing Parquet left as is")
+        else:
+            print(
+                "  SKIP: no files in data/raw/day_ahead_prices/. Download with:\n"
+                "    python -m src.data_collection.day_ahead_price_collector"
+            )
+        return
+
+    base = _read_base(processed, "day_ahead_prices.parquet", append)
+    table = _merge(build_day_ahead_price_table(files), base, ["settlementDate", "settlementPeriod"])
+    table = table.sort_values(["settlementDate", "settlementPeriod"]).reset_index(drop=True)
+    _write(table, processed, "day_ahead_prices.parquet", unit="settlement periods")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Convert raw CSVs into the committed processed Parquets."
@@ -384,6 +407,7 @@ def main() -> None:
         prepare_bess_fleet,
         prepare_response_delivery,
         prepare_wind_forecast,
+        prepare_day_ahead_prices,
     ):
         step(args.raw_dir, args.processed_dir, args.append)
 
