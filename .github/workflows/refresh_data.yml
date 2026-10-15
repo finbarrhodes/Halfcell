@@ -1,7 +1,8 @@
 name: Monthly Data Refresh
 
-# Extends the committed datasets and redeploys the site, without the runner ever
-# holding the ~450 MB of raw history.
+# Extends the committed datasets and rebuilds the cache, without the runner ever
+# holding the ~450 MB of raw history. The result is a tested PR; a person approves
+# and merges it, and the merge redeploys the site.
 #
 # data/raw is gitignored, so a fresh checkout has none of it and re-collecting
 # from 2019 is impossible at NESO's 2 req/min. The committed parquets already
@@ -10,23 +11,24 @@ name: Monthly Data Refresh
 # there can ever be committed), merge it with `prepare_data.py --append`, then
 # rebuild the cache from the extended parquets.
 #
-# main is protected by a ruleset (PR required, "Unit tests" must pass), so the bot
-# cannot push to it. The commit goes to a data-refresh/* branch instead, a PR is
-# opened, tests.yml is dispatched on the branch (a GITHUB_TOKEN-opened PR raises no
-# pull_request event, so CI would otherwise never run and the required check would
-# never report), and the PR is merged once that run passes.
+# main is protected by a ruleset: changes need a PR, "Unit tests" must pass, and the
+# bot's commit needs a human approval (the ruleset's extra-approval rule for
+# unattributed changes — it refused the bot's own merge on 2026-10-13). So the run
+# ends at an open, tested PR rather than a merge. The commit goes to a
+# data-refresh/* branch, a PR is opened, and tests.yml is dispatched on the branch
+# (a GITHUB_TOKEN-opened PR raises no pull_request event, so CI would otherwise never
+# run and the required check would never report). Approve and merge that PR to publish.
 #
-# Redeploying the site needs two things, and only one of them is obvious:
+# Two things keep the publish working, and neither is obvious:
 #
 #   1. No [skip ci] on the commit. The old refresh_kpis.yml used it; copying that
-#      would suppress the redeploy outright.
-#   2. An explicit dispatch of deploy_site.yml at the end. A push authenticated
-#      with the default GITHUB_TOKEN does NOT trigger other workflows — GitHub
-#      suppresses it to prevent recursion — so deploy_site.yml's push trigger will
-#      never see this commit however the message is written. workflow_dispatch is
-#      one of the two events exempt from that rule, which is why the last step
-#      calls it directly. The alternative is pushing with a PAT instead; that
-#      would restore the push trigger at the cost of a secret to own and rotate.
+#      would suppress CI on the commit, and the deploy if it reached the merge commit.
+#   2. No deploy dispatch here, on purpose. A push authenticated with the default
+#      GITHUB_TOKEN does NOT trigger other workflows, so a bot merge would have needed
+#      an explicit `gh workflow run deploy_site.yml`. A person's merge is an ordinary
+#      push, and deploy_site.yml's push trigger picks it up on its own (confirmed on
+#      the merge of the 2026-10-13 refresh). Moving to a bot merge would bring the
+#      dispatch, and `actions: write`, back into play.
 
 on:
   schedule:
@@ -50,8 +52,7 @@ on:
 
 permissions:
   contents: write
-  # Needed for the final `gh workflow run` — dispatching deploy_site.yml is the
-  # only way this commit reaches the site, see the note above.
+  # Needed to dispatch tests.yml on the refresh branch, see the note above.
   actions: write
   # Needed to open the refresh PR — main's ruleset rejects direct pushes.
   pull-requests: write
@@ -207,9 +208,11 @@ jobs:
           echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
           echo "pushed=true" >> "$GITHUB_OUTPUT"
 
-      # Merge only after the required check passes. The PR is opened first so the
-      # check attaches to it; tests.yml is dispatched explicitly (see header note).
-      - name: Open PR, run tests, merge
+      # Ends at a tested PR rather than a merge: the ruleset wants a human approval, so
+      # the bot's own `gh pr merge` was refused. The PR is opened first so the check
+      # attaches to it; tests.yml is dispatched explicitly (see the header note). If the
+      # tests fail the step goes red and the PR stays open for inspection.
+      - name: Open PR and run tests
         if: steps.commit.outputs.pushed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -217,7 +220,7 @@ jobs:
         run: |
           gh pr create --base main --head "$BRANCH" \
             --title "chore: monthly data refresh through ${{ steps.window.outputs.end }}" \
-            --body "Automated monthly refresh from run ${{ github.run_id }}. Merges itself once Unit tests pass."
+            --body "Automated monthly refresh from run ${{ github.run_id }}. Tests are dispatched on this branch; once they pass, approve and merge to publish — the merge redeploys the site."
           gh workflow run tests.yml --ref "$BRANCH"
           # The dispatch returns no run id; look it up, allowing a few seconds to appear.
           RUN_ID=""
@@ -229,12 +232,6 @@ jobs:
           done
           [ -n "$RUN_ID" ] || { echo "::error::tests.yml run never appeared"; exit 1; }
           gh run watch "$RUN_ID" --exit-status
-          gh pr merge "$BRANCH" --squash --delete-branch
-
-      # A GITHUB_TOKEN merge raises no push event, so deploy_site.yml has to be asked
-      # directly. Skipped when nothing was committed — there would be nothing to publish.
-      - name: Trigger the site deploy
-        if: steps.commit.outputs.pushed == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh workflow run deploy_site.yml --ref main
+          URL=$(gh pr view "$BRANCH" --json url --jq .url)
+          echo "::notice title=Refresh ready for review::Tests passed. Approve and merge $URL to publish."
+          echo "Refresh PR ready for approval and merge: $URL" >> "$GITHUB_STEP_SUMMARY"

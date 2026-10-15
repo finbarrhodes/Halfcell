@@ -9,11 +9,14 @@ needed while diagnosing a failed run belongs here.
 | Workflow | Trigger | Duration | Writes to the repo? |
 |---|---|---|---|
 | `tests.yml` | push, PR, **Mondays 06:23 UTC** | ~1 min | no |
-| `refresh_data.yml` | **2nd of month 04:41 UTC**, manual | ~80–100 min | yes — commits to `main` |
+| `refresh_data.yml` | **2nd of month 04:41 UTC**, manual | ~80–100 min | pushes a `data-refresh/*` branch and opens a PR; **you merge it** |
 | `deploy_site.yml` | push touching `site/`, `data/processed/`, `data/cache/`; manual; pull requests (build only, no deploy) | ~1 min | no |
 
-`refresh_data.yml` is the only one that commits. It publishes to the live site as a side
-effect, so its gates matter — see *Recovery* below.
+`refresh_data.yml` is the only one that commits, and only to a `data-refresh/*` branch. The
+data reaches `main`, and the live site, when you merge the PR it opens. **A green run is not
+the finish line:** a PR titled `chore: monthly data refresh through …` is waiting for your
+approval, and until it is merged the site is a month behind. `main`'s ruleset requires the
+approval (see *The merge gate* below); merging deploys the site on its own.
 
 **A scheduled time is when a run becomes eligible, not when it starts.** GitHub delays
 scheduled runs under load and can drop them outright. The first weekly `tests.yml` run,
@@ -92,10 +95,15 @@ Raise `timeout-minutes`, or reconsider keeping the cache in git.
 staged, so a half-written cache is discarded with the runner. Nothing was committed;
 just re-dispatch.
 
-**`Commit and push to a refresh branch` / `Open PR, run tests, merge`** — a failure here leaves the data on a `data-refresh/*` branch (if the push succeeded). Check the PR and ruleset; merge by hand if the tests passed, then dispatch `deploy_site.yml`.
+**`Commit and push to a refresh branch`** — nothing reached `main`. If it was the push, the
+cause is the token or a ruleset on `data-refresh/*` branches; the 70-minute result is lost
+with the runner, so fix the cause and re-dispatch.
 
-**`Trigger the site deploy`** — the data landed but the site was not rebuilt. Recover by
-dispatching the deploy by hand: `gh workflow run deploy_site.yml --ref main`.
+**`Open PR and run tests`** — the data is safe on its `data-refresh/*` branch; do not re-run
+the 70-minute job. Open the PR (or find it) and read its checks. If the failure is
+unrelated to the data (a lint or test already red on `main`, a flaky upstream), fix that,
+re-run `gh workflow run tests.yml --ref <branch>`, then approve and merge by hand. If
+`tests.yml` itself failed on the data, treat it like a bad refresh and do not merge.
 
 ## Triage: `deploy_site.yml`
 
@@ -108,61 +116,57 @@ nothing was deployed. Rebuild the cache: dispatch the refresh
 whole-line comments in the engine do not trigger this; any other edit, docstrings included,
 does.
 
-## Known unknowns on the first run
+## The merge gate
 
-Every step has been verified locally against a clone with an empty `data/raw` — an exact
-runner simulation — but four things only prove out in Actions itself. In rough order of
-likelihood:
+The first scheduled run (2026-10-02) did all its work and then failed at the push: a ruleset
+on `main` ("Base rules", no bypass actors) requires a PR and a passing "Unit tests" check
+(GH013). The refresh therefore pushes a `data-refresh/*` branch, opens a PR, and dispatches
+`tests.yml` on the branch, because a `GITHUB_TOKEN`-opened PR raises no `pull_request`
+event and the required check would never report.
 
-1. **Token permissions.** The repo's `default_workflow_permissions` is `read`
-   (`gh api repos/finbarrhodes/Halfcell/actions/permissions/workflow`). The workflow
-   declares `contents: write` and `actions: write` explicitly, which *should* override a
-   restricted default — but that is unproven here, so it is suspect number one if either
-   the push or the deploy dispatch fails with a 403.
+A bot merge was then tried and refused ("base branch policy prohibits the merge") even with
+both checks green. The ruleset requires 0 approving reviews, but also sets
+`require_extra_approval_for_unattributed_changes`; no documentation for it turned up, so
+"the bot's commit needs a person's approval" is inferred from that refusal, not confirmed.
+Approving and merging the PR by hand worked. So a person is the gate.
 
-   The narrow fix is to keep the restricted default and grant per-workflow, which is what
-   the file already does. The blunt fix, only if the above turns out not to work, is
-   Settings → Actions → General → Workflow permissions → "Read and write". That widens the
-   default for *every* workflow, so prefer the narrow route.
+To make the refresh fully automatic instead, that rule would have to go (or a bypass actor
+be added, e.g. a GitHub App — `GITHUB_TOKEN` cannot be one), and the workflow would need to
+merge and dispatch `deploy_site.yml` itself, since a `GITHUB_TOKEN` merge raises no push
+event. That is a weaker `main`, so it is a decision, not a fix.
 
-2. **The deploy dispatch.** A `GITHUB_TOKEN` push raises no `push` event — GitHub
-   suppresses it to prevent recursion — so `deploy_site.yml`'s push trigger will never see
-   the refresh commit. The final step calls `gh workflow run` instead, because
-   `workflow_dispatch` is exempt from that rule. If this proves awkward, the alternative is
-   pushing with a PAT, which restores the push trigger at the cost of a secret to rotate.
+What the first runs settled, so it is not re-investigated:
 
-3. **`${{ github.event.inputs.lookback_days || '60' }}` on a schedule trigger**, where
-   `inputs` is null. Expected to fall through to 60; only the cron exercises it.
-
-4. **GNU `date -u -d "N days ago"`** — correct on `ubuntu-latest`, would fail on macOS.
-   Never runs locally.
-
-**Update 2026-10-13:** the first run (2026-10-02) failed at the push: a ruleset on `main`
-now requires a PR and a passing "Unit tests" check (GH013). The refresh therefore pushes
-a `data-refresh/*` branch, opens a PR, dispatches `tests.yml` on the branch, and merges
-when it passes. Requires Settings → Actions → "Allow GitHub Actions to create and approve
-pull requests". If the PR step fails, the branch is left on origin with the data — merge it
-by hand rather than re-running the 70-minute job.
+- **Token permissions.** `default_workflow_permissions` is `read`, and the workflow's own
+  `contents` / `actions` / `pull-requests: write` was enough for the branch push, the PR and
+  the `tests.yml` dispatch. No repo-wide change is needed. "Allow GitHub Actions to create
+  and approve pull requests" (Settings → Actions → General) must stay on.
+- **Deploy.** A person's merge is a normal push, and `deploy_site.yml` fired on its own.
+- **`${{ github.event.inputs.lookback_days || '60' }}` on a schedule trigger** fell through
+  to 60 (the 2026-10-02 run computed its window).
+- **GNU `date -u -d`** works on `ubuntu-latest`.
 
 ## Recovery: a bad refresh reached the site
 
-The refresh commits straight to `main` and the deploy follows, so a bad run is live until
-reverted. Both gates (freshness, cache consistency) run before staging, so the realistic
-bad outcome is data that is *plausible but wrong* rather than truncated or torn.
+Merging the refresh PR deploys it, so a bad merge is live until reverted. Both gates
+(freshness, cache consistency) run before staging, and the tests run on the PR, so the
+realistic bad outcome is data that is *plausible but wrong* rather than truncated or torn —
+which is what the review before you merge is for.
 
 ```bash
-git revert --no-edit <bot-commit-sha>
+git revert -m 1 --no-edit <merge-commit-sha>   # a merge-commit merge needs -m 1
+git revert --no-edit <refresh-commit-sha>      # a squash or rebase merge does not
 git push
 ```
 
-A human push retriggers `deploy_site.yml` on its own — no dispatch needed, unlike the
-bot's. Confirm the site recovered before investigating further.
+A human push retriggers `deploy_site.yml` on its own — no dispatch needed. Confirm the site
+recovered before investigating further.
 
 To inspect what a run actually changed before deciding:
 
 ```bash
 gh run list --workflow=refresh_data.yml
-git show --stat <bot-commit-sha>
+git show --stat <refresh-commit-sha>
 ```
 
 ## Triage: `tests.yml` contracts job
