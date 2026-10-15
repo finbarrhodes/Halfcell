@@ -121,7 +121,7 @@ def main() -> None:
                    "availability_factor", "start_date", "end_date", "dispatch_method",
                    "pre_eac_rule", "auction_share_cap", "horizon", "delivery_modelled",
                    "offer_valuation", "offer_information", "forecast_vintages",
-                   "credit_recovery", "block_start_margin")
+                   "credit_recovery", "block_start_margin", "day_ahead_offers")
     ref_params = manifest[STRATEGIES[0]]["params"]
     for strategy in STRATEGIES[1:]:
         params = manifest[strategy]["params"]

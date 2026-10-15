@@ -360,7 +360,10 @@ hours before offers close, so an operator pricing a response offer knows what ea
 tomorrow's energy is worth rather than having to forecast it. The engine can read those prices at
 the offer stage, in either of two places: the energy a contract will deliver can be priced at the
 auction instead of at a trailing mean, and the offer plan can run on the auction's prices instead
-of the forecast. Both are off in the published model, because neither paid — see
+of the forecast. Both pay — together about £5k/MW/yr on either half of the backtest, the largest
+offer-stage gain measured here — and both are nonetheless off in the published model, because
+switching them on would move every figure on this site at once and make it depend on a NESO
+resource published only since September 2026. The measurement, and the case for adopting it, are in
 [day-ahead prices in the offer](./research#day-ahead-prices-in-the-offer). Dispatch never sees
 them: once the day starts, the model is back on the forecast.
 

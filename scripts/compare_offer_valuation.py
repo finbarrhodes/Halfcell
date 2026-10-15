@@ -60,12 +60,19 @@ DEFAULT_RUNS = "pf:formula,pf:lp,naive:formula,naive:lp,ml:formula,ml:lp"
 # The configuration the site publishes, which every variant here is trying to beat
 SHIPPED = {"pf": "pf_lp_recany_vint", "naive": "naive_lp_shrink0.5_recany_bid_vint",
            "ml": "ml_lp_shrink0.5_recany_bid_vint"}
-FLAGS = ("bid", "vint", "recany", "margin", "dacost", "daplan", "daboth")
+FLAGS = ("bid", "vint", "recany", "margin", "dacost", "daplan", "daboth", "fcstcost")
 # Run-name tag -> revenue_stack day_ahead_offers mode. The day-ahead auction's hourly
 # prices for D are public by 10:00 on D-1, so an offer closing at 14:00 may read them:
 # "dacost" prices delivered energy at the auction instead of a trailing mean, "daplan"
 # gives the offer plan the auction in place of the forecast, "daboth" does each.
-DAY_AHEAD_FLAGS = {"dacost": "costs", "daplan": "plan", "daboth": "both"}
+DAY_AHEAD_FLAGS = {"dacost": "costs", "daplan": "plan", "daboth": "both",
+                   "fcstcost": "costs"}
+# The control for "dacost". The trailing mean is both stale and shape-blind, so a gain
+# from replacing it need not mean the auction knows anything the model does not. This
+# tag runs the same "costs" mode on a block price built from the strategy's own
+# bid-time forecast of D instead of from the auction — no new data, and the difference
+# between the two is what the external dependency actually buys.
+FORECAST_COST_FLAGS = {"fcstcost"}
 
 
 def day_ahead_tag(name: str) -> str | None:
@@ -110,6 +117,9 @@ def parse_run(spec: str) -> tuple:
     if "recany" in flags and "margin" in flags:
         raise ValueError(f"bad run spec {spec!r}: credited recovery already keeps the margin")
     day_ahead = sorted(flags & set(DAY_AHEAD_FLAGS))
+    if "fcstcost" in flags and strategy == "pf":
+        raise ValueError(f"bad run spec {spec!r}: perfect foresight has no bid-time forecast "
+                         "to price delivery from")
     if len(day_ahead) > 1:
         raise ValueError(f"bad run spec {spec!r}: {', '.join(day_ahead)} are alternatives, "
                          "name one")
@@ -147,8 +157,12 @@ def backtest(strategy: str, valuation: str, shrink: float, bid_time: bool, vinta
     market_index = pd.read_parquet(PROCESSED / "market_index.parquet")
     delivery = pd.read_parquet(PROCESSED / "response_delivery.parquet")
     start, end = backtest_window(auctions, market_index)
-    day_ahead_prices = (pd.read_parquet(PROCESSED / "day_ahead_prices.parquet")
-                        if day_ahead else None)
+    if day_ahead in FORECAST_COST_FLAGS:
+        day_ahead_prices = _forecast_cost_table(strategy, market_index, start, end)
+    elif day_ahead:
+        day_ahead_prices = pd.read_parquet(PROCESSED / "day_ahead_prices.parquet")
+    else:
+        day_ahead_prices = None
     # Every setting stated: the spec, not the engine's default, decides what runs
     common = dict(services=ALL_SERVICES, start_date=start, end_date=end, delivery=delivery,
                   offer_valuation=valuation, forecast_vintages=vintages,
@@ -174,6 +188,48 @@ def backtest(strategy: str, valuation: str, shrink: float, bid_time: bool, vinta
     summary = {k: v for k, v in result["summary"].items() if not isinstance(v, dict)}
     summary_file.write_text(json.dumps(summary, indent=2, default=str) + "\n")
     return name, pd.read_parquet(monthly_file), summary, (time.time() - started) / 60
+
+
+def _forecast_cost_table(strategy: str, market_index, start, end):
+    """
+    The strategy's bid-time forecast of each day, in the table shape the engine's
+    day-ahead "costs" mode reads, so delivery is priced on the forecast rather than
+    on the trailing mean or the auction.
+
+    deliveryDate is the settlement date itself, which is what the engine's leak guard
+    checks: the bid-time forecast of D exists by 14:00 on D-1, exactly as the auction's
+    10:00 publication does, so both pass the same admissibility test.
+    """
+    import pandas as pd
+
+    from scripts.build_forecast_walk_forward import load_or_build
+    from src.analysis.price_forecast import forecast_series_by_date, naive_day_prices
+    from src.analysis.revenue_stack import _apx_by_date
+
+    if strategy == "ml":
+        series_by_date = forecast_series_by_date(
+            load_or_build(model_type="rf", verbose=False, information_lag_days=2)[0], start, end)
+    elif strategy == "naive":
+        series_by_date = {}
+        for date in sorted(d for d in _apx_by_date(market_index)
+                           if pd.Timestamp(start) <= d <= pd.Timestamp(end)):
+            fp = naive_day_prices(market_index, date, days_back=2)
+            if not fp.empty:
+                series_by_date[date] = fp
+    else:
+        raise ValueError(f"the forecast-cost control needs a forecast strategy, not {strategy!r}")
+
+    frames = []
+    for date, series in series_by_date.items():
+        series = series[series.index <= 48]
+        frames.append(pd.DataFrame({
+            "settlementDate": date,
+            "settlementPeriod": series.index.astype(int),
+            "deliveryDate": date,
+            "day_ahead_price": series.to_numpy(dtype=float),
+        }))
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(
+        columns=["settlementDate", "settlementPeriod", "deliveryDate", "day_ahead_price"])
 
 
 def split_revenue(monthly: pd.DataFrame, power_mw: float, select_before: str) -> dict:
